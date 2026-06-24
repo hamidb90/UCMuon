@@ -5,6 +5,16 @@ message: >
 
 title: "UCMuon: Open-source cosmic muon simulation suite for muography"
 
+doi: "10.5281/zenodo.20826984"
+
+identifiers:
+  - type: doi
+    value: "10.5281/zenodo.20826984"
+    description: "Concept DOI (resolves to the latest version)"
+  - type: doi
+    value: "10.5281/zenodo.20826985"
+    description: "Version DOI for v0.9.0"
+
 abstract: >
   UCMuon (You See Muon!) is an open-source cosmic muon simulation suite with
   a browser-based graphical interface, deployable locally or as
