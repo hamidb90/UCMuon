@@ -1,6 +1,6 @@
 # UCMuon — You See Muon!
 
-**Open-source cosmic muon simulation suite for muography**
+**A simulation suite for cosmic-ray muon generation, transport, and muography**
 
 UCLouvain Muography Group · Hamid Basiri · [hamid.basiri@uclouvain.be](mailto:hamid.basiri@uclouvain.be)
 MIT License · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20826984.svg)](https://doi.org/10.5281/zenodo.20826984)

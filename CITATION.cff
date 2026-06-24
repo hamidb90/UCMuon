@@ -3,7 +3,7 @@ message: >
   If you use UCMuon in your research, please cite it using the
   metadata in this file.
 
-title: "UCMuon: Open-source cosmic muon simulation suite for muography"
+title: "UCMuon: A simulation suite for cosmic-ray muon generation, transport, and muography"
 
 doi: "10.5281/zenodo.20826984"
 
