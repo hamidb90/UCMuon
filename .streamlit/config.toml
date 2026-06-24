@@ -1,0 +1,16 @@
+[global]
+# The GUI restores autosaved widget values via st.session_state before the
+# widgets render (see load_settings in gui/ucmuon_gui.py). Streamlit would
+# otherwise show a spurious "widget ... was created with a default value but
+# also had its value set via the Session State API" warning on every fresh
+# session — the intended behaviour here, so silence it.
+disableWidgetStateDuplicationWarning = true
+
+[server]
+# Raised from the default 200 MB to handle large muon files (10M+ muons).
+# The actual data sent per chart is tiny because all histograms are
+# pre-computed server-side and only bin counts are transferred.
+maxMessageSize = 500
+
+[browser]
+gatherUsageStats = false

@@ -1,0 +1,72 @@
+# =============================================================================
+#  UCMuon Transport (Bethe-Bloch engine) — input_transport_bb.dat
+#  UCLouvain Muography Group  |  Hamid Basiri <hamid.basiri@uclouvain.be>
+#
+#  Lines starting with # are comments (stripped before piping to the binary).
+#  Inline comments after values are also supported.
+#
+#  No external table files required — all physics is self-contained.
+#  Use this alongside MUSIC (input_transport_music.dat) for cross-validation.
+#
+#  Run with:
+#    sbatch run_ucmuon_transport.sh input_transport_bb.dat
+#    (same SLURM script as MUSIC — output prefix distinguishes the results)
+# =============================================================================
+
+# --- [1/5]  INPUT / OUTPUT FILES --------------------------------------------
+
+ucmuon_selected.dat           # input_file
+#   Same input as MUSIC transport — accepts 13-col or 14-col format.
+
+ucmuon_underground_bb         # output_prefix
+#   Per-rank files: ucmuon_underground_bb_RRRRR.dat
+#   Merged file:    ucmuon_underground_bb.dat
+#   Format: 18 columns — IDENTICAL to MUSIC driver output for direct comparison.
+
+# --- [2/5]  MATERIAL --------------------------------------------------------
+
+1                             # mat_type
+#   1 = Standard Rock  (Z=11,   A=22,    rho=2.65 g/cm3, I=136.4 eV, X0=26.54 g/cm2)
+#   2 = Ice            (Z=7.42,  A=14.99, rho=0.917 g/cm3, I=79.7 eV,  X0=36.08 g/cm2)
+#   3 = Water          (Z=7.42,  A=14.99, rho=1.000 g/cm3, I=79.7 eV,  X0=36.08 g/cm2)
+#   4 = Concrete       (Z=11.11, A=22.08, rho=2.300 g/cm3, I=135.2 eV, X0=26.70 g/cm2)
+#   5 = Custom         (supply Z, A, rho, I on next 4 lines)
+#
+#   For Custom (mat_type=5), add these 4 lines after mat_type:
+#     11.0                   # Zeff
+#     22.0                   # Aeff  [g/mol]
+#     2.65                   # density  [g/cm3]
+#     136.4                  # mean excitation energy I  [eV]
+#   Radiation length and b_rad are computed automatically from Tsai formula.
+#
+#   NOTE: rho_mat affects the slant path length (g/cm2) but NOT the stopping
+#   power table (Groom 2001 values are per g/cm2). Changing rho while keeping
+#   mat_type=1 correctly models lower/higher density rock (e.g. volcanic 1.7).
+#   To model a different density with Standard Rock elemental composition,
+#   use mat_type=5 and set Z=11, A=22, rho=1.7, I=136.4.
+
+# --- [3/5]  GEOMETRY --------------------------------------------------------
+
+90.0                          # vertical_depth  [m]
+#   Same as MUSIC: vertical depth from z=0 surface to detector.
+#   Slant path = depth / cos(theta) computed per muon.
+#   For cross-validation with MUSIC, use the SAME depth here.
+
+# --- [4/5]  PHYSICS OPTIONS -------------------------------------------------
+
+1                             # ms_enable  — Highland multiple scattering
+#   1 = ON:  theta_0 applied per 10 g/cm2 CSDA step (physically correct)
+#   0 = OFF: no angular deflection (pure 1D CSDA, fastest, for testing)
+#
+#   Even with ms_enable=1, this engine uses CSDA (deterministic mean energy
+#   loss) rather than MUSIC's stochastic sampling. As a result:
+#     - Survival fractions agree with MUSIC to ~5-15% for standard rock
+#     - BB overestimates survival at E > 500 GeV (no catastrophic losses)
+#     - BB is ~3-5x faster than MUSIC for the same muon count
+
+# --- [5/5]  TRANSPORT SCOPE -------------------------------------------------
+
+0                             # transport_all
+#   0 = only muons with hit_flag=1 (recommended, same as MUSIC run)
+#   1 = all muons in file
+#   Use the same value as in input_transport_music.dat for fair comparison.

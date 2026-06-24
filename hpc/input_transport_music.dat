@@ -1,0 +1,105 @@
+# =============================================================================
+#  UCMuon Transport (MUSIC engine) — input_transport_music.dat
+#  UCLouvain Muography Group  |  Hamid Basiri <hamid.basiri@uclouvain.be>
+#
+#  Lines starting with # are comments (stripped by the SLURM script before
+#  piping to the binary).  Inline comments after values are also supported.
+#
+#  Unit conventions:
+#    Energies    → GeV
+#    Depths      → m   (converted internally to cm)
+#    Density     → g/cm³
+#    Rad. length → cm
+#
+#  Run with:
+#    sbatch run_ucmuon_transport.sh input_transport_music.dat
+# =============================================================================
+
+# --- [1/6]  INPUT / OUTPUT FILES -------------------------------------------
+
+ucmuon_selected.dat           # input_file
+#   Path to the generator output file.
+#   Accepts ucmuon_selected.dat (14 cols with hit_flag) or
+#   ucmuon_surface.dat (also 14 cols) or legacy 13-col files.
+#   The format is auto-detected from the first data line.
+
+ucmuon_underground            # output_prefix
+#   Output files will be named  <prefix>_RRRRR.dat  (one per MPI rank).
+#   The SLURM script merges them into  <prefix>.dat  after the job.
+
+# --- [2/6]  MATERIAL PROPERTIES --------------------------------------------
+
+1                             # mat_type
+#   1 = Standard Rock  (Z=11, A=22)   — generic benchmark material
+#   2 = Water / Ice
+#   3 = Seawater  (H, O, Na, Cl)
+#   NOTE: for unusual materials (limestone, iron, salt), mat_type=1 with
+#   correct density/rad.length gives reasonable results.  For precision,
+#   modify the composition arrays in ucmuon_transport_music.f90.
+
+2.65                          # density  [g/cm³]
+#   Standard Rock: 2.65   Water/Ice: 1.0   Seawater: 1.025
+#   Vesuvius/MURAVES geometry uses 1.7 g/cm³ (volcanic rock)
+#   Puy de Dôme: 2.65 g/cm³
+
+26.48                         # radiation_length  [cm]
+#   Standard Rock: 26.48   Water: 36.08   Ice: 39.3
+#   Used for multiple scattering (Highland formula).
+#   If uncertain, use the standard value for the material type.
+
+# --- [3/6]  GEOMETRY -------------------------------------------------------
+
+90.0                          # vertical_depth  [m]
+#   Vertical depth from the generation surface (z=0) to the detector plane.
+#   The slant path length is computed as  depth / cos(theta)  for each muon,
+#   so inclined muons automatically traverse longer paths.
+#   Vesuvius/MURAVES: 35–90 m depending on direction.
+#   For flat-slab approximation this is the uniform overburden depth.
+
+# --- [4/6]  TRANSPORT PHYSICS ----------------------------------------------
+
+1                             # idim  — 3D lateral transport
+#   1 = ON:  lateral deflection and position update due to MS (recommended)
+#            required for correct detector acceptance with wide angular range
+#   0 = OFF: 1D depth-only, ignores lateral displacement (faster)
+#            acceptable for near-vertical muons only (theta < 30°)
+
+1                             # idim1  — other-process scattering
+#   1 = ON:  include nuclear/hadronic interactions (standard, recommended)
+#   0 = OFF: suppress (for testing/debugging only)
+
+-30                           # minv  — energy-loss cut exponent  [expert only]
+#   MUSIC internal parameter controlling the minimum virtual photon energy
+#   included in cross-section integrals.
+#   -30 is the standard value from Kudryavtsev (2009).
+#   Do NOT change unless you are an expert MUSIC user.
+
+# --- [5/6]  CROSS-SECTION TABLES -------------------------------------------
+
+0                             # init_tables
+#   0 = compute + save to disk  (~1 minute for Standard Rock)
+#       Required files: music-double-diff-rock.dat (from MUSIC distribution)
+#       Generated files:  music-eloss-rock.dat
+#                         music-cross-sections-rock.dat
+#   1 = read from disk  (fast, use after first run with init=0)
+#       Required files: music-eloss-{mat}.dat
+#                       music-cross-sections-{mat}.dat
+#
+#   IMPORTANT for distribution:
+#     First-time users MUST run once with init=0.
+#     After that, set init=1 for all subsequent runs.
+#     The generated files are material-specific:
+#       rock     → music-eloss-rock.dat + music-cross-sections-rock.dat
+#       water    → music-eloss-water.dat + music-cross-sections-water.dat
+#       seawater → music-eloss-seawater.dat + music-cross-sections-seawater.dat
+
+# --- [6/6]  TRANSPORT SCOPE ------------------------------------------------
+
+0                             # transport_all
+#   0 = transport only muons with hit_flag=1 (recommended)
+#       These are muons aimed at a detector volume (set during generation).
+#       Reduces computation to physically relevant muons only.
+#   1 = transport ALL muons in the file (use if file is pre-filtered,
+#       or if the generator was run without a detector filter)
+#   NOTE: if the input file has 13 columns (no hit_flag), all muons are
+#         always transported regardless of this setting.

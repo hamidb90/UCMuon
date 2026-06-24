@@ -1,0 +1,13 @@
+# Realistic-source benchmark timing (10^5 realistic cosmic-ray muons, Standard
+# Rock, depths 1/10/25/50/100/200 m). Single-core-equivalent.
+# Engines: sum of the six per-depth runs, OMP_NUM_THREADS=1 (wall = CPU).
+# Geant4 : single run over all depths, serial (wall = CPU).
+# PHITS  : single run over all depths, total CPU summed over 10 OpenMP threads
+#          (Case A, full default physics; from phits.out total cpu time).
+code,seconds
+Geant4,10851.95
+PHITS,198855.84
+PROPOSAL,195
+UCMuon,53
+MUSIC,28
+BB,14

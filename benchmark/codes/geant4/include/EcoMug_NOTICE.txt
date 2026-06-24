@@ -1,0 +1,11 @@
+EcoMug.h is NOT bundled here because it is licensed GPL-3.0, which is
+incompatible with this repository's MIT license.
+
+The Geant4 benchmark app (PrimaryGeneratorAction) optionally uses EcoMug for
+one of its source modes. To build that mode, download EcoMug.h yourself from
+the official repository and place it in this directory:
+
+  https://github.com/dr4kan/EcoMug
+
+Reference: D. Pagano et al., "EcoMug: an Efficient COsmic MUon Generator",
+Nucl. Instrum. Meth. A 1014 (2021) 165732. doi:10.1016/j.nima.2021.165732

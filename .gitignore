@@ -1,0 +1,78 @@
+
+# ── Accidental no-dot files (Finder strips leading dots) ─────────────────────
+/gitignore
+/gitattributes
+/gitkeep
+/git
+/DS_Store
+
+# ── macOS ─────────────────────────────────────────────────────────────────────
+.DS_Store
+**/.DS_Store
+
+# ── Build artefacts ───────────────────────────────────────────────────────────
+build/
+*.o
+*.mod
+
+# ── Compiled binaries ─────────────────────────────────────────────────────────
+bin/
+ucmuon_gen_omp
+ucmuon_transport_bb_omp
+ucmuon_transport_music_omp
+ucmuon_gen
+ucmuon_transport_bb
+ucmuon_transport_music
+
+# ── Python cache ──────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# ── Output / large data files ─────────────────────────────────────────────────
+output/
+# Root-level data dumps (muons_*.dat, music-*.dat, *_results.dat, etc.)
+/*.dat
+*.png
+
+# ── IDE / editor ──────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*~
+
+# ── GUI session state ─────────────────────────────────────────────────────────
+ucmuon_autosave.json
+
+# ── Streamlit ─────────────────────────────────────────────────────────────────
+# (keep .streamlit/config.toml — it sets maxMessageSize and disables telemetry)
+
+# ── DEM / GIS files ───────────────────────────────────────────────────────────
+*.tif
+*.tiff
+*.geotiff
+
+# ── External library sources (not part of UCMuon, cloned separately) ─────────
+external/
+mulder-master/
+MuonElectronGenerator-main/
+
+# ── Benchmark scratch working dir (~8 GB raw .dat — keep on disk, never track) ──
+# The curated, tracked copy lives in benchmark/ (codes, reports, figures, CSVs).
+benchmark/geant4_muon_rock_v5/
+
+# ── Curated benchmark/ folder IS tracked ─────────────────────────────────────
+# Re-include its figures despite the global *.png rule above; never track raw data.
+!benchmark/figures/**/*.png
+benchmark/**/*.dat
+
+# ── Claude Code internal ──────────────────────────────────────────────────────
+.claude/
+
+# Manuscript figure-script scratch output
+manuscript/scripts/_fig05_work/
+manuscript/scripts/_fig07_work/
+manuscript/scripts/_hpc_scaling_work/
+manuscript/scripts/_parma_spec
+manuscript/scripts/*.mod

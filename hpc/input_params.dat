@@ -1,0 +1,192 @@
+# =============================================================================
+#  UCMuon Generator — input_params.dat
+#  UCLouvain Muography Group  |  Hamid Basiri <hamid.basiri@uclouvain.be>
+#
+#  Lines starting with # are comments and are stripped before being read.
+#  Inline comments (value  # explanation) are also supported.
+#
+#  Unit conventions:
+#    Energy      → GeV
+#    Positions   → cm  (all detector coordinates)
+#    Distances   → m   (generation surface radius / z-offset)
+#    Angles      → degrees (input); radians used internally
+#
+#  Run with:
+#    sbatch run_ucmuon_gen.sh input_params.dat
+# =============================================================================
+
+# --- [0] Use built-in defaults? ----------------------------------------------
+#   1 = ignore all parameters below and use hardcoded defaults:
+#       E=100-2500 GeV, disk R=800 m, N=100000, cos²θ, θ_max=85°, no detector
+#   0 = read all parameters below (recommended)
+0                             # use_defaults
+
+# =============================================================================
+# [1/7]  ENERGY RANGE
+# =============================================================================
+
+19.0                          # e_min  [GeV]  — minimum muon energy
+#                               Lower bound of generated spectrum.
+#                               Must be >= 1 GeV (clamped internally).
+#                               For MURAVES/Vesuvius cross-validation: 1.0 GeV
+#                               (Guan 2015 spectrum requires E_min >= 1 GeV).
+
+1500.0                        # e_max  [GeV]  — maximum muon energy
+#                               Upper bound of generated spectrum.
+#                               Typical value: 2500 GeV (full CosmoALEPH range).
+#                               Reducing to 1500 GeV saves CPU for shallow targets.
+
+# =============================================================================
+# [2/7]  SPECTRUM MODEL
+# =============================================================================
+#   1 = CosmoALEPH    dN/dp ∝ p^{-3.1952}   (ALEPH data, Kudryavtsev 2009)
+#   2 = Power-law     dN/dE ∝ E^{-2.7}       (MUSIC convention)
+#   3 = PARMA/EXPACS  location & date-aware   (requires [2b] block below)
+#   4 = Guan et al. (2015)  Modified Gaisser, arXiv:1509.06176
+#   5 = Frosin et al. (2025)  Guan formula with refitted params (a=3.512, b=1.388)
+#                              J. Phys. G 52, 035002
+1                             # spectrum_mode
+
+# --- [2b]  PARMA parameters (only read when spectrum_mode = 3) ---------------
+# (These lines are skipped when spectrum_mode != 3)
+# Uncomment and set if using PARMA:
+#   45.760          # parma_lat    [deg]  — latitude  (Puy de Dôme: 45.76)
+#    2.955          # parma_lon    [deg]  — longitude (Puy de Dôme:  2.955)
+#    1.094          # parma_alt_km [km]   — altitude above sea level
+#   2026            # parma_year
+#    4              # parma_month
+#    4              # parma_day
+#    0              # parma_charge_mode  (0=both, 1=µ+ only, -1=µ- only)
+#   .               # parma_datapath  (path to PARMA data directory, '.' = cwd)
+#    0.0            # parma_W_index   (Wolf sunspot: 0=solar min, ~150=solar max)
+
+# =============================================================================
+# [3/7]  GENERATION SURFACE  (where muons are created)
+# =============================================================================
+#   1 = Circular disk  (center + radius + optional tilt)
+#   2 = Rectangle      (bounding box: xmin xmax ymin ymax)
+#   3 = Hemisphere     (radius R, always XY plane)
+1                             # source_mode
+
+# --- Source plane (modes 1 and 2 only) --------------------------------------
+#   1 = XY  (horizontal, muons travel in −Z)   ← most common
+#   2 = XZ  (vertical,   muons travel in −Y)
+#   3 = YZ  (vertical,   muons travel in −X)
+1                             # source_plane
+
+# --- Disk parameters (source_mode = 1) --------------------------------------
+0.0                           # disk center U  [m]  (0 = centred on origin)
+0.0                           # disk center V  [m]  (0 = centred on origin)
+500.0                         # disk radius    [m]
+#                               Rule of thumb: radius >= detector distance from axis
+#                               + generous margin (no solid-angle bias).
+#                               Vesuvius/MURAVES: ~500 m covers all directions.
+0.0                           # W fixed        [m]  (z = 0 → surface)
+0.0                           # tilt angle from plane normal  [deg]  (0 = flat)
+0.0                           # tilt azimuth                  [deg]  (0 = toward U axis)
+
+# --- Rectangle parameters (source_mode = 2, uncomment to use) ---------------
+# Replace the 6 disk lines above with these 5 lines for a rectangle:
+# -500.0                      # U min  [m]
+#  500.0                      # U max  [m]
+# -500.0                      # V min  [m]
+#  500.0                      # V max  [m]
+#    0.0                      # W fixed [m]
+
+# --- Hemisphere parameters (source_mode = 3, uncomment to use) --------------
+# Replace the source_plane + disk lines above with these 2 lines:
+# 500.0                       # hemisphere radius  [m]
+#   0.0                       # hemisphere centre Z  [m]
+
+# =============================================================================
+# [4/7]  ANGULAR DISTRIBUTION
+# =============================================================================
+#   1 = Vertical only         (all muons downward along z)
+#   2 = cos²(θ)               (standard atmospheric muon distribution)
+#   3 = Uniform cone          (flat in solid angle up to θ_max)
+#   4 = Guan/Frosin P(θ|E)    (energy-dependent, self-consistent CDF per muon)
+2                             # angular_mode
+
+85.0                          # theta_max  [deg]  — maximum zenith angle
+#                               Applies to modes 2, 3, 4.
+#                               85° covers near-horizontal muons; 70° is typical
+#                               for deep-underground applications.
+#                               Not read for angular_mode = 1.
+
+# =============================================================================
+# [5/7]  NUMBER OF MUONS
+# =============================================================================
+10000000                        # nmuons  — total muons to generate (all ranks combined)
+#                               MPI splits this evenly: each rank generates
+#                               floor(nmuons / nranks) muons, rank 0 gets remainder.
+#                               For production: 1e6 to 5e6.
+#                               For testing: 1e4 to 1e5 (seconds to minutes).
+
+# =============================================================================
+# [6/7]  DETECTOR FILTER
+# =============================================================================
+1                             # use_detector  (1=enable geometric filter, 0=disable)
+#                               When enabled, only muons whose ray intersects at
+#                               least one detector volume are written to the
+#                               selected output file.  The surface file (save_all)
+#                               still contains all generated muons regardless.
+
+2                             # ndet  — number of detector volumes (max 10)
+
+# --- Detector 1 --------------------------------------------------------------
+#   Shape: 1=Cylinder (axis A→B + radius)   2=Box/AABB (xmin xmax ymin ymax zmin zmax)
+#   All coordinates in cm.  Surface is at z=0; underground is z < 0.
+#
+#   Cylinder axis convention:
+#     A = bottom cap centre  (deeper end)
+#     B = top cap centre     (shallower end)
+#   The axis need not be vertical — tilted detectors are supported.
+
+1                             # det_shape  (1=cylinder)
+3.0                           # safety_margin  [cm]  — expand detector by this amount
+#                               Use 0.0 for exact geometry; a few cm accounts for
+#                               reconstruction smearing / assembly tolerances.
+
+990.0   0.0   -9000.0        # cyl_A  (x, y, z)  [cm]  — bottom cap centre
+990.0   0.0   -3500.0        # cyl_B  (x, y, z)  [cm]  — top cap centre
+#   → Detector 1 axis: vertical cylinder at (x=990 cm, y=0) from z=-90 m to z=-35 m
+
+4.0                           # cyl_radius  [cm]  — cylinder radius
+
+# --- Detector 2 --------------------------------------------------------------
+1                             # det_shape  (1=cylinder)
+3.0                           # safety_margin  [cm]
+
+0.0   -1650.0   -9000.0      # cyl_A  (x, y, z)  [cm]  — bottom cap centre
+0.0   -1650.0   -3500.0      # cyl_B  (x, y, z)  [cm]  — top cap centre
+#   → Detector 2 axis: vertical cylinder at (x=0, y=-1650 cm) from z=-90 m to z=-35 m
+
+4.0                           # cyl_radius  [cm]
+
+# (For a box detector, replace the 5 lines above with:)
+# 2                           # det_shape  (2=box/AABB)
+# 0.0                         # safety_margin  [cm]
+# -10.0   10.0                # xmin  xmax  [cm]
+# -10.0   10.0                # ymin  ymax  [cm]
+# -200.0  -100.0              # zmin  zmax  [cm]
+
+# =============================================================================
+# [7/7]  OUTPUT
+# =============================================================================
+0                             # save_all
+#   0 = write only detector-aimed muons (ucmuon_selected) — recommended
+#       Saves disk space; use_detector=1 above already filters the interesting muons.
+#   1 = also write ALL generated muons (ucmuon_surface) — needed for studies
+#       of the full angular/energy distribution at the surface.
+
+# Output file stems (no .dat, no path — the SLURM script adds both automatically)
+# The per-rank files will be:  output_<JOBID>/<stem>_RRRRR.dat
+# The merged file will be:     output_<JOBID>/<stem>.dat
+# A PHITS dump will be:        output_<JOBID>/<stem>_phits.dat  (auto-generated)
+#
+# IMPORTANT: do NOT put a path here — the SLURM script injects output_<JOBID>/ itself.
+# IMPORTANT: do NOT add .dat here — the code adds it.
+# IMPORTANT: save_phits is no longer in this file — PHITS conversion is automatic
+#            post-processing via ucmuon_to_phits (much faster than writing in the loop).
+ucmuon_surface                # stem for surface file (only used if save_all=1)
+ucmuon_selected               # stem for selected file (detector-aimed muons)

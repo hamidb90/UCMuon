@@ -1,0 +1,26 @@
+{
+  "title": "UCMuon: Open-source cosmic muon simulation suite for muography",
+  "description": "UCMuon (You See Muon!) is an open-source cosmic muon simulation suite with a browser-based graphical interface, deployable locally or as command-line executables on an HPC cluster. It provides surface muon generation (eight spectrum models, three source geometries), six transport engines including MUSIC, Bethe-Bloch, PROPOSAL, and a self-developed stochastic engine (UCMuon-MC), DEM-based terrain ray-tracing for real field deployments, and a muographic density-inversion suite. Primary applications are volcano muography (MURAVES/Vesuvius) and subsurface CO2 storage monitoring. The MUSIC engine is not redistributed; see docs/MUSIC_FILES.md.",
+  "upload_type": "software",
+  "license": "MIT",
+  "version": "0.9.0",
+  "creators": [
+    {
+      "name": "Basiri, Hamid",
+      "orcid": "0000-0002-4360-0327",
+      "affiliation": "UCLouvain Muography Group, Université catholique de Louvain, Louvain-la-Neuve, Belgium"
+    }
+  ],
+  "keywords": [
+    "muography",
+    "cosmic muons",
+    "muon tomography",
+    "Monte Carlo simulation",
+    "muon transport",
+    "geophysics",
+    "CO2 storage monitoring",
+    "volcano imaging",
+    "HPC",
+    "Fortran"
+  ]
+}

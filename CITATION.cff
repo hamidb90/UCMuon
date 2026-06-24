@@ -1,0 +1,149 @@
+cff-version: 1.2.0
+message: >
+  If you use UCMuon in your research, please cite it using the
+  metadata in this file.
+
+title: "UCMuon: Open-source cosmic muon simulation suite for muography"
+
+abstract: >
+  UCMuon (You See Muon!) is an open-source cosmic muon simulation suite with
+  a browser-based graphical interface, deployable locally or as
+  command-line executables on an HPC cluster. It provides surface muon
+  generation (eight spectrum models, three source geometries), six transport
+  engines including MUSIC, Bethe-Bloch, PROPOSAL, and a self-developed
+  stochastic engine (UCMuon-MC), DEM-based terrain ray-tracing for real
+  field deployments, and a muographic density-inversion suite. Primary
+  applications are volcano muography (MURAVES/Vesuvius) and subsurface
+  CO2 storage monitoring.
+
+authors:
+  - family-names: Basiri
+    given-names: Hamid
+    email: hamid.basiri@uclouvain.be
+    affiliation: >
+      UCLouvain Muography Group,
+      Université catholique de Louvain,
+      Louvain-la-Neuve, Belgium
+    orcid: "https://orcid.org/0000-0002-4360-0327"
+
+version: "0.9.0"
+date-released: "2026-06-24"
+
+repository-code: "https://github.com/hamidb90/UCMuon"
+url: "https://github.com/hamidb90/UCMuon"
+license: MIT
+
+keywords:
+  - muography
+  - cosmic muons
+  - muon tomography
+  - Monte Carlo simulation
+  - muon transport
+  - MUSIC
+  - Bethe-Bloch
+  - geophysics
+  - CO2 storage monitoring
+  - volcano imaging
+  - HPC
+  - Fortran
+  - OpenMP
+  - MPI
+
+references:
+  - type: article
+    title: "Muon radiography of volcanoes: A review"
+    authors:
+      - family-names: Kudryavtsev
+        given-names: V. A.
+    journal: Computer Physics Communications
+    volume: 180
+    start: 339
+    year: 2009
+    doi: "10.1016/j.cpc.2008.10.013"
+    notes: "MUSIC muon transport code"
+
+  - type: article
+    title: "A simple parameterisation of the cosmic-ray muon momentum spectra at the surface as a function of zenith angle"
+    authors:
+      - family-names: Guan
+        given-names: M.
+    journal: "arXiv preprint"
+    year: 2015
+    url: "https://arxiv.org/abs/1509.06176"
+    notes: "Guan 2015 spectrum model"
+
+  - type: article
+    title: "Muon flux parametrization for the muon depth-intensity relation"
+    authors:
+      - family-names: Frosin
+        given-names: C.
+    journal: Journal of Physics G
+    volume: 52
+    start: 35002
+    year: 2025
+    doi: "10.1088/1361-6471/ada22d"
+    notes: "Frosin 2025 spectrum model"
+
+  - type: article
+    title: "Muon stopping power and range tables 10 MeV-100 TeV"
+    authors:
+      - family-names: Groom
+        given-names: D. E.
+      - family-names: Mokhov
+        given-names: N. V.
+      - family-names: Striganov
+        given-names: S. I.
+    journal: Atomic Data and Nuclear Data Tables
+    volume: 78
+    start: 183
+    year: 2001
+    doi: "10.1006/adnd.2001.0861"
+    notes: "CSDA range tables used in Engines 4, 5, 6"
+
+  - type: article
+    title: "PARMA/EXPACS: A revision of PARMA"
+    authors:
+      - family-names: Sato
+        given-names: T.
+    journal: PLOS ONE
+    volume: 10
+    issue: 12
+    year: 2015
+    doi: "10.1371/journal.pone.0144679"
+    notes: "PARMA/EXPACS cosmic ray spectrum model"
+
+  - type: article
+    title: "PROPOSAL: A tool for propagation of charged leptons"
+    authors:
+      - family-names: Koehne
+        given-names: J.-H.
+    journal: Computer Physics Communications
+    volume: 184
+    start: 2070
+    year: 2013
+    doi: "10.1016/j.cpc.2013.04.001"
+    notes: "PROPOSAL transport engine (Engine 3)"
+
+  - type: article
+    title: "Multiple Coulomb scattering"
+    authors:
+      - family-names: Highland
+        given-names: V. L.
+    journal: Nuclear Instruments and Methods
+    volume: 129
+    start: 497
+    year: 1979
+    doi: "10.1016/0029-554X(75)90743-0"
+    notes: "Highland multiple scattering formula"
+
+  - type: article
+    title: "A portable high-quality random number generator for lattice field theory simulations"
+    authors:
+      - family-names: Lüscher
+        given-names: M.
+    journal: Computer Physics Communications
+    volume: 79
+    start: 100
+    year: 1994
+    doi: "10.1016/0010-4655(94)90232-1"
+    notes: "RANLUX RNG"
