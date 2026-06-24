@@ -1,0 +1,30 @@
+PARMA / EXPACS — Conditions for Use
+====================================
+
+PHITS-based Analytical Radiation Model in the Atmosphere (PARMA), v4.10.
+Developed by Dr. Tatsuhiko Sato, Japan Atomic Energy Agency (JAEA).
+Source: https://phits.jaea.go.jp/expacs
+
+Copyright (c) Japan Atomic Energy Agency (JAEA). All rights reserved.
+
+Conditions (from the EXPACS distribution Readme, Q8, and the EXPACS
+"Conditions for Use" accepted at download time):
+
+  - For NON-COMMERCIAL use, you must refer to the following manuscripts in any
+    published use of this program:
+        T. Sato, "Analytical model for estimating terrestrial cosmic-ray fluxes
+        nearly anytime and anywhere in the world; Extension of PARMA/EXPACS",
+        PLoS ONE 10(12): e0144679 (2015).  doi:10.1371/journal.pone.0144679
+        T. Sato, "Analytical model for estimating the zenith angle dependence of
+        terrestrial cosmic ray fluxes", PLoS ONE 11(8): e0160390 (2016).
+        doi:10.1371/journal.pone.0160390
+  - COMMERCIAL use is NOT allowed without a prior agreement with JAEA.
+  - Please acknowledge the URL: https://phits.jaea.go.jp/expacs
+  - JAEA is not liable for any loss or damage arising from use of this software.
+
+Acknowledgement: PARMA uses a Mersenne Twister random number generator
+developed by Prof. M. Matsumoto, Hiroshima University.
+
+Contact: nsed-expacs@jaea.go.jp
+
+This component is NOT covered by the UCMuon MIT License. See THIRD_PARTY_LICENSES.md.

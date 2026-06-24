@@ -47,6 +47,12 @@ in this repository for licensing reasons. UCMuon ships only the wrapper; to use
 the MUSIC engine, obtain the source from the author — see
 [docs/MUSIC_FILES.md](docs/MUSIC_FILES.md). All other engines run without it.
 
+**Licensing:** UCMuon's own code is MIT (see [LICENSE](LICENSE)). It bundles
+third-party components with their own terms — notably **PARMA/EXPACS**
+(`src/parma/`, `data/EXPACS/`), which is **non-commercial use only** (JAEA;
+cite Sato 2015/2016), and **PUMAS** (LGPL-3.0). See
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) before any commercial use.
+
 ---
 
 ## Installation
