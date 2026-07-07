@@ -818,7 +818,10 @@ def _read_input(fpath, transport_all):
     Parse a 13-col or 14-col CosmoALEPH surface file.
     13-col: EventID x y z p px py pz theta phi E charge det_mask
     14-col: EventID x y z p px py pz theta phi E charge hit_flag det_mask
-    Returns dict of numpy arrays.  E in [GeV], positions in [cm], angles in [rad].
+    Returns dict of numpy arrays.  Positions in [cm], angles in [rad].
+    Column E is the TOTAL energy [GeV] (generator writes E = sqrt(p²+m²));
+    the returned Ekin_GeV/Ekin_MeV are the kinetic energy (E − m_mu) that
+    the dE/dx and range tables are indexed by, E_tot_GeV is the raw column.
 
     Source-plane auto-detection
     ---------------------------
@@ -850,7 +853,7 @@ def _read_input(fpath, transport_all):
     px, py, pz = data[:, 5], data[:, 6], data[:, 7]
     theta    = data[:, 8]
     phi      = data[:, 9]
-    Ekin_GeV = data[:, 10]                  # column 10 = kinetic energy [GeV]
+    E_tot_GeV = data[:, 10]                 # column 10 = TOTAL energy [GeV]
     charge   = data[:, 11]
     hit_flag = data[:, 12].astype(int) if nc == 14 else np.ones(len(data), dtype=int)
 
@@ -859,7 +862,7 @@ def _read_input(fpath, transport_all):
         EventID  = EventID[m]; x = x[m]; y = y[m]; z = z[m]
         p_srf    = p_srf[m]; px = px[m]; py = py[m]; pz = pz[m]
         theta    = theta[m];   phi = phi[m]
-        Ekin_GeV = Ekin_GeV[m]; charge = charge[m]
+        E_tot_GeV = E_tot_GeV[m]; charge = charge[m]
 
     # Detect source plane: the coordinate with smallest spread is the constant one.
     coord_std = np.array([np.std(x), np.std(y), np.std(z)])
@@ -895,8 +898,10 @@ def _read_input(fpath, transport_all):
     cy = py / p_mag
     cz = pz / p_mag
 
+    Ekin_GeV = np.maximum(E_tot_GeV - M_MU_GEV, 0.0)
     return dict(EventID=EventID, x=x, y=y, z=z,
                 theta=theta, phi=phi,
+                E_tot_GeV=E_tot_GeV,
                 Ekin_GeV=Ekin_GeV, Ekin_MeV=Ekin_GeV * 1000.0,
                 charge=charge, cx=cx, cy=cy, cz=cz,
                 depth_cos=depth_cos,       # correct depth-direction cosine
@@ -984,8 +989,9 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     # penetration): only muons that cannot survive even with zero hard
     # radiative events are killed outright.  Muons between the mean-loss
     # CSDA range and this bound are transported stochastically.
-    R_det = _det_range(muons["Ekin_MeV"], mat, v_cut, delta_rays=delta_rays)
-    alive[R_det < slant_gcm2] = False
+    R_det   = _det_range(muons["Ekin_MeV"], mat, v_cut, delta_rays=delta_rays)
+    prefilt = R_det < slant_gcm2
+    alive[prefilt] = False
 
     # Per-muon adaptive step count: target dx ≈ 5 g/cm² for every muon (the
     # old global count, set from the median slant, gave near-horizontal muons
@@ -1015,7 +1021,17 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     depth_axis = muons.get("depth_axis", 2)
     x_acc = np.zeros(N)
     y_acc = np.zeros(N)
-    z_acc = np.zeros(N)   # only used when depth_axis != 2
+    z_acc = np.zeros(N)   # z displacement — stopping depth + non-XY sources
+
+    # Pre-filtered muons never enter the stepping loop; give them their CSDA
+    # stopping displacement so z_stop reports a physical depth instead of 0.
+    # (min with R_det: the deterministic-only range is an upper bound.)
+    if prefilt.any():
+        R_stop = np.minimum(
+            _csda_range(muons["Ekin_MeV"], mat["a_scale"],
+                        _PDG24_T_FINE, _PDG24_R_FINE),
+            R_det)
+        z_acc[prefilt] = muons["cz"][prefilt] * (R_stop[prefilt] / rho)
 
     E_stop = 1.0                                # stop if Ekin < 1 MeV
     prev_reported = 0
@@ -1032,11 +1048,13 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
 
         # ── Accumulate position BEFORE MCS (direction at entry of this step) ──
         # Convert dx [g/cm²] → geometric step [cm] along slant direction.
+        # z is accumulated for every depth axis: survivors on an XY source are
+        # snapped to the exact scoring plane below, but stopped muons need the
+        # integrated z to report their true stopping depth.
         dx_cm_i = dx_i / rho
         x_acc[idx] += cx_c[idx] * dx_cm_i
         y_acc[idx] += cy_c[idx] * dx_cm_i
-        if depth_axis != 2:
-            z_acc[idx] += cz_c[idx] * dx_cm_i
+        z_acc[idx] += cz_c[idx] * dx_cm_i
 
         # Table-anchored loss decomposition at the current energy
         a_ion, Lb, Lp, Ln = _loss_components(E_i, mat)
@@ -1150,15 +1168,38 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
                            * (1.0 + 0.038 * np.log(np.maximum(t_X0, 1e-12))))
 
                 phi_az  = rng.uniform(0.0, 2.0*np.pi, size=la2.sum())
-                dth     = rng.normal(0.0, theta0)
+                # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS
+                # projected angle; a Gaussian polar angle under-scatters by sqrt(2).
+                dth     = rng.rayleigh(theta0)
                 sin_dth = np.sin(dth); cos_dth = np.cos(dth)
                 cos_phi = np.cos(phi_az); sin_phi = np.sin(phi_az)
 
                 cx_o = cx_c[oi]; cy_o = cy_c[oi]; cz_o = cz_c[oi]
 
-                cx_c[oi] = cx_o*cos_dth + (cy_o*sin_phi - cz_o*cos_phi)*sin_dth
-                cy_c[oi] = cy_o*cos_dth + (-cx_o*sin_phi + cz_o*cos_phi)*sin_dth
-                cz_c[oi] = cz_o*cos_dth + (cx_o*cos_phi + cy_o*sin_phi)*sin_dth
+                # Build orthonormal basis (e1, e2) perpendicular to d so the
+                # deflection azimuth phi_az is uniform around the track — same
+                # construction as ucmuon_bb_driver.transport_bb.
+                # Reference vector: y-axis if |cx| > 0.9, else x-axis
+                near_x  = np.abs(cx_o) > 0.9
+                wx = np.where(near_x, 0.0, 1.0)
+                wy = np.where(near_x, 1.0, 0.0)
+                wd = wx * cx_o + wy * cy_o          # w·d  (wz=0)
+                e1x = wx - wd * cx_o
+                e1y = wy - wd * cy_o
+                e1z =    - wd * cz_o
+                ne1 = np.maximum(np.sqrt(e1x**2 + e1y**2 + e1z**2), 1e-15)
+                e1x /= ne1;  e1y /= ne1;  e1z /= ne1
+                e2x = cy_o * e1z - cz_o * e1y      # e2 = d × e1
+                e2y = cz_o * e1x - cx_o * e1z
+                e2z = cx_o * e1y - cy_o * e1x
+
+                npx = cos_phi * e1x + sin_phi * e2x
+                npy = cos_phi * e1y + sin_phi * e2y
+                npz = cos_phi * e1z + sin_phi * e2z
+
+                cx_c[oi] = cx_o * cos_dth + npx * sin_dth
+                cy_c[oi] = cy_o * cos_dth + npy * sin_dth
+                cz_c[oi] = cz_o * cos_dth + npz * sin_dth
 
                 norm = np.sqrt(cx_c[oi]**2 + cy_c[oi]**2 + cz_c[oi]**2)
                 norm = np.maximum(norm, 1e-15)
@@ -1185,10 +1226,10 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     theta_f = np.arccos(np.clip(-cz_c, -1.0, 1.0))
     phi_f   = np.arctan2(cy_c, cx_c)
 
-    # For stopped muons at depth_axis=2, z_f = -d_cm (plane depth) is wrong;
-    # use z_acc as the integrated depth displacement (≈ stopping depth for |cz|≈1).
+    # For stopped muons z_f = -d_cm (plane depth) is wrong; use the actual
+    # integrated position — same convention as the PROPOSAL/MUSIC drivers.
     alive_arr = alive.astype(int)
-    z_stop = np.where(alive_arr == 0, z_acc, z_f)   # stopping depth for dead muons
+    z_stop = np.where(alive_arr == 0, muons["z"] + z_acc, z_f)
 
     return dict(
         alive=alive_arr,
@@ -1270,10 +1311,12 @@ def _write_output(muons, result, fpath):
         fh.write("# E_convention: total_energy_GeV   (E = KE + 0.10566)\n")
         fh.write("# Cols: EventID xs ys zs Es[GeV] thetas phis charge alive"
                  " x y z E[GeV] cx cy cz theta phi\n")
+        # Surface column Es is total energy; fall back to kinetic + m for
+        # callers that build the muons dict without the raw file column.
+        Es_arr = muons.get("E_tot_GeV", muons["Ekin_GeV"] + M_MU_GEV)
         for i in range(len(muons["Ekin_GeV"])):
             alive_i = int(result["alive"][i])
-            # Source file column 11 is already total energy (E=5,10,20,50,100,300 GeV)
-            Es_GeV  = muons["Ekin_GeV"][i]
+            Es_GeV  = Es_arr[i]
             if alive_i:
                 x_i  = result["x_f"][i]
                 y_i  = result["y_f"][i]
@@ -1425,7 +1468,7 @@ def main():
         fs.write(f"# UCMuon-MC stopped muons  depth={depth_m:.2f} m\n")
         fs.write("# EventID  InitKE_GeV  StopDepth_cm\n")
         evids   = muons["EventID"][mask_stopped].astype(int)
-        initKEs = muons["Ekin_GeV"][mask_stopped] - M_MU_GEV
+        initKEs = muons["Ekin_GeV"][mask_stopped]
         stop_zs = np.abs(z_stop[mask_stopped])
         lines   = [f"{evid:10d}  {ke:13.6f}  {sz:13.4f}\n"
                    for evid, ke, sz in zip(evids, initKEs, stop_zs)]

@@ -125,7 +125,7 @@ program ucmuon_gen_omp
   integer(8)  :: i              ! accepted count (SHARED, updated in CRITICAL)
   integer     :: tim(8), iranlux
   integer     :: use_defaults
-  character(120) :: output_all, output_sel, output_phits
+  character(512) :: output_all, output_sel, output_phits
   real(8)        :: depth
   character(1)   :: dummy
   real(8)        :: alt_z_m, alt_p_avg, alt_L_p, alt_corr   ! altitude correction

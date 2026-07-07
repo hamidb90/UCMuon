@@ -10,8 +10,8 @@
 !
 ! Spectrum options:
 !   1 = CosmoALEPH:  dN/dp = 10^3.8467 * p^(-3.1952)  [default]
-!   2 = Power-law:   dN/dE ∝ E^(-3.7), E = E_min * u^(-1/2.7)
-!                    (Kudryavtsev/MUSIC convention, unbounded above E_min)
+!   2 = Power-law:   dN/dE ∝ E^(-3.7), truncated to [E_min, E_max]
+!                    (Kudryavtsev/MUSIC convention)
 !   3 = PARMA/EXPACS (handled externally in cosmoaleph_main_omp.f90)
 !   4 = Guan et al. (2015), arXiv:1509.06176
 !   5 = Frosin et al. (2025), J. Phys. G 52, 035002
@@ -30,6 +30,11 @@ module ucmuon_source_module
   real(8),  parameter :: MUON_MASS = 0.10566d0
   real(8),  parameter :: A_COSMO   = 3.8467d0
   real(8),  parameter :: B_COSMO   = -3.1952d0
+  ! The CosmoALEPH fit 10^A_COSMO * p^B_COSMO is in m^-2 s^-1 sr^-1 (GeV/c)^-1
+  ! (Schmelling 2013).  Convert to cm^-2 so the printed "Integrated flux"
+  ! carries the same unit as the Guan/Frosin/Bugaev/Reyna modes — the GUI
+  ! rate estimator multiplies it by an area in cm^2.
+  real(8),  parameter :: COSMO_M2_TO_CM2 = 1.0d-4
 
   real(8), parameter :: GUAN_P1 =  0.102573d0
   real(8), parameter :: GUAN_P2 = -0.068287d0
@@ -100,8 +105,11 @@ contains
 
     if (spectrum_mode == 2) then
       use_analytical = .true.
-      I_total = p_min**(-2.7d0) / 2.7d0
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      I_total = (p_min**(-2.7d0) - p_max**(-2.7d0)) / 2.7d0
+      ! NOT labelled "Integrated flux": this is a unitless sampling-shape
+      ! normalisation, and the GUI parses "Integrated flux" lines to
+      ! estimate physical detector rates.
+      write(*,'(A,ES12.4)') '  Sampling-shape norm (arbitrary units): ', I_total
       write(*,*) '  Spectrum mode:     Power-law E^-3.7 (legacy MUSIC cross-check)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -218,10 +226,11 @@ contains
     ! Mode 1: CosmoALEPH
     if (p_min < 10.0d0) then
       use_analytical = .true.
-      I_total = (10d0**A_COSMO) &
+      I_total = (10d0**A_COSMO) * COSMO_M2_TO_CM2 &
               * (p_max**(B_COSMO+1d0) - p_min**(B_COSMO+1d0)) &
               / (B_COSMO + 1d0)
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, &
+                              ' cm^-2 s^-1 sr^-1'
       write(*,*) '  Spectrum mode:     CosmoALEPH (analytical)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -233,7 +242,7 @@ contains
       p_cdf(j) = p_min * exp( dble(j-1)/dble(NGRID-1) * log(p_max/p_min) )
     end do
     do j = 1, NGRID
-      flux(j) = 10d0**A_COSMO * p_cdf(j)**B_COSMO
+      flux(j) = 10d0**A_COSMO * COSMO_M2_TO_CM2 * p_cdf(j)**B_COSMO
     end do
     partial(1) = 0d0
     do j = 2, NGRID
@@ -326,8 +335,12 @@ contains
       case (2)
         theta = sample_cos2(theta_max)
       case (3)
+        ! Uniform in solid angle within the cone: cos(theta) uniform on
+        ! [cos(theta_max), 1].  (Uniform-in-theta oversampled the axis
+        ! by 1/sin(theta) per unit solid angle.)  Same convention as the
+        ! PARMA path in the generator main programs.
         call par_ranlux(yfl)       ! <-- OMP change
-        theta = dble(yfl) * theta_max
+        theta = acos(1.d0 - dble(yfl)*(1.d0 - cos(theta_max)))
       case (4)
         theta = sample_guan_angle(emu, theta_max)
       case (5)
@@ -374,8 +387,16 @@ contains
     end if
 
     if (spectrum_mode == 2) then
-      p = p_min_stored * (u**(-1.0d0/2.7d0))
-      if (p > p_max_stored) p = p_max_stored
+      ! Exact inverse CDF for dN/dp ∝ p^-3.7 truncated to [p_min, p_max].
+      ! (Clamping the unbounded sample piled the overflow mass into a
+      ! delta spike at p_max — ~15% of events for a factor-2 window.)
+      block
+        real(8) :: alpha, A_lo, A_hi
+        alpha = -2.7d0
+        A_lo  = p_min_stored ** alpha
+        A_hi  = p_max_stored ** alpha
+        p     = (A_lo + u * (A_hi - A_lo)) ** (1.0d0 / alpha)
+      end block
       return
     end if
 

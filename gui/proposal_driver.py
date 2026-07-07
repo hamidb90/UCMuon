@@ -67,6 +67,54 @@ def _medium(pp, name, dmult=1.0):
     except TypeError: return pp.medium.StandardRock()
 
 
+def _sternheimer_params(Z, A, I_eV, rho_gcm3):
+    """
+    Sternheimer–Peierls density-effect parameters for a solid from
+    (Z_eff, A_eff, I, rho)  (Sternheimer & Peierls 1971, PDG §34.2.5).
+    Returns (Cbar, a, m, X0, X1, d0).  Approximate (the exact fitted
+    values per material differ at the few-% level in delta), but far
+    closer than using Standard Rock's Z/A and I.
+    """
+    import math
+    hw_p = 28.816 * math.sqrt(max(rho_gcm3 * Z / A, 1e-12))  # plasma energy [eV]
+    Cbar = 2.0 * math.log(I_eV / hw_p) + 1.0
+    if I_eV < 100.0:
+        X1 = 2.0
+        X0 = 0.2 if Cbar < 3.681 else 0.326 * Cbar - 1.0
+    else:
+        X1 = 3.0
+        X0 = 0.2 if Cbar < 5.215 else 0.326 * Cbar - 1.5
+    m = 3.0
+    a = (Cbar - 2.0 * math.log(10.0) * X0) / (X1 - X0) ** m
+    return Cbar, a, m, X0, X1, 0.0
+
+
+def _custom_medium(pp, Z, A, I_eV, rho_gcm3):
+    """
+    Build a true custom PROPOSAL medium from (Z_eff, A_eff, I, rho).
+    PROPOSAL 7.6.x signature:
+        Medium(name, I, C, a, m, X0, X1, d0, massDensity, components)
+    with C negative (as in the built-in media definitions).
+    Returns None on failure so the caller can fall back to the legacy
+    density-scaled StandardRock (which ignores Z/A and I).
+    """
+    Cbar, a, m, X0, X1, d0 = _sternheimer_params(Z, A, I_eV, rho_gcm3)
+    try:
+        comp = pp.component.Component("Custom", float(Z), float(A), 1.0)
+        med  = pp.medium.Medium("CustomMaterial", float(I_eV), -Cbar, a, m,
+                                X0, X1, d0, float(rho_gcm3), [comp])
+        print(f"  [medium] custom: Z={Z:g} A={A:g} I={I_eV:g} eV "
+              f"rho={rho_gcm3:g} g/cm3  Z/A={Z/A:.4f}", flush=True)
+        print(f"  [medium] Sternheimer: Cbar={Cbar:.4f} a={a:.5f} "
+              f"m={m:.2f} X0={X0:.4f} X1={X1:.4f}", flush=True)
+        return med
+    except Exception as exc:
+        print(f"  [warn] custom Medium construction failed ({exc}) — "
+              f"falling back to density-scaled StandardRock "
+              f"(rock Z/A and I, NOT the requested values)", flush=True)
+        return None
+
+
 def _density_dist(pp, rho_gcm3):
     dd = pp.density_distribution
     for fn_name in ["density_homogeneous","DensityHomogeneous",
@@ -132,10 +180,14 @@ def _make_mcs(pp, scat_name, pdef, medium, xs):
     return None
 
 
-def build_propagator(pp, pdef, med_name, ecut, vcut, dmult=1.0, scat_name="Moliere"):
-    ref_rho = _REF_RHO.get(med_name, 2.65)
-    rho     = ref_rho * dmult
-    medium  = _medium(pp, med_name, dmult)
+def build_propagator(pp, pdef, med_name, ecut, vcut, dmult=1.0, scat_name="Moliere",
+                     medium=None, rho=None):
+    if medium is None:
+        ref_rho = _REF_RHO.get(med_name, 2.65)
+        rho     = ref_rho * dmult
+        medium  = _medium(pp, med_name, dmult)
+    elif rho is None:
+        rho = float(getattr(medium, "mass_density", 2.65))
     cuts    = pp.EnergyCutSettings(ecut, vcut, False)   # positional only in v7.6.2
     xs      = pp.crosssection.make_std_crosssection(
         particle_def=pdef, target=medium, interpolate=True, cuts=cuts)
@@ -232,10 +284,12 @@ def main():
     med_type = int(nxt("1"))
 
     custom_rho = None
+    custom_ZAI = None            # (Z_eff, A_eff, I_eV) — GUI order: Z A rho I
     if med_type == 5:
-        nxt("11"); nxt("22")
+        c_Z = float(nxt("11")); c_A = float(nxt("22"))
         custom_rho = float(nxt("2.65"))
-        nxt("136.4")
+        c_I = float(nxt("136.4"))
+        custom_ZAI = (c_Z, c_A, c_I)
 
     transport_all = int(nxt("0")) == 1
     ecut          = float(nxt("500"))
@@ -279,12 +333,21 @@ def main():
     print(f"PROPOSAL {pp.__version__}", flush=True)
     _set_tables_dir(pp, tables_dir)
 
+    # True custom medium from (Z, A, I, rho) — previously Z, A and I were
+    # discarded and the custom material transported as density-scaled rock.
+    med_obj = None
+    if custom_ZAI is not None:
+        med_obj = _custom_medium(pp, custom_ZAI[0], custom_ZAI[1],
+                                 custom_ZAI[2], custom_rho)
+
     print("Building propagators ...", flush=True)
     try:
         pm  = build_propagator(pp, pp.particle.MuMinusDef(),
-                               med_name, ecut, vcut, dmult, scat_name)
+                               med_name, ecut, vcut, dmult, scat_name,
+                               medium=med_obj, rho=custom_rho if med_obj else None)
         pp2 = build_propagator(pp, pp.particle.MuPlusDef(),
-                               med_name, ecut, vcut, dmult, scat_name)
+                               med_name, ecut, vcut, dmult, scat_name,
+                               medium=med_obj, rho=custom_rho if med_obj else None)
     except Exception as exc:
         print(f"ERROR: {exc}", file=sys.stderr, flush=True)
         sys.exit(1)

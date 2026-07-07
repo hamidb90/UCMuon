@@ -532,51 +532,31 @@ def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
     n_az, n_ze = overburden.shape
     flux_map = np.zeros((n_az, n_ze), dtype=np.float64)
 
-    # Pre-compute open-sky reference flux per zenith angle
-    # = backward MC with overburden = 0 (air-only, ~0 g/cm²)
+    # Open-sky reference per zenith angle: same integrator with X = 0, so
+    # transmission = flux_map / opensky_flux is consistent by construction.
     opensky_flux = np.zeros(n_ze)
     for iz, ze in enumerate(ze_c):
-        cos_ze    = max(np.cos(np.radians(ze)), 0.01)
-        # Use very thin overburden (1 g/cm²) to avoid division issues
-        E_thresh_GeV = 0.2   # minimum energy for integration
-        # Direct surface flux at this zenith angle
-        opensky_flux[iz] = float(np.sum(
-            bmc._flux_surface(
-                np.logspace(np.log10(E_thresh_GeV), np.log10(E_max_GeV), n_E),
-                np.radians(ze), spectrum_mode
-            )
-        )) * (np.log(E_max_GeV) - np.log(E_thresh_GeV)) / n_E
+        opensky_flux[iz] = bmc.directional_flux(
+            0.0, np.radians(ze), spectrum_mode,
+            E_min_GeV=E_min_GeV, E_max_GeV=E_max_GeV, n_E=n_E, mode=mode,
+        )
 
     total = n_az * n_ze
     done  = 0
 
     for ia in range(n_az):
         for iz, ze in enumerate(ze_c):
-            if open_sky_map[ia, iz]:
+            X = overburden[ia, iz]
+            if open_sky_map[ia, iz] or X < 1.0:   # effectively open sky
                 flux_map[ia, iz] = opensky_flux[iz]
             else:
-                X = overburden[ia, iz]
-                if X < 1.0:                # effectively open sky
-                    flux_map[ia, iz] = opensky_flux[iz]
-                else:
-                    # Depth in metres (vertical equivalent)
-                    cos_ze  = max(np.cos(np.radians(ze)), 0.02)
-                    depth_m = X / (rho * 100.0 * cos_ze)
-                    depth_m = max(depth_m, 1.0)   # at least 1 m
-
-                    res = bmc.backward_mc_flux(
-                        depth_m       = depth_m,
-                        rho           = rho,
-                        mat_id        = 1,          # Standard Rock by default
-                        spectrum_mode = spectrum_mode,
-                        E_min_GeV     = E_min_GeV,
-                        E_max_GeV     = E_max_GeV,
-                        theta_max_deg = ze,         # only this zenith bin
-                        n_E           = n_E,
-                        n_theta       = 1,          # single zenith bin
-                        mode          = mode,
-                    )
-                    flux_map[ia, iz] = res["rate_m2_s"]
+                # Exact slant opacity at the exact zenith angle — no
+                # vertical-equivalent depth round trip, no cone average.
+                flux_map[ia, iz] = bmc.directional_flux(
+                    X, np.radians(ze), spectrum_mode,
+                    E_min_GeV=E_min_GeV, E_max_GeV=E_max_GeV,
+                    n_E=n_E, mode=mode,
+                )
             done += 1
 
         if progress_cb and (ia + 1) % max(1, n_az // 10) == 0:

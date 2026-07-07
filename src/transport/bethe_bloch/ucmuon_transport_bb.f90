@@ -7,9 +7,11 @@
 ! table files required (unlike MUSIC).
 !
 ! Physics model
-! dE/dX = dE/dX_ion + b_rad * E
+! dE/dX = dE/dX_ion + b_rad * b_rad_shape(E) * E
 ! Bethe-Bloch ionisation (PDG 2022, eq. 34.5) + Sternheimer density correction.
-! Radiative: dE/dX_rad = b_rad * E  (b from Groom 2001 Table 34.2).
+! Radiative: dE/dX_rad = b_rad * b_rad_shape(E) * E; b_rad is the material
+! value at E_tot = 100 GeV, b_rad_shape carries the PDG-2024 energy
+! dependence (see ucmuon_transport_bb_omp.f90).
 ! Multiple scattering: Highland formula (PDG 34.3), 3D rotation per step.
 ! Integration: CSDA, fixed 10 g/cm2 steps along slant path.
 !
@@ -109,7 +111,8 @@ program ucmuon_transport_bb
     select case (mat_type)
       case (1)
         Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
-        X0_gcm2=26.54d0; b_rad=3.08d-6
+        ! b_rad = value at E_tot = 100 GeV; energy dependence via b_rad_shape
+        X0_gcm2=26.54d0; b_rad=3.02d-6
       case (2)
         Z_eff=7.42d0; A_eff=14.99d0; rho_mat=0.917d0; I_eV=79.7d0
         X0_gcm2=36.08d0; b_rad=3.40d-6
@@ -125,11 +128,11 @@ program ucmuon_transport_bb
         write(*,*) ' Density [g/cm3]:';   read(*,*) rho_mat
         write(*,*) ' Mean excitation energy I [eV]:'; read(*,*) I_eV
         X0_gcm2 = 716.408d0*A_eff / (Z_eff*(Z_eff+1.d0)*(11.319d0-log(Z_eff)))
-        b_rad   = max(3.08d-6*(Z_eff**2/A_eff)/(121.d0/22.d0), 1.d-7)
+        b_rad   = max(3.02d-6*(Z_eff**2/A_eff)/(121.d0/22.d0), 1.d-7)
       case default
         write(*,*) ' Unknown mat_type — defaulting to Standard Rock.'
         Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
-        X0_gcm2=26.54d0; b_rad=3.08d-6; mat_type=1
+        X0_gcm2=26.54d0; b_rad=3.02d-6; mat_type=1
     end select
 
     write(*,*) ' --- [3/5] Geometry ---'
@@ -595,7 +598,8 @@ contains
       else
         dEdX = K_*(Zat/Aat)/max(beta2,1.d-12)
       end if
-      dEdX = max(dEdX, 1.d-6) + b*E
+      ! b is the 100 GeV value; b_rad_shape carries the energy dependence
+      dEdX = max(dEdX, 1.d-6) + b*b_rad_shape(E)*E
 
       E = E - dEdX*ds_gcm2
       if (E <= EMIN_) return
@@ -611,9 +615,11 @@ contains
                    (1.d0 + 0.038d0*log(t_X0))
           if (theta0 <= 0.d0) cycle
 
+          ! Rayleigh(theta0) polar deflection: Highland theta0 is the RMS
+          ! projected angle; a Gaussian polar angle under-scatters by sqrt(2).
           call ranlux(rr, 4)
           rr(1) = max(rr(1), 1.e-30)
-          theta_s = theta0*sqrt(-2.d0*log(dble(rr(1))))*cos(TWO_P_*dble(rr(2)))
+          theta_s = theta0*sqrt(-2.d0*log(dble(rr(1))))
           phi_s   = TWO_P_*dble(rr(3))
 
           if (abs(cx) <= abs(cy) .and. abs(cx) <= abs(cz)) then
@@ -638,5 +644,37 @@ contains
       end if
     end do
   end subroutine transport_bb
+
+  !===========================================================================
+  ! b_rad_shape — PDG-2024 rock radiative-b energy dependence, normalised
+  ! to 1 at E_tot = 100 GeV (mirror of ucmuon_transport_bb_omp.f90).
+  !===========================================================================
+  real(8) function b_rad_shape(E_tot)
+    implicit none
+    real(8), intent(in) :: E_tot   ! total energy [GeV]
+    integer, parameter :: NB = 15
+    real(8), parameter :: EB(NB) = (/ 0.2d0, 0.5d0, 1.0d0, 2.0d0, 5.0d0, &
+         10.0d0, 20.0d0, 50.0d0, 100.0d0, 200.0d0, 500.0d0, 1000.0d0, &
+         2000.0d0, 5000.0d0, 10000.0d0 /)
+    real(8), parameter :: SB(NB) = (/ 0.16249d0, 0.21144d0, 0.24846d0, &
+         0.34867d0, 0.49733d0, 0.60751d0, 0.72233d0, 0.88382d0, 1.00000d0, &
+         1.10938d0, 1.22605d0, 1.29981d0, 1.35654d0, 1.41206d0, 1.44280d0 /)
+    real(8) :: le, frac
+    integer :: j
+    if (E_tot <= EB(1)) then
+      b_rad_shape = SB(1);  return
+    else if (E_tot >= EB(NB)) then
+      b_rad_shape = SB(NB); return
+    end if
+    le = log(E_tot)
+    do j = 2, NB
+      if (E_tot <= EB(j)) then
+        frac = (le - log(EB(j-1))) / (log(EB(j)) - log(EB(j-1)))
+        b_rad_shape = exp( log(SB(j-1)) + frac*(log(SB(j)) - log(SB(j-1))) )
+        return
+      end if
+    end do
+    b_rad_shape = SB(NB)
+  end function b_rad_shape
 
 end program ucmuon_transport_bb

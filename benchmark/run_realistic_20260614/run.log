@@ -1,41 +1,47 @@
 ============================================================
-  Source : /Users/basiri/Codes/GitHub/UCMuon/output/muons_surface.dat
+  Source : /Users/basiri/Codes/GitHub/UCMuon/benchmark/sources/muons_surface_real100.dat
   Outdir : /Users/basiri/Codes/GitHub/UCMuon/benchmark/run_realistic_20260614
-  Depths : 10 25 50 100 200 m
-  Started: Sun Jun 14 09:25:14 CEST 2026
+  Depths : 1 10 25 50 100 200 m
+  Started: Sun Jul  5 16:06:52 CEST 2026
 ============================================================
 
-######################## depth = 10 m ########################
-  [BB]       1s
-  [MUSIC]    1s
+######################## depth = 1 m ########################
+  [BB]       2s
+  [MUSIC]    2s
   [PROPOSAL] 4s
+  [UCMuon]   4s
+
+######################## depth = 10 m ########################
+  [BB]       3s
+  [MUSIC]    2s
+  [PROPOSAL] 8s
   [UCMuon]   6s
 
 ######################## depth = 25 m ########################
-  [BB]       2s
-  [MUSIC]    2s
-  [PROPOSAL] 7s
-  [UCMuon]   14s
-
-######################## depth = 50 m ########################
   [BB]       3s
   [MUSIC]    3s
-  [PROPOSAL] 16s
-  [UCMuon]   25s
+  [PROPOSAL] 15s
+  [UCMuon]   10s
+
+######################## depth = 50 m ########################
+  [BB]       5s
+  [MUSIC]    6s
+  [PROPOSAL] 31s
+  [UCMuon]   19s
 
 ######################## depth = 100 m ########################
-  [BB]       4s
-  [MUSIC]    6s
-  [PROPOSAL] 47s
-  [UCMuon]   35s
+  [BB]       7s
+  [MUSIC]    12s
+  [PROPOSAL] 86s
+  [UCMuon]   28s
 
 ######################## depth = 200 m ########################
-  [BB]       2s
-  [MUSIC]    14s
-  [PROPOSAL] 117s
-  [UCMuon]   39s
+  [BB]       5s
+  [MUSIC]    27s
+  [PROPOSAL] 230s
+  [UCMuon]   31s
 
 ============================================================
-  Finished: Sun Jun 14 09:31:02 CEST 2026
+  Finished: Sun Jul  5 16:16:01 CEST 2026
   Outputs : /Users/basiri/Codes/GitHub/UCMuon/benchmark/run_realistic_20260614/{BB,MUSIC,PROPOSAL,UCMuon}/
 ============================================================

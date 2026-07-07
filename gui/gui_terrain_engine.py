@@ -252,7 +252,10 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
             depth_m    = ob_gcm2 / (rho * 100.0 * cos_ze)
             depth_m    = max(depth_m, 0.5)
 
-            # Build per-muon dict matching transport() API
+            # Build per-muon dict matching transport() API.
+            # Surface column E is TOTAL energy; transport() expects kinetic.
+            _E_tot = bin_df["E"].values.astype(float)
+            _E_kin = np.maximum(_E_tot - drv.M_MU_GEV, 0.0)
             mu = dict(
                 EventID = bin_df["EventID"].values.astype(int),
                 x       = bin_df["x"].values.astype(float),
@@ -260,8 +263,9 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
                 z       = bin_df["z"].values.astype(float),
                 theta   = bin_df["theta"].values.astype(float),
                 phi     = bin_df["phi"].values.astype(float),
-                Ekin_GeV= bin_df["E"].values.astype(float),
-                Ekin_MeV= bin_df["E"].values.astype(float) * 1000.0,
+                E_tot_GeV= _E_tot,
+                Ekin_GeV= _E_kin,
+                Ekin_MeV= _E_kin * 1000.0,
                 charge  = bin_df["charge"].values.astype(int),
                 cx      = bin_df["cx"].values.astype(float),
                 cy      = bin_df["cy"].values.astype(float),
@@ -281,7 +285,7 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
                     "xs":      float(mu["x"][k]),
                     "ys":      float(mu["y"][k]),
                     "zs":      float(mu["z"][k]),
-                    "Es":      float(mu["Ekin_GeV"][k]),
+                    "Es":      float(mu["E_tot_GeV"][k]),
                     "theta_s": float(mu["theta"][k]),
                     "phi_s":   float(mu["phi"][k]),
                     "charge":  int(mu["charge"][k]),
@@ -290,7 +294,9 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
                     "x":       float(result["x_f"][k]),
                     "y":       float(result["y_f"][k]),
                     "z":       float(result["z_f"][k]),
-                    "E":       float(result["E_kin_f_MeV"][k]) / 1000.0,  # MeV → GeV
+                    # 18-col convention: E = total energy for survivors, 0 stopped
+                    "E":       (float(result["E_kin_f_MeV"][k]) / 1000.0 + drv.M_MU_GEV
+                                if result["alive"][k] else 0.0),
                     "cx":      float(result["cx_f"][k]),
                     "cy":      float(result["cy_f"][k]),
                     "cz":      float(result["cz_f"][k]),
@@ -337,6 +343,21 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
     n_total = len(surface_df)
     n_done  = 0
     n_bins  = n_az * n_ze
+
+    # Compiled binaries live in bin/, not the project root; MUSIC must also
+    # RUN from bin/ because its table files (music-eloss-*.dat,
+    # music-double-diff-*.dat) are opened relative to the CWD — same setup
+    # as the Transport tab.
+    bin_dir = Path(project_dir) / "bin"
+    if engine == "MUSIC":
+        if not ((bin_dir / "ucmuon_transport_music_omp").exists()
+                or (bin_dir / "ucmuon_transport_music").exists()):
+            raise FileNotFoundError(
+                "MUSIC binary not found in bin/ "
+                "(ucmuon_transport_music_omp) — run `make local`."
+            )
+    n_failed_bins = 0
+    last_fail_msg = ""
 
     # Precompute column format — surface file is 13-col or 14-col
     ncols  = engine_cfg.get("ncols", 13)
@@ -392,18 +413,20 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
                        "infile": tmp_in, "outfile": tmp_out,
                        "depth_m": depth_m, "transport_all": True, "ncols": ncols}
 
+            run_cwd = project_dir
             if engine == "MUSIC":
                 stdin_str = build_music_input_fn(cfg_bin)
-                if (project_dir / "ucmuon_transport_music_omp").exists():
-                    cmd = [str(project_dir / "ucmuon_transport_music_omp")]
+                if (bin_dir / "ucmuon_transport_music_omp").exists():
+                    cmd = [str(bin_dir / "ucmuon_transport_music_omp")]
                 else:
-                    cmd = [str(project_dir / "cosmoaleph_music_driver")]
+                    cmd = [str(bin_dir / "ucmuon_transport_music")]
                 env_run = {**os.environ, "OMP_NUM_THREADS": "1"}
+                run_cwd = bin_dir   # MUSIC table files are opened relative to CWD
 
             elif engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":
                 stdin_str = build_phitsxs_input_fn(cfg_bin)
                 _bb_py  = script_dir / "ucmuon_bb_driver.py"
-                _bb_bin = project_dir / "ucmuon_transport_bb_omp"
+                _bb_bin = bin_dir / "ucmuon_transport_bb_omp"
                 if _bb_py.exists():
                     cmd     = [sys.executable, str(_bb_py)]
                     env_run = {**os.environ}
@@ -424,15 +447,17 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
                 continue
 
             # Run subprocess
+            proc_res = None
             try:
-                subprocess.run(
+                proc_res = subprocess.run(
                     cmd, input=stdin_str, capture_output=True, text=True,
-                    cwd=str(project_dir), env=env_run, timeout=300,
+                    cwd=str(run_cwd), env=env_run, timeout=300,
                 )
-            except Exception:
-                pass
+            except Exception as _sub_exc:
+                last_fail_msg = f"{cmd[0]}: {_sub_exc}"
 
             # Read output
+            _bin_ok = False
             if Path(tmp_out).exists() and Path(tmp_out).stat().st_size > 0:
                 try:
                     import pandas as _pd
@@ -443,8 +468,18 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
                             "x,y,z,E,cx,cy,cz,theta,phi"
                         ).split(",")
                         out_dfs.append(_df_bin)
-                except Exception:
-                    pass
+                        _bin_ok = True
+                    else:
+                        last_fail_msg = (f"unexpected column count "
+                                         f"{_df_bin.shape[1]} in engine output")
+                except Exception as _read_exc:
+                    last_fail_msg = f"could not read engine output: {_read_exc}"
+            elif proc_res is not None:
+                _tail = ((proc_res.stderr or "") + (proc_res.stdout or ""))[-400:]
+                last_fail_msg = (f"engine wrote no output "
+                                 f"(exit {proc_res.returncode}): …{_tail}")
+            if not _bin_ok:
+                n_failed_bins += 1
 
             Path(tmp_in).unlink(missing_ok=True)
             Path(tmp_out).unlink(missing_ok=True)
@@ -456,6 +491,17 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
                     frac,
                     text=f"⏳  {n_done:,} / {n_total:,} muons  |  bin {ia*n_ze+iz+1}/{n_bins}  ({100*frac:.0f}%)"
                 )
+
+    if n_failed_bins and not out_dfs:
+        raise RuntimeError(
+            f"{engine} transport failed for all {n_failed_bins} occupied "
+            f"direction bin(s). Last error: {last_fail_msg}"
+        )
+    if n_failed_bins:
+        st.warning(
+            f"⚠️  {engine}: {n_failed_bins} direction bin(s) produced no "
+            f"transport output and were dropped. Last error: {last_fail_msg}"
+        )
 
     if out_dfs:
         import pandas as pd
@@ -2541,8 +2587,30 @@ def render_terrain_tab(script_dir, project_dir,
                 # Replace pure-Python for-loops (O(N) CPython, ~60 s at 1 M muons) with
                 # numpy np.add.at (vectorised, ~0.3 s).
                 _n_az_v, _n_ze_v = len(az_c), len(ze_c)
-                _ze_max_v = float(ze_c[-1]) + 5.0
-                _az_idx, _ze_idx = assign_direction_bins(df_ug, _n_az_v, _n_ze_v, _ze_max_v)
+                # Bin edges must match the overburden/transport grid exactly:
+                # ze_c are bin CENTRES of linspace(0, ze_max, n_ze+1) edges, so
+                # the grid edge is centre + half-step (85.0 for the defaults).
+                _ze_step_v = (float(ze_c[1] - ze_c[0]) if _n_ze_v > 1
+                              else 2.0 * float(ze_c[0]))
+                _ze_max_v  = float(ze_c[-1]) + 0.5 * _ze_step_v
+                # Bin by the SURFACE direction (theta_s/phi_s): it exists for
+                # both alive and stopped rows — several engines reset a stopped
+                # muon's exit direction to (0,0,-1), which would pile every
+                # stopped muon into the vertical bin — and it matches the
+                # binning used to assign per-direction depths during transport.
+                if "theta_s" in df_ug.columns and "phi_s" in df_ug.columns:
+                    import pandas as _pd_bins
+                    _th_s = df_ug["theta_s"].values.astype(float)
+                    _ph_s = df_ug["phi_s"].values.astype(float)
+                    _df_bin_src = _pd_bins.DataFrame({
+                        "cx":  np.sin(_th_s) * np.cos(_ph_s),
+                        "cy":  np.sin(_th_s) * np.sin(_ph_s),
+                        "cz": -np.cos(_th_s),
+                    })
+                else:
+                    _df_bin_src = df_ug
+                _az_idx, _ze_idx = assign_direction_bins(
+                    _df_bin_src, _n_az_v, _n_ze_v, _ze_max_v)
     
                 # Valid mask: bin indices are in range
                 _valid_mask = ((_az_idx >= 0) & (_az_idx < _n_az_v) &
@@ -2738,8 +2806,11 @@ def render_terrain_tab(script_dir, project_dir,
                                 _lon_ts = _sf(st.session_state.get("terrain_lon", 0.0), 0.0)
                                 _alt_ts = _sf(st.session_state.get("terrain_alt", 0.0), 0.0)
                                 _drv_ts = _load_terrain_driver(script_dir)
+                                # Bins with no muons stay NaN ("no data"):
+                                # writing 0 would make the density inversion
+                                # read them as fully blocked rock (rho_max).
                                 _drv_ts.write_transmission_map(
-                                    az_c, ze_c, np.nan_to_num(_T_norm, nan=0.0),
+                                    az_c, ze_c, _T_norm,
                                     _tsim_fname,
                                     _lat_ts, _lon_ts, _alt_ts, _rho_curr_ts,
                                 )

@@ -132,14 +132,15 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
         R_std  = np.clip(R_exit / a_scale, r_tab[0], r_tab[-1])
         E_cur  = np.where(alive_bool, np.interp(R_std, r_tab, t_tab), 0.0)
 
-        # Straight-line position: full slant for alive; fractional for stopped
+        # Straight-line position: full slant for alive; fractional for stopped.
+        # z is tracked for every depth axis so stopped muons report their true
+        # stopping depth (survivors on an XY source are snapped to -d_cm below).
         frac      = np.where(alive_bool, 1.0,
                              np.clip(R0 / np.maximum(slant_gcm2, 1e-9), 0.0, 1.0))
         slant_cm  = d_cm / depth_cos
         x_acc = cx_c * slant_cm * frac
         y_acc = cy_c * slant_cm * frac
-        if depth_axis != 2:
-            z_acc = cz_c * slant_cm * frac
+        z_acc = cz_c * slant_cm * frac
 
         alive = alive_bool.astype(int)
         if progress_cb:
@@ -149,9 +150,13 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     else:
         alive = np.ones(N, dtype=bool)
 
-        # CSDA pre-filter: instantly kill muons with insufficient range
+        # CSDA pre-filter: instantly kill muons with insufficient range.
+        # Pre-filtered muons never enter the stepping loop — assign their CSDA
+        # stopping displacement so z_stop reports a physical depth, not 0.
         R0 = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab) * a_scale
-        alive[R0 < slant_gcm2] = False
+        prefilt = R0 < slant_gcm2
+        alive[prefilt] = False
+        z_acc[prefilt] = cz_c[prefilt] * (R0[prefilt] / rho)
 
         # Adaptive step: 100 g/cm² default (26× larger than Fortran's 10 g/cm²)
         if n_steps <= 0:
@@ -170,11 +175,11 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
             dx_i    = dx[idx]
             dx_cm_i = dx_i / rho
 
-            # Position update BEFORE MCS (direction at step entry)
+            # Position update BEFORE MCS (direction at step entry).
+            # z accumulated for every depth axis — needed for stopping depth.
             x_acc[idx] += cx_c[idx] * dx_cm_i
             y_acc[idx] += cy_c[idx] * dx_cm_i
-            if depth_axis != 2:
-                z_acc[idx] += cz_c[idx] * dx_cm_i
+            z_acc[idx] += cz_c[idx] * dx_cm_i
 
             # CSDA energy loss (vectorized interp on alive muons only)
             dEdX   = np.interp(np.clip(E_i, t_tab[0], t_tab[-1]),
@@ -196,7 +201,9 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
                           * (1.0 + 0.038 * np.log(np.maximum(t_X0, 1e-12))))
 
                 phi_az  = rng.uniform(0.0, 2.0 * np.pi, size=la.sum())
-                dth     = rng.normal(0.0, theta0)
+                # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS
+                # projected angle; a Gaussian polar angle under-scatters by sqrt(2).
+                dth     = rng.rayleigh(theta0)
                 sin_dth = np.sin(dth);  cos_dth = np.cos(dth)
                 cos_phi = np.cos(phi_az); sin_phi = np.sin(phi_az)
 
@@ -355,7 +362,7 @@ def main():
         for i in range(N):
             if alive_arr[i] == 0:
                 evid   = int(muons["EventID"][i])
-                initKE = float(muons["Ekin_GeV"][i]) - M_MU_GEV
+                initKE = float(muons["Ekin_GeV"][i])
                 stop_z = abs(float(z_stop[i]))
                 fs.write(f"{evid:10d}  {initKE:13.6f}  {stop_z:13.4f}\n")
                 n_stopped += 1

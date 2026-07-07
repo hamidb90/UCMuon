@@ -129,7 +129,7 @@ program ucmuon_transport_music_omp
   read(*,*) rho
   if (rho <= 0.d0) rho = 2.65d0
 
-  write(*,*) ' Radiation length [cm]  (Enter = 26.48):'
+  write(*,*) ' Radiation length [g/cm^2]  (Enter = 26.48):'
   read(*,*) rad
   if (rad <= 0.d0) rad = 26.48d0
 
@@ -287,7 +287,7 @@ program ucmuon_transport_music_omp
   write(*,'(A,A)')       '  Input:            ', trim(infile)
   write(*,'(A,A)')       '  Output:           ', trim(outfile)
   write(*,'(A,F7.3,A)')  '  Density:          ', rho, ' g/cm^3'
-  write(*,'(A,F7.2,A)')  '  Rad. length:      ', rad, ' cm'
+  write(*,'(A,F7.2,A)')  '  Rad. length:      ', rad, ' g/cm^2'
   write(*,'(A,F8.2,A)')  '  Depth:            ', depth_m, ' m'
   write(*,'(A,F10.1,A)') '  Depth (w.e.):     ', depth_cm*rho, ' g/cm^2'
   write(*,'(A,A)')       '  Material group:   ', trim(mat_suffix)

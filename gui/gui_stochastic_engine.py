@@ -221,12 +221,9 @@ def build_stochastic_stdin(cfg):
 
     rho_val = cfg.get("rho", 2.65)
     rad_val = cfg.get("rad", 26.48)
-    # GUI stores rad in g/cm² for rock/seawater (mat_id 1, 3) and in cm for
-    # water/iron/ice (mat_id 2, 4, 6).  Driver expects X₀ in cm.
-    if mat_id in (1, 3):
-        x0_cm = rad_val / max(rho_val, 1e-3)   # g/cm² → cm
-    else:
-        x0_cm = rad_val                          # already in cm
+    # GUI stores X₀ in g/cm² for every material (MUSIC's native unit);
+    # the driver expects X₀ in cm.
+    x0_cm = rad_val / max(rho_val, 1e-3)   # g/cm² → cm
 
     # Params 12-15: custom material (always emitted so params 16/17 land correctly)
     Z_eff  = cfg.get("stochastic_Z",     11.0)

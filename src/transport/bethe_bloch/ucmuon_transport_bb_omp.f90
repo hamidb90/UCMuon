@@ -9,7 +9,7 @@
 ! Only ranlux_omp.o is needed (built by "make omp" in step 5 of setup.sh).
 !
 ! Physics implemented:
-!   dE/dX = dE/dX_ion  +  b_rad * E
+!   dE/dX = dE/dX_ion  +  b_rad * b_rad_shape(E) * E
 !
 !   Bethe-Bloch ionisation (PDG 2022, eq. 34.5):
 !     dE/dX_ion = K (Z/A) (1/beta^2) [0.5 ln(2 me c^2 beta^2 gamma^2 Tmax / I^2)
@@ -18,7 +18,9 @@
 !     Density correction delta: Sternheimer asymptotic via plasma energy
 !
 !   Radiative losses (bremsstrahlung + pair + photonuclear):
-!     dE/dX_rad = b_rad * E  (b from Groom 2001 / PDG table for each material)
+!     dE/dX_rad = b_rad * b_rad_shape(E) * E
+!     b_rad is the material value at E_tot = 100 GeV; b_rad_shape carries the
+!     PDG-2024 energy dependence (0.16 at 0.2 GeV -> 1.44 at 10 TeV for rock).
 !
 !   Multiple scattering (Highland formula, PDG 34.3):
 !     theta_0 = (13.6 MeV / (beta*p)) * |z| * sqrt(t/X0) * [1 + 0.038 ln(t/X0)]
@@ -28,6 +30,10 @@
 !
 ! Accuracy vs MUSIC:
 !   Survival fraction agrees to ~5-15% for std rock, 50-500 m depth.
+!   Known residual: the analytic Bethe-Bloch ionisation runs 2.6-3.4% below
+!   the PDG-2024 evaluated table above ~100 GeV (missing higher-order
+!   corrections), so exit energies sit ~2-3% above the table-based py-BB.
+!   Kept analytic on purpose: this engine is the self-contained cross-check.
 !   No stochastic energy-loss fluctuations (CSDA) — overestimates survival
 !   at high energies (>500 GeV) where catastrophic radiative losses matter.
 !   Use MUSIC for precision; this driver gives a physically independent check.
@@ -169,8 +175,10 @@ program ucmuon_transport_bb_omp
 
   select case(mat_type)
     case(1)  ! Standard Rock (Groom 2001 parameters)
+      ! b_rad is the value at E_tot = 100 GeV (PDG-2024 per-process table);
+      ! the energy dependence is applied via b_rad_shape(E).
       Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
-      X0_gcm2=26.54d0; b_rad=3.08d-6
+      X0_gcm2=26.54d0; b_rad=3.02d-6
     case(2)  ! Ice
       Z_eff=7.42d0; A_eff=14.99d0; rho_mat=0.917d0; I_eV=79.7d0
       X0_gcm2=36.08d0; b_rad=3.40d-6
@@ -189,11 +197,11 @@ program ucmuon_transport_bb_omp
       X0_gcm2 = 716.408d0 * A_eff / &
                 (Z_eff*(Z_eff + 1.d0)*log(287.d0/sqrt(Z_eff)))
       ! Radiative b scaled from std-rock reference (brems+pair ~ Z^2/A scaling)
-      b_rad = 3.08d-6 * (Z_eff**2/A_eff) / (121.d0/22.d0)
+      b_rad = 3.02d-6 * (Z_eff**2/A_eff) / (121.d0/22.d0)
       b_rad = max(b_rad, 1.d-7)
     case default
       Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
-      X0_gcm2=26.54d0; b_rad=3.08d-6; mat_type=1
+      X0_gcm2=26.54d0; b_rad=3.02d-6; mat_type=1
   end select
 
   write(*,*) ' Multiple scattering? (1=ON, 0=OFF):'
@@ -584,6 +592,7 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
   real(4) :: rr(4)
 
   external :: ranlux   ! from ranlux_omp.o  (THREADPRIVATE state)
+  real(8), external :: b_rad_shape
 
   I_GeV      = I_eV * 1.d-9
   slant_gcm2 = rho * slant_cm
@@ -629,8 +638,10 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
     end if
     dEdX = max(dEdX, 1.d-6)
 
-    ! Add radiative component:  b_rad * E  [GeV/(g/cm^2)]
-    dEdX = dEdX + b_rad * E
+    ! Add radiative component:  b_rad(E) * E  [GeV/(g/cm^2)]
+    ! (b_rad is the 100 GeV value; b_rad_shape carries the PDG-2024
+    !  energy dependence — a constant b under-counts ~15% at 300 GeV.)
+    dEdX = dEdX + b_rad * b_rad_shape(E) * E
 
     ! Update energy
     E = E - dEdX * ds_gcm2
@@ -660,11 +671,13 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
                  (1.d0 + 0.038d0 * log(t_X0))
 
         if (theta0 > 0.d0) then
-          ! Box-Muller: sample Gaussian-distributed scatter angle
+          ! Polar deflection is Rayleigh(theta0): Highland theta0 is the RMS
+          ! *projected* angle, and two independent N(0,theta0) projections
+          ! give a space angle theta0*sqrt(-2 ln u).  (A Gaussian polar angle
+          ! under-scatters by sqrt(2).)
           call ranlux(rr, 4)
           rr(1) = max(rr(1), 1.e-30)
-          theta_scat = theta0 * sqrt(-2.d0*log(dble(rr(1)))) * &
-                       cos(TWO_PI * dble(rr(2)))
+          theta_scat = theta0 * sqrt(-2.d0*log(dble(rr(1))))
           phi_scat   = TWO_PI * dble(rr(3))
 
           ! Construct orthonormal basis (e1, e2) perpendicular to (cx,cy,cz)
@@ -725,6 +738,7 @@ real(8) function csda_range(E_init, I_eV, Zat, Aat, b_rad, C_dens)
   real(8) :: gamma_mu, beta2, p_GeV, bg, Tmax
   real(8) :: x_dens, delta, log_arg, dedx_val
   integer :: k
+  real(8), external :: b_rad_shape
 
   csda_range = 0.d0
   if (E_init <= EMIN) return
@@ -761,9 +775,54 @@ real(8) function csda_range(E_init, I_eV, Zat, Aat, b_rad, C_dens)
     else
       dedx_val = K_BB*(Zat/Aat)/max(beta2, 1.d-12)
     end if
-    dedx_val = max(dedx_val, 1.d-6) + b_rad*E
+    dedx_val = max(dedx_val, 1.d-6) + b_rad*b_rad_shape(E)*E
 
     csda_range = csda_range + dE / dedx_val
     E = E - dE
   end do
 end function csda_range
+
+
+!=============================================================================
+! b_rad_shape  —  energy dependence of the radiative-loss coefficient b(E),
+! normalised to 1 at E_tot = 100 GeV.
+!
+! Nodes computed from the PDG-2024 Standard Rock per-process table
+! (brems+pair+photonuclear; same source as the UCMuon-MC v2 loss model):
+! b(E) = L_rad(E)/E.  Log-log interpolation, <1.6% error over 0.2 GeV-10 TeV,
+! clamped at the ends (radiative losses are negligible below 0.2 GeV).
+! The shape is applied to every material's b_rad, which is defined as the
+! value at 100 GeV; the ln E rise of brems/pair is material-universal at the
+! accuracy of this engine.
+!=============================================================================
+real(8) function b_rad_shape(E_tot)
+  implicit none
+  real(8), intent(in) :: E_tot   ! total energy [GeV]
+
+  integer, parameter :: NB = 15
+  real(8), parameter :: EB(NB) = (/ 0.2d0, 0.5d0, 1.0d0, 2.0d0, 5.0d0, &
+       10.0d0, 20.0d0, 50.0d0, 100.0d0, 200.0d0, 500.0d0, 1000.0d0, &
+       2000.0d0, 5000.0d0, 10000.0d0 /)
+  real(8), parameter :: SB(NB) = (/ 0.16249d0, 0.21144d0, 0.24846d0, &
+       0.34867d0, 0.49733d0, 0.60751d0, 0.72233d0, 0.88382d0, 1.00000d0, &
+       1.10938d0, 1.22605d0, 1.29981d0, 1.35654d0, 1.41206d0, 1.44280d0 /)
+
+  real(8) :: le, frac
+  integer :: j
+
+  if (E_tot <= EB(1)) then
+    b_rad_shape = SB(1);  return
+  else if (E_tot >= EB(NB)) then
+    b_rad_shape = SB(NB); return
+  end if
+
+  le = log(E_tot)
+  do j = 2, NB
+    if (E_tot <= EB(j)) then
+      frac = (le - log(EB(j-1))) / (log(EB(j)) - log(EB(j-1)))
+      b_rad_shape = exp( log(SB(j-1)) + frac*(log(SB(j)) - log(SB(j-1))) )
+      return
+    end if
+  end do
+  b_rad_shape = SB(NB)
+end function b_rad_shape

@@ -413,21 +413,33 @@ def trace_ray_to_cell(geom,
 # ─────────────────────────────────────────────────────────────────────────────
 
 # ─────────────────────────────────────────────────────────────────────────────
-# CSDA range table — Standard Rock, Groom (2001) Table IV-6, subset
-# Log-log interpolation: < 1% error over full 10 MeV – 1 TeV range.
-# No regime-boundary discontinuity.
+# CSDA range table — Standard Rock, KINETIC energy, sampled from the PDG-2024
+# evaluated table (same source as ucmuon_bb_driver._PDG24_R_FINE, 40 log-spaced
+# nodes).  Log-log interpolation: < 0.6% error over 10 MeV – 1 TeV.
+# The previous 15-point table did not match Groom/PDG (0.27× at 10 MeV to
+# 2.3× at 1 TeV) and was replaced wholesale.
 # ─────────────────────────────────────────────────────────────────────────────
 
 _CSDA_E_MEV = np.array([
-    10.,    20.,    40.,    80.,    160.,   300.,
-    600.,  1_000., 2_000., 4_000., 8_000.,
-    20_000., 60_000., 200_000., 1_000_000.
+    10, 13.434, 18.0472, 24.2446, 32.5702,
+    43.7548, 58.7802, 78.9652, 106.082, 142.51,
+    191.448, 257.191, 345.511, 464.159, 623.551,
+    837.678, 1125.34, 1511.78, 2030.92, 2728.33,
+    3665.24, 4923.88, 6614.74, 8886.24, 11937.8,
+    16037.2, 21544.3, 28942.7, 38881.6, 52233.5,
+    70170.4, 94266.8, 126638, 170125, 228546,
+    307029, 412463, 554102, 744380, 1e+06,
 ], dtype=float)
 
 _CSDA_R_GCM2 = np.array([
-    0.25,   0.80,   2.5,    7.8,    24.5,   72.0,
-    205.,   405.,   930.,  2_000.,  4_400.,
-    12_000., 37_000., 122_000., 560_000.
+    0.84, 1.42151, 2.38485, 3.95899, 6.51129,
+    10.496, 16.5879, 26.2155, 40.0859, 60.1492,
+    88.1736, 126.447, 178.902, 247.633, 338.957,
+    462.806, 621.755, 830.529, 1103.97, 1461.17,
+    1929.91, 2542.87, 3348.53, 4408.52, 5799.92,
+    7627.12, 10027.9, 13176.2, 17303.3, 22690.9,
+    29695, 38741, 50328.2, 65018.7, 83332.1,
+    106011, 133249, 165571, 202933, 245288,
 ], dtype=float)
 
 _LOG_E_TAB = np.log(_CSDA_E_MEV)
@@ -598,8 +610,9 @@ def transport_muons_through_csg(
         n_hit += 1
 
         # ── Energy at detector entry (CSDA through each pre-det segment) ──
+        # Surface E column is TOTAL energy; the CSDA table is kinetic.
         E_at_det_MeV = energy_after_segments(
-            E_s * 1000.0,      # GeV → MeV
+            max(E_s * 1000.0 - M_MU_MEV, 0.0),   # total GeV → kinetic MeV
             ray.segments,
         )
 
@@ -642,7 +655,9 @@ def transport_muons_through_csg(
                 n_steps=0, v_cut=v_cut, ms_enable=ms_enable, rng=rng,
             )
             alive    = int(result["alive"][0])
-            E_f_GeV  = float(result["E_kin_f_MeV"][0]) / 1000.0
+            # 18-col E convention: total energy for survivors, 0 if stopped
+            E_kin_f  = float(result["E_kin_f_MeV"][0])
+            E_f_GeV  = (E_kin_f + M_MU_MEV) / 1000.0 if alive and E_kin_f > 0 else 0.0
             cx_f     = float(result["cx_f"][0])
             cy_f     = float(result["cy_f"][0])
             cz_f     = float(result["cz_f"][0])
@@ -654,7 +669,7 @@ def transport_muons_through_csg(
         else:
             # No stochastic driver or zero path — use CSDA result directly
             alive   = 1
-            E_f_GeV = E_at_det_MeV / 1000.0
+            E_f_GeV = (E_at_det_MeV + M_MU_MEV) / 1000.0   # kinetic → total
             cx_f, cy_f, cz_f = direction[0], direction[1], direction[2]
             theta_f = np.arccos(np.clip(-cz_f, -1.0, 1.0))
             phi_f   = np.arctan2(cy_f, cx_f)
@@ -821,7 +836,9 @@ def transport_muons_multi_detector(
                 n_hit[cid] += 1
 
                 # CSDA energy loss to detector entry
-                E_at_det_MeV = energy_after_segments(E_s * 1000.0, ray.segments)
+                # Surface E column is TOTAL energy; the CSDA table is kinetic.
+                E_at_det_MeV = energy_after_segments(
+                    max(E_s * 1000.0 - M_MU_MEV, 0.0), ray.segments)
 
                 if E_at_det_MeV <= E_STOP_MEV:
                     det_x, det_y, det_z = ray.entry_pos_cm
@@ -836,7 +853,7 @@ def transport_muons_multi_detector(
                 cx_f, cy_f, cz_f = direction
                 theta_f = float(np.arccos(np.clip(-cz_f, -1.0, 1.0)))
                 phi_f   = float(np.arctan2(cy_f, cx_f))
-                E_f_GeV = E_at_det_MeV / 1000.0
+                E_f_GeV = (E_at_det_MeV + M_MU_MEV) / 1000.0   # kinetic → total
 
                 out_rows[cid].append({
                     "EventID": eid,
@@ -936,7 +953,8 @@ def write_phits_dump_file(df: "pd.DataFrame", path: str,
         for row in alive.itertuples(index=False):
             theta = float(row.theta)
             phi   = float(row.phi)
-            E_MeV = float(row.E) * 1000.0
+            # df E is total energy; PHITS dump energy is kinetic
+            E_MeV = max(float(row.E) * 1000.0 - M_MU_MEV, 0.0)
             f.write(
                 f"{row.x:14.6e} {row.y:14.6e} {row.z:14.6e} "
                 f"{row.cx:10.6f} {row.cy:10.6f} {row.cz:10.6f} "
@@ -1183,14 +1201,17 @@ def render_detector_cell_selector(geom) -> Optional[int]:
                 max_dist_cm= float(st.session_state.get("_csg_maxdist_cm", 500_000.0)),
             )
             if ray.hit:
-                E_det = energy_after_segments(sc_E * 1000.0, ray.segments)
+                # sc_E is total energy (same convention as the surface E column)
+                E_det_kin = energy_after_segments(
+                    max(sc_E * 1000.0 - M_MU_MEV, 0.0), ray.segments)
+                E_det = E_det_kin + M_MU_MEV if E_det_kin > 0 else 0.0
                 st.success(
                     f"**Hit ✓**  |  "
                     f"Entry ({ray.entry_pos_cm[0]/100:.2f}, "
                     f"{ray.entry_pos_cm[1]/100:.2f}, "
                     f"{ray.entry_pos_cm[2]/100:.2f}) m  |  "
                     f"OB before: **{ray.total_ob_gcm2:.0f} g/cm²**  |  "
-                    f"E at detector: **{E_det/1000:.3f} GeV** "
+                    f"E at detector: **{E_det/1000:.3f} GeV** total "
                     f"(Δ = {sc_E - E_det/1000:.3f} GeV)  |  "
                     f"Path through cell: {ray.path_through_cm/100:.1f} m  |  "
                     f"{len(ray.segments)} pre-det segments"

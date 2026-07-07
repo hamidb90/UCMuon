@@ -62,10 +62,25 @@ MuonElectronGenerator-main/
 # The curated, tracked copy lives in benchmark/ (codes, reports, figures, CSVs).
 benchmark/geant4_muon_rock_v5/
 
+# ── Raw per-engine benchmark run outputs (keep the curated CSVs/run.log only) ──
+benchmark/run_realistic_20260614/BB/
+benchmark/run_realistic_20260614/BB_fortran/
+benchmark/run_realistic_20260614/MUSIC/
+benchmark/run_realistic_20260614/PROPOSAL/
+benchmark/run_realistic_20260614/UCMuon/
+
 # ── Curated benchmark/ folder IS tracked ─────────────────────────────────────
 # Re-include its figures despite the global *.png rule above; never track raw data.
 !benchmark/figures/**/*.png
 benchmark/**/*.dat
+
+# ── Scratch working files (not needed to build/run — see misc/README.md) ─────
+misc/
+
+# ── Downloaded CPC author-guide web pages (not source; regenerable) ───────────
+references/Guide for authors*
+references/cpc_author_guide_files/
+manuscript/Guide for authors*
 
 # ── Claude Code internal ──────────────────────────────────────────────────────
 .claude/
@@ -76,3 +91,4 @@ manuscript/scripts/_fig07_work/
 manuscript/scripts/_hpc_scaling_work/
 manuscript/scripts/_parma_spec
 manuscript/scripts/*.mod
+manuscript/scripts/*.dSYM/

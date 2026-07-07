@@ -2,6 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
+__version__ = "1.0.0"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -223,6 +224,36 @@ def load_settings():
             st.session_state[k] = v
 load_settings()
 
+
+def _apply_pending_restore():
+    """Apply a Config-tab JSON restore stashed on the previous run.
+
+    Widget-keyed session-state entries can only be written BEFORE their
+    widget is instantiated in the current run (Streamlit raises
+    StreamlitAPIException otherwise), so the Config tab stores the parsed
+    JSON under _cfg_restore_pending and reruns; the values are applied
+    here, ahead of every widget.
+    """
+    pending = st.session_state.pop("_cfg_restore_pending", None)
+    if not pending:
+        return
+    n_applied = 0
+    for k, v in pending.items():
+        if k.startswith("_"):           # skip schema stamp / internal keys
+            continue
+        try:
+            st.session_state[k] = v
+            n_applied += 1
+        except Exception:
+            pass                        # unknown/incompatible key — skip
+    # Keep the material-preset change detector in sync with the restored
+    # preset, or it would fire and overwrite the restored ρ/X₀ with the
+    # preset defaults on this very run.
+    if "musicpreset" in pending:
+        st.session_state["music_preset_prev"] = pending["musicpreset"]
+    st.session_state["_cfg_restore_msg"] = n_applied
+_apply_pending_restore()
+
 # ── Show autosave corruption warning (set by load_settings on bad file) ──────
 def _maybe_warn_autosave():
     msg = st.session_state.pop("_autosave_warn", None)
@@ -237,21 +268,24 @@ _maybe_warn_autosave()
 # ══════════════════════════════════════════════════════════════════════════════
 # MUSIC MATERIAL PRESETS
 # ══════════════════════════════════════════════════════════════════════════════
+# "rad" is the radiation length X₀ in g/cm² — MUSIC's native unit (the
+# Kudryavtsev driver divides path lengths in g/cm² by it).  Engines that
+# want X₀ in cm (UCMuon-MC) divide by the density.
 MUSIC_MATERIALS = {
     "Standard Rock": {"rho": 2.65,  "rad": 26.48, "mat_id": 1, "mat_suffix": "rock",
-                      "desc": "ρ=2.65 g/cm³, X₀=26.48 cm — standard rock (Z=11, A=22)"},
+                      "desc": "ρ=2.65 g/cm³, X₀=26.48 g/cm² — standard rock (Z=11, A=22)"},
     "Limestone":     {"rho": 2.71,  "rad": 26.10, "mat_id": 1, "mat_suffix": "rock",
-                      "desc": "ρ=2.71 g/cm³, X₀=26.10 cm — rock elemental XS (good approx. for CaCO₃)"},
+                      "desc": "ρ=2.71 g/cm³, X₀=26.10 g/cm² — rock elemental XS (good approx. for CaCO₃)"},
     "Rock Salt":     {"rho": 2.17,  "rad": 29.00, "mat_id": 1, "mat_suffix": "rock",
-                      "desc": "ρ=2.17 g/cm³, X₀=29.00 cm — rock elemental XS (approx. for NaCl)"},
+                      "desc": "ρ=2.17 g/cm³, X₀=29.00 g/cm² — rock elemental XS (approx. for NaCl)"},
     "Water":         {"rho": 1.00,  "rad": 36.08, "mat_id": 2, "mat_suffix": "water",
-                      "desc": "ρ=1.00 g/cm³, X₀=36.08 cm — water/ice composition (H₂O)"},
-    "Ice":           {"rho": 0.917, "rad": 39.30, "mat_id": 2, "mat_suffix": "water",
-                      "desc": "ρ=0.917 g/cm³, X₀=39.30 cm — water XS (same H₂O composition as Water)"},
+                      "desc": "ρ=1.00 g/cm³, X₀=36.08 g/cm² — water/ice composition (H₂O)"},
+    "Ice":           {"rho": 0.917, "rad": 36.08, "mat_id": 2, "mat_suffix": "water",
+                      "desc": "ρ=0.917 g/cm³, X₀=36.08 g/cm² — water XS (same H₂O composition as Water)"},
     "Seawater":      {"rho": 1.025, "rad": 35.75, "mat_id": 3, "mat_suffix": "seawater",
-                      "desc": "ρ=1.025 g/cm³, X₀=35.75 cm — seawater (H, O, Na, Cl)"},
-    "Iron":          {"rho": 7.874, "rad":  1.757, "mat_id": 1, "mat_suffix": "rock",
-                      "desc": "ρ=7.874 g/cm³, X₀=1.757 cm — rock elemental XS (APPROXIMATE for Fe)"},
+                      "desc": "ρ=1.025 g/cm³, X₀=35.75 g/cm² — seawater (H, O, Na, Cl)"},
+    "Iron":          {"rho": 7.874, "rad": 13.84, "mat_id": 1, "mat_suffix": "rock",
+                      "desc": "ρ=7.874 g/cm³, X₀=13.84 g/cm² — rock elemental XS (APPROXIMATE for Fe)"},
     "Custom":        {"rho": None,  "rad": None,   "mat_id": 1, "mat_suffix": "rock",
                       "desc": "Uses rock elemental tables — accurate for rock-like media"},
 }
@@ -1225,7 +1259,14 @@ def write_geant4_ascii(df, outpath):
 
 
 def write_geant4_hepevt(df, outpath):
-    ecol = "Es" if "Es" in df.columns else "E"
+    """
+    G4HEPEvtInterface ASCII format — per event:
+        NHEP
+        ISTHEP IDHEP JDAHEP1 JDAHEP2 PX PY PZ MASS
+    Geant4 reads exactly these 8 values per particle (energy is derived
+    from p and mass, NOT read); ISTHEP must be 1 for a tracked particle.
+    Momenta and mass in GeV.
+    """
     lines = []
     for _, row in df.iterrows():
         pdg    = 13 if row["charge"] < 0 else -13
@@ -1234,12 +1275,11 @@ def write_geant4_hepevt(df, outpath):
         px =  p * np.sin(th) * np.cos(ph)
         py =  p * np.sin(th) * np.sin(ph)
         pz = -p * np.cos(th)
-        E  = row[ecol]
         lines.append("1")
         lines.append(
-            f"{pdg:4d}  1  0  0"
+            f"1  {pdg:d}  0  0"
             f"  {px:.6e}  {py:.6e}  {pz:.6e}"
-            f"  {E:.6e}  {MUON_MASS_GEV:.6f}"
+            f"  {MUON_MASS_GEV:.6f}"
         )
     with open(outpath, "w") as f:
         f.write("\n".join(lines) + "\n")
@@ -2267,16 +2307,18 @@ def plot_survival_vs_depth(df, depth_m, rho):
     depths_gcm2 = depths_m * 100.0 * rho
 
     # Groom 2001 CSDA table (log-log interpolation) — replaces wrong linear approx.
-    # Scale from Standard Rock (rho=2.65) to actual material by opacity equivalence
-    rho_stdrock = 2.65
+    # depths_gcm2 already carries the material density (opacity equivalence);
+    # the previous rho_stdrock/rho factor cancelled rho entirely, so the curve
+    # was always evaluated at Standard Rock density.
     E_min_GeV = np.array([
-        _groom_threshold_energy(x * rho_stdrock / max(rho, 1e-6))[0]
-        for x in depths_gcm2
+        _groom_threshold_energy(x)[0] for x in depths_gcm2
     ])
 
+    # Es is TOTAL energy; the Groom threshold is kinetic
     energies = df["Es"].values
     total    = max(len(df), 1)
-    rates    = [100.0 * np.sum(energies > e) / total for e in E_min_GeV]
+    rates    = [100.0 * np.sum(energies > e + MUON_MASS_GEV) / total
+                for e in E_min_GeV]
 
     # Bug 2 fix: prefer stored MUSIC result over re-computing from possibly
     # filtered df (which would give 100% if ug_selected file is loaded)
@@ -2346,9 +2388,9 @@ def plot_survival_vs_depth(df, depth_m, rho):
 # ══════════════════════════════════════════════════════════════════════════════
 # UI
 # ══════════════════════════════════════════════════════════════════════════════
-st.title("🌌 UCMuon")
+st.title(f"🌌 UCMuon  ·  v{__version__}")
 st.caption(
-    "🌌 **UCMuon (You See Muon)!** — UCLouvain Muography Group | "
+    f"🌌 **UCMuon (You See Muon)!** v{__version__} — UCLouvain Muography Group | "
     "Hamid Basiri · [hamid.basiri@uclouvain.be](mailto:hamid.basiri@uclouvain.be) | "
     "MIT License 2026"
 )
@@ -3251,6 +3293,10 @@ with tab_gen:
         st.session_state["gen_geant4_done"]   = False
         st.session_state["gen_phits_done"]    = False
         st.session_state["gen_params_stored"] = False
+        # Drop the previous run's flux: runs that print no "Integrated flux"
+        # line (PARMA, DAS-REM, power-law) must not silently reuse a stale
+        # value from an earlier spectrum in the rate estimate.
+        st.session_state.pop("gen_integrated_flux", None)
         st.session_state["gen_use_dasrem"]    = use_dasrem
         st.session_state["gen_save_all"]      = save_all
         st.session_state["gen_output_all"]    = output_all
@@ -4395,8 +4441,13 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
             if mat["desc"]:
                 st.caption(f"ℹ️ {mat['desc']}")
     
-            if st.session_state.get("music_preset_prev") != mat_choice:
-                if mat_choice != "Custom":
+            _preset_prev = st.session_state.get("music_preset_prev")
+            if _preset_prev != mat_choice:
+                # Apply preset defaults only on a real preset CHANGE.
+                # On the first render of a session _preset_prev is unset —
+                # resetting there would clobber the ρ/X₀ values restored
+                # from the autosave file.
+                if _preset_prev is not None and mat_choice != "Custom":
                     st.session_state["music_rho"] = float(mat["rho"])
                     st.session_state["music_rad"] = float(mat["rad"])
                     st.session_state["music_rho_sigma"] = 0.0
@@ -4500,9 +4551,12 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
                                          st.session_state.get("music_depth_m", 90.0), 5.0,
                                          key="music_depth_m",
                                          help="Rock thickness the transport driver integrates through.")
-            m_rad   = _geo2.number_input("Rad. length X₀ [cm]", 0.1, 200.0,
+            m_rad   = _geo2.number_input("Rad. length X₀ [g/cm²]", 0.1, 200.0,
                                          value=st.session_state.get("music_rad", float(default_rad)),
-                                         step=0.5, key="music_rad")
+                                         step=0.5, key="music_rad",
+                                         help="Radiation length in g/cm² (MUSIC "
+                                              "convention). Standard rock: 26.48; "
+                                              "water/ice: 36.08; iron: 13.84.")
     
             # ── Opacity metric ─────────────────────────────────────────────────────
             _X_mean  = m_depth * 100.0 * m_rho
@@ -5553,7 +5607,11 @@ with tab_results:
         if _show_generic and "theta" in df.columns and "phi" in df.columns:
             with st.expander("🧭  Angular acceptance map  (θ vs φ)", expanded=False):
                 _theta_deg = np.degrees(df["theta"].dropna().values)
-                _phi_deg   = np.degrees(df["phi"].dropna().values)
+                # Wrap phi into [-180, 180): the Fortran generator and MUSIC
+                # write phi in [0, 2pi), the Python engines in [-pi, pi] —
+                # without the wrap, half the muons fall outside the histogram.
+                _phi_deg   = (np.degrees(df["phi"].dropna().values)
+                              + 180.0) % 360.0 - 180.0
                 # Pre-compute 2D histogram server-side: sends 36×18 bin counts
                 # instead of 10M raw data points — avoids websocket size limit.
                 _H, _phi_edges, _th_edges = np.histogram2d(
@@ -5730,20 +5788,28 @@ with tab_config:
             type=["json"], key="config_upload",
         )
         if _up is not None:
-            try:
-                _data = json.load(_up)
-                # Only restore scalar / list values; skip non-serialisable objects
-                _restored = {k: v for k, v in _data.items()
-                             if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
-                st.session_state.update(_restored)
-                save_settings()
-                st.success(
-                    f"✅  Restored **{len(_restored)}** settings from `{_up.name}`.  "
-                    "The widgets will reflect these values on the next rerun."
-                )
-                st.rerun()
-            except Exception as _ex:
-                st.error(f"❌  Could not parse JSON: {_ex}")
+            # Widget keys cannot be written after their widgets rendered this
+            # run (StreamlitAPIException), so stash the values and rerun —
+            # _apply_pending_restore() applies them before any widget exists.
+            _up_id = getattr(_up, "file_id", None) or f"{_up.name}:{getattr(_up, 'size', 0)}"
+            if st.session_state.get("_cfg_restored_id") != _up_id:
+                try:
+                    _data = json.load(_up)
+                    # Only restore scalar / list values; skip non-serialisable objects
+                    _restored = {k: v for k, v in _data.items()
+                                 if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
+                    st.session_state["_cfg_restore_pending"] = _restored
+                    st.session_state["_cfg_restored_id"]     = _up_id
+                    st.rerun()
+                except Exception as _ex:
+                    st.error(f"❌  Could not parse JSON: {_ex}")
+            else:
+                _n_restored = st.session_state.get("_cfg_restore_msg")
+                if _n_restored is not None:
+                    st.success(
+                        f"✅  Restored **{_n_restored}** settings from `{_up.name}` — "
+                        "widgets now reflect the restored values."
+                    )
 
     st.divider()
 

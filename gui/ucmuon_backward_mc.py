@@ -254,6 +254,10 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
     # Detector energy grid [MeV]
     E_det_MeV = np.logspace(np.log10(E_min_GeV * 1000.0),
                              np.log10(E_max_GeV * 1000.0), n_E)
+    # Actual node spacing of the log grid: dE_i = E_i * dlnE (trapezoid
+    # end-weights), so the integrated rate is independent of n_E.
+    # (A hard-coded 5% bin width made the rate scale linearly with n_E.)
+    dlnE = (np.log(E_max_GeV) - np.log(E_min_GeV)) / max(n_E - 1, 1)
 
     # Output arrays
     flux_det   = np.zeros(n_E)     # dΦ/dE_det integrated over Ω [m⁻² s⁻¹ GeV⁻¹]
@@ -265,7 +269,8 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
     dOmega_total = float(dOmega.sum())
 
     for iE, E_det in enumerate(E_det_MeV):
-        dE_GeV = E_det * 0.05 / 1000.0         # energy bin width [GeV]
+        w_trap = 0.5 if iE in (0, n_E - 1) else 1.0
+        dE_GeV = (E_det / 1000.0) * dlnE * w_trap   # energy bin width [GeV]
 
         sum_flux = 0.0; sum_surf = 0.0
         sum_Es   = 0.0; sum_Ps  = 0.0
@@ -326,6 +331,57 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
                            mode="CSDA+stochastic" if mode == 1 else "CSDA only",
                            v_cut=v_cut),
     )
+
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Single-direction integrated flux (used by the terrain flux map)
+# ─────────────────────────────────────────────────────────────────────────────
+
+def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
+                     E_min_GeV=0.5, E_max_GeV=5000.0, n_E=40,
+                     mode=1, v_cut=0.05, mat_id=1, b_rad_override=0.0):
+    """
+    Through-rock integrated directional flux [m⁻² s⁻¹ sr⁻¹] at ONE zenith
+    angle and ONE slant opacity:
+
+        Φ(θ, X) = ∫_{E_min}^{E_max} dE_det
+                  Φ_surf(E_s(E_det, X), θ) · |dE_s/dE_det| · P_surv
+
+    The slant opacity X is used as-is (no vertical-equivalent conversion),
+    and the surface flux is evaluated at the exact zenith angle θ.  The
+    required surface energy E_s may exceed E_max — the spectrum
+    parametrisations remain valid there, and truncating would bias the
+    through-rock integral low.
+
+    With X = 0 this reduces to ∫ Φ_surf dE over the same grid, so the
+    numerator and denominator of a transmission map T = Φ(X)/Φ(0) use
+    identical integration by construction.
+    """
+    mat     = _MAT_DB.get(mat_id, _MAT_DB[1])
+    b_total = b_rad_override if b_rad_override > 0 else mat["b_rad"]
+    a_scale = mat["a_scale"]
+
+    E_det_MeV = np.logspace(np.log10(E_min_GeV * 1000.0),
+                             np.log10(E_max_GeV * 1000.0), n_E)
+    dlnE = (np.log(E_max_GeV) - np.log(E_min_GeV)) / max(n_E - 1, 1)
+
+    flux = 0.0
+    for iE, E_det in enumerate(E_det_MeV):
+        w_trap = 0.5 if iE in (0, n_E - 1) else 1.0
+        dE_GeV = (E_det / 1000.0) * dlnE * w_trap
+        if X_slant_gcm2 > 0.0:
+            E_s, Jacob = _backward_energy(E_det, X_slant_gcm2, a_scale)
+            if not np.isfinite(E_s):
+                continue
+            Ps = (_P_surv_stochastic(E_s, E_det, X_slant_gcm2,
+                                     b_total, v_cut, a_scale)
+                  if mode == 1 else 1.0)
+        else:
+            E_s, Jacob, Ps = E_det, 1.0, 1.0
+        phi_s = float(_flux_surface(E_s / 1000.0, theta_rad, spectrum_mode))
+        if phi_s > 0.0:
+            flux += phi_s * Jacob * Ps * dE_GeV
+    return flux
 
 
 # ─────────────────────────────────────────────────────────────────────────────

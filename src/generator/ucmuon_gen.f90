@@ -165,9 +165,9 @@ program ucmuon_gen
   integer(8)  :: i              ! per-rank accepted count
   integer     :: tim(8), iranlux
   integer     :: use_defaults
-  character(120) :: output_all, output_sel, output_phits
-  character(120) :: stem_all, stem_sel      ! base path without .dat, used for rank files
-  character(120) :: fname_rank              ! per-rank filename scratch buffer
+  character(512) :: output_all, output_sel, output_phits
+  character(512) :: stem_all, stem_sel      ! base path without .dat, used for rank files
+  character(524) :: fname_rank              ! per-rank filename scratch buffer (stem + _RRRRR.dat)
   real(8)        :: depth
   character(1)   :: dummy
   real(8)        :: alt_z_m, alt_p_avg, alt_L_p, alt_corr   ! altitude correction
