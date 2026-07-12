@@ -2630,7 +2630,9 @@ def render_terrain_tab(script_dir, project_dir,
                 surv_map  = surv_map.reshape(_n_az_v, _n_ze_v)
     
                 # Transmission = surv_map / total_map × 100%  (NaN where no muons)
-                transmission_map = np.where(total_map > 0, surv_map / total_map * 100.0, np.nan)
+                # np.where evaluates the division for empty bins too — silence it.
+                with np.errstate(divide='ignore', invalid='ignore'):
+                    transmission_map = np.where(total_map > 0, surv_map / total_map * 100.0, np.nan)
                 rate_map         = transmission_map   # same quantity — reuse variable name
                 _trans_valid     = ~np.isnan(transmission_map) & (total_map > 0)
                 input_map        = total_map           # alias — used by energy spectrum tab
