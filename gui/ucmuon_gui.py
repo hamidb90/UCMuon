@@ -1204,6 +1204,12 @@ def load_file(path, mtime=None):
             st.warning(f"⚠️  Unrecognised file format: {nc} columns in `{path}`. "
                        f"Expected 5, 6, 10, 13, 14 or 18. Showing raw data.")
         return df
+    except pd.errors.EmptyDataError:
+        # File exists but has a header comment and no data rows — the usual cause
+        # is a selection/cut that left zero muons, not a corrupt file.
+        st.warning(f"⚠️  `{path}` contains no data rows (header only). "
+                   f"The run or selection produced zero muons.")
+        return pd.DataFrame()
     except Exception as ex:
         st.error(f"Could not load `{path}`: {ex}")
         return pd.DataFrame()
@@ -1720,7 +1726,11 @@ def _ray_hits_cylinder(ox, oy, oz, dx, dy, dz,
     sq   = np.where(ok, np.sqrt(np.maximum(disc, 0)), 0.0)
 
     for sign in [1, -1]:
-        t    = np.where(ok, (-B + sign*sq) / (2*A), -1.0)
+        # A ≈ 0 for rays parallel to the cylinder axis (e.g. vertical muons in a
+        # vertical detector); those elements are masked out by `ok`, but numpy
+        # still evaluates the full division first, so silence the div-by-zero.
+        with np.errstate(divide='ignore', invalid='ignore'):
+            t = np.where(ok, (-B + sign*sq) / (2*A), -1.0)
         t_ok = ok & (t >= 0)
         hx = oax + t*dx; hy = oay + t*dy; hz = oaz + t*dz
         proj = hx*abx + hy*aby + hz*abz
