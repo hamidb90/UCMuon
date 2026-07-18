@@ -27,7 +27,9 @@ GUI regression suite).
 ### Added
 - Vesuvius / MURAVES worked example with a shipped 5-density transmission
   (T_sim) library and DEM download recipe.
-- MUSIC energy-loss table self-generation (source and data included).
+- MUSIC energy-loss table self-generation (driver and data included;
+  the MUSIC source itself is obtained from its author — see
+  docs/MUSIC_FILES.md).
 - App version string in the GUI (v1.0.0, synced with CITATION.cff).
 
 ### Fixed (GUI)
