@@ -42,6 +42,11 @@ output/
 *.swp
 *~
 
+# ── MUSIC source (V.A. Kudryavtsev) — NOT redistributable ────────────────────
+# Obtain from the author per docs/MUSIC_FILES.md; never commit these.
+src/transport/music/music.f
+src/transport/music/music-crosssections.f
+
 # ── GUI session state ─────────────────────────────────────────────────────────
 ucmuon_autosave.json
 

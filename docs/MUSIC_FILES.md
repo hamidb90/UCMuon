@@ -5,7 +5,7 @@ It is distributed separately by its author and must be obtained directly.
 
 ## Files needed
 
-Copy these two files into this directory (`src/music/`):
+Copy these two files into `src/transport/music/`:
 
 | File | Description |
 |------|-------------|
@@ -29,15 +29,15 @@ Comput. Phys. Commun. 180, 339–346. https://doi.org/10.1016/j.cpc.2008.10.013
 ## After receiving the files
 
 ```bash
-cp music.f               src/music/
-cp music-crosssections.f src/music/
+cp music.f               src/transport/music/
+cp music-crosssections.f src/transport/music/
 bash setup.sh            # or: make music
 ```
 
 ## About music-eloss.dat
 
 `music-eloss.dat` is **not a static file** — it is generated automatically
-during the first run of `cosmoaleph_music_driver_omp` for your specific
+during the first run of the MUSIC transport driver for your specific
 rock composition. It will appear in the project root after the first
 successful MUSIC transport run.
 
@@ -45,5 +45,5 @@ successful MUSIC transport run.
 
 | Engine | How to enable |
 |--------|--------------|
-| **Bethe-Bloch + MS** | Place `cosmoaleph_phitsxs_omp.f90` in `src/bethe_bloch/`, run `make bb` |
+| **Bethe-Bloch CSDA + MS** | Built automatically by `setup.sh` / `install.ps1` (needs gfortran only) |
 | **PROPOSAL** | `pip install proposal` (system Python venv required — not miniforge) |
