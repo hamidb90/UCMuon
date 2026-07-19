@@ -150,6 +150,9 @@ cd UCMuon
 powershell -ExecutionPolicy Bypass -File install.ps1
 ```
 
+Or, if you downloaded UCMuon as a zip (e.g. from Zenodo), simply **double-click
+`install_windows.bat`** in the extracted folder — no terminal needed.
+
 `install.ps1` will:
 
 1. Check Python ≥ 3.9

@@ -11,7 +11,23 @@
 *
 *
 *#include "gen_pilot.h"
+C  --- RNG state module (formerly COMMON/RLUXSTATE/) ------------------
+C  THREADPRIVATE COMMON makes gfortran emit a .tls_common directive that
+C  the Windows PE assembler does not implement (build error on MSYS2).
+C  Module variables with THREADPRIVATE use regular TLS and are portable.
+C  Storage layout and zero-initialisation are identical to the COMMON.
+      MODULE RLUXSTATE_MOD
+      LOGICAL NOTYET
+      INTEGER LUXLEV, I24, J24, IN24, NSKIP, KOUNT, MKOUNT, INSEED
+      INTEGER NEXT(24)
+      REAL CARRY, TWOM24, TWOM12, SEEDS(24)
+      SAVE
+C$OMP THREADPRIVATE(NOTYET,LUXLEV,I24,J24,IN24,NSKIP,KOUNT,MKOUNT,
+C$OMP& INSEED,NEXT,CARRY,TWOM24,TWOM12,SEEDS)
+      END MODULE RLUXSTATE_MOD
+
       SUBROUTINE RANLUX(RVEC,LENV)
+      USE RLUXSTATE_MOD
 C         Subtract-and-borrow random number generator proposed by
 C         Marsaglia and Zaman, implemented by F. James with the name
 C         RCARRY in 1991, and later improved by Martin Luescher
@@ -61,15 +77,8 @@ C!!! ++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
       DIMENSION NDSKIP(0:MAXLEV)
       PARAMETER (TWOP12=4096., IGIGA=1000000000,JSDFLT=314159265)
       PARAMETER (ITWO24=2**24, ICONS=2147483563)
-C  --- Mutable RNG state moved to named COMMON for OMP THREADPRIVATE ---
-C  All variables that were SAVE are now in /RLUXSTATE/ so each OMP
-C  thread can have its own independent copy.
-      LOGICAL NOTYET
-      INTEGER LUXLEV
-      COMMON/RLUXSTATE/
-     +  NOTYET, LUXLEV, I24, J24, IN24, NSKIP, KOUNT, MKOUNT, INSEED,
-     +  NEXT(24), CARRY, TWOM24, TWOM12, SEEDS(24)
-C$OMP THREADPRIVATE(/RLUXSTATE/)
+C  --- Mutable RNG state lives in RLUXSTATE_MOD (see top of file) so
+C  each OMP thread has its own independent copy via THREADPRIVATE.
 C  NDSKIP is a constant lookup table — never modified, safe as local SAVE
       SAVE NDSKIP
       DATA NDSKIP/0, 24, 73, 199, 365/

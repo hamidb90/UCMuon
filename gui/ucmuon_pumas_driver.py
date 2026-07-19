@@ -29,7 +29,7 @@ Stdin protocol (called by ucmuon_gui.py via start_run):
   theta_max_deg  [backward only]
   n_events       [backward only]
   spectrum_id    [backward only] 0=GCCLY  1=Gaisser
-  seed           [backward only] 0=time-based
+  seed           0=time-based (forward and backward)
 """
 from __future__ import annotations
 import math
@@ -57,6 +57,8 @@ _BIN         = os.path.join(_PROJECT, "bin")
 _PUMAS_SRC   = os.path.join(_PROJECT, "external", "pumas-master")
 _MDF_PATH    = os.path.join(_PUMAS_SRC, "examples", "data", "materials.xml")
 _BINARY      = os.path.join(_BIN, "ucmuon_transport_pumas")
+if not os.path.exists(_BINARY) and os.path.exists(_BINARY + ".exe"):
+    _BINARY += ".exe"   # Windows MSYS2/MinGW build
 
 
 def _dump_path(mat_name: str) -> str:
@@ -270,6 +272,7 @@ def main():
             outfile,
             str(transport_all),
             str(depth_axis),
+            str(seed),
         ]
         n_total = _count_muons(infile, transport_all)
         print(f"  Forward: {n_total} muons  axis={depth_axis}", flush=True)

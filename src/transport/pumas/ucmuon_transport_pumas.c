@@ -23,6 +23,7 @@
  *     outfile        path for muons_underground.dat (18-col)
  *     transport_all  0=hit_flag==1 only | 1=all muons
  *     depth_axis     0=depth is X | 1=depth is Y | 2=depth is Z
+ *     seed           RNG seed (0 = time-based)
  *
  *   [if mode==1 backward]:
  *     outfile        path for pumas_bwd_events.dat (per-event flux file)
@@ -536,8 +537,15 @@ int main(void)
         int transport_all = atoi(NEXT("0"));
         int depth_axis    = atoi(NEXT("2"));
 
-        fprintf(stdout, "  Forward: infile=%s  outfile=%s  axis=%d\n",
-                infile, outfile, depth_axis);
+        /* Seed the RNG: without this the xoshiro state is all-zero and
+         * random() returns 0 forever — NaN energies in straggled mode and
+         * infinite rejection loops with scattering enabled. */
+        uint64_t seed = (uint64_t)atol(NEXT("0"));
+        if (seed == 0) seed = (uint64_t)time(NULL);
+        rng_seed(seed);
+
+        fprintf(stdout, "  Forward: infile=%s  outfile=%s  axis=%d  seed=%llu\n",
+                infile, outfile, depth_axis, (unsigned long long)seed);
         fflush(stdout);
 
         run_forward(infile, outfile, transport_all, depth_axis, depth_m);

@@ -115,6 +115,7 @@ git clone https://github.com/hamidb90/UCMuon.git
 cd UCMuon
 
 # 3. Run the installer (installs Python packages; builds Fortran binaries if gfortran found)
+#    Easiest: double-click install_windows.bat in the project folder. Or from a terminal:
 powershell -ExecutionPolicy Bypass -File install.ps1
 
 # 4. Launch the GUI
@@ -167,7 +168,7 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for the full cluster workflow: MPI 
 | Engine 4 (PROPOSAL) | ✓ | ✓ | — |
 | MPI+OMP HPC binaries | ✓ | ✓ | — |
 | Streamlit GUI | ✓ | ✓ | ✓ |
-| One-command install | `bash setup.sh` | `bash setup.sh` | `install.ps1` |
+| One-command install | `bash setup.sh` | `bash setup.sh` | `install_windows.bat` (or `install.ps1`) |
 
 ---
 

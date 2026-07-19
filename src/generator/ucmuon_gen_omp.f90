@@ -77,7 +77,7 @@ program ucmuon_gen_omp
   real(8)       :: parma_s_W
   real(8)       :: parma_ffp_MV
   integer       :: parma_ic
-  real(8)       :: parma_ratio_plus
+  real(8)       :: parma_ratio_plus = 1.0d0   ! overwritten in PARMA init; default silences -Wmaybe-uninitialized
 
   integer, parameter :: NPARMA_E = 500
   real(8) :: parma_E_MeV(NPARMA_E)

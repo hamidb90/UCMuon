@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.0.0"          # app version — keep in sync with CITATION.cff
+__version__ = "1.0.1"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -75,6 +75,14 @@ from scipy.stats import norm as _spnorm, gaussian_kde as _spkde
 _SCRIPT_DIR  = Path(__file__).resolve().parent   # gui/
 _PROJECT_DIR = _SCRIPT_DIR.parent                  # project root
 _BIN_DIR     = _PROJECT_DIR / "bin"                # compiled binaries + MUSIC symlinks
+
+def _bin_path(stem):
+    """Compiled binary in bin/, or None if not built.
+    The Windows MSYS2/MinGW build produces `<stem>.exe`."""
+    for _c in (_BIN_DIR / stem, _BIN_DIR / (stem + ".exe")):
+        if _c.exists():
+            return _c
+    return None
 
 def _abspath(p):
     """Return absolute path string. File paths passed via stdin to Fortran
@@ -581,6 +589,15 @@ for _exe in ["ucmuon_gen_omp", "ucmuon_transport_music_omp", "ucmuon_transport_b
 
 
 def start_run(cmd, stdin_str, prefix, nmuons=0, env=None):
+    if os.name == "nt":
+        # MinGW-built binaries need the MSYS2 runtime DLLs (libgfortran,
+        # libgomp, libwinpthread, ...) from ucrt64\bin, which is normally
+        # not on the Windows PATH.
+        _msys_bin = r"C:\msys64\ucrt64\bin"
+        if os.path.isdir(_msys_bin):
+            env = dict(env if env is not None else os.environ)
+            if _msys_bin not in env.get("PATH", ""):
+                env["PATH"] = _msys_bin + os.pathsep + env.get("PATH", "")
     _gs(f"{prefix}_lines",     [])
     _gs(f"{prefix}_running",   True)
     _gs(f"{prefix}_success",   None)
@@ -1088,7 +1105,7 @@ def build_proposal_input(cfg):
 
 def build_pumas_input(cfg):
     """Build stdin for ucmuon_pumas_driver.py (mode=forward or backward)."""
-    mode = cfg.get("pumas_mode", "backward")
+    mode = cfg.get("pumas_mode", "forward")
     infile = _abspath(cfg.get("infile", "-")) if mode == "forward" else "-"
     return "\n".join([
         mode,
@@ -2644,21 +2661,21 @@ with tab_gen:
             "Spectrum model",
             [1, 2, 3, 4, 5, 6, 7, 8],
             format_func=lambda x: {
-                1: "① CosmoALEPH   p⁻³·¹⁹⁵²           ~100–2 500 GeV  (default — thick targets)",
+                1: "① CosmoALEPH   p⁻³·¹⁹⁵²           ~100–2500 GeV  (thick targets)",
                 2: "② Power-law    E⁻³·⁷               legacy MUSIC cross-check",
                 3: "③ PARMA/EXPACS                     0.1 GeV–100 TeV  (location & date-aware)",
                 4: "④ Guan (2015)  a=3.64, b=1.29      > 10 GeV surface / any depth underground",
                 5: "⑤ Frosin (2025) a=3.512, b=1.388   > 10 GeV surface / any depth underground",
-                6: "⑥ Bugaev (1998) piecewise poly      1–1 000 GeV",
-                7: "⑦ Reyna–Bugaev (2006) cos³θ        1–10 000 GeV  (best surface estimate)",
+                6: "⑥ Bugaev (1998) piecewise poly      1–1000 GeV",
+                7: "⑦ Reyna–Bugaev (2006) cos³θ        1–10000 GeV  (best surface estimate)",
                 8: "⑧ Cosmic electrons  E⁻³·⁰           10 MeV–1 GeV  (surface/shallow)",
             }[x],
             help=(
-                "**① CosmoALEPH  —  ~100–2 500 GeV/c:**  "
+                "**① CosmoALEPH  —  ~100–2500 GeV/c:**  "
                 "Power-law fit dN/dp ∝ p⁻³·¹⁹⁵² anchored to the sea-level vertical "
                 "muon spectrum measured by CosmoALEPH with the ALEPH detector at LEP "
                 "(Schmelling et al. 2013). Reproduces the measurement to ~5% over "
-                "112–2 239 GeV/c; being a pure power law it overestimates the flux "
+                "112–2239 GeV/c; being a pure power law it overestimates the flux "
                 "at low momenta (×2.5 at 10 GeV/c). Use for thick targets where the "
                 "detected flux is dominated by muons above ~50 GeV.\n\n"
                 "**② Power-law  —  legacy MUSIC cross-check:**  "
@@ -2678,10 +2695,10 @@ with tab_gen:
                 "**⑤ Frosin (2025)  —  > 10 GeV surface, any depth underground:**  "
                 "Same Guan formula re-fitted on 304 sea-level datasets "
                 "(J.Phys.G 52, 035002). Same atmospheric-loss limitation at low energies.\n\n"
-                "**⑥ Bugaev (1998)  —  1–1 000 GeV:**  "
+                "**⑥ Bugaev (1998)  —  1–1000 GeV:**  "
                 "Gaisser (1990) pion+kaon formula with Bugaev normalisation. "
-                "Pair with cos²θ angular mode. Best range 1–1 000 GeV.\n\n"
-                "**⑦ Reyna–Bugaev (2006)  —  1–10 000 GeV:**  "
+                "Pair with cos²θ angular mode. Best range 1–1000 GeV.\n\n"
+                "**⑦ Reyna–Bugaev (2006)  —  1–10000 GeV:**  "
                 "Log-polynomial fit to p³·I_vert validated against PDG surface intensity "
                 "(I_V > 1 GeV ≈ 70 m⁻²sr⁻¹s⁻¹, ~20% agreement). "
                 "Best model for surface flux and measurement-time estimates. "
@@ -2698,7 +2715,7 @@ with tab_gen:
         # reference line shown below the energy inputs — includes range guide
         _spec_refs = {
             1: ("📚 CosmoALEPH fit, Schmelling et al. (2013)  dN/dp ∝ p⁻³·¹⁹⁵²  "
-                "| valid range: **~100–2 500 GeV/c**  (overestimates ×2.5 at 10 GeV/c)"),
+                "| valid range: **~100–2500 GeV/c**  (overestimates ×2.5 at 10 GeV/c)"),
             2: ("📚 Power-law  dN/dE ∝ E⁻³·⁷  "
                 "| sampling shape for legacy MUSIC cross-checks — not an absolute flux model"),
             3: ("📚 Sato et al., PARMA/EXPACS  "
@@ -2708,9 +2725,9 @@ with tab_gen:
             5: ("📚 Frosin et al. (2025), J.Phys.G 52, 035002  a=3.512, b=1.388  "
                 "| valid range: **> 10 GeV** surface  /  any depth underground"),
             6: ("📚 Bugaev et al. (1998) / Gaisser (1990)  pion+kaon terms  "
-                "| valid range: **1–1 000 GeV**  — pair with angular mode ② cos²θ"),
+                "| valid range: **1–1000 GeV**  — pair with angular mode ② cos²θ"),
             7: ("📚 Reyna (2006) / Bugaev (1998)  log-polynomial in p  "
-                "| valid range: **1–10 000 GeV**  — pair with angular mode ⑤ cos³θ"),
+                "| valid range: **1–10000 GeV**  — pair with angular mode ⑤ cos³θ"),
             8: ("⚡ Cosmic electrons  dN/dE ∝ E⁻³·⁰  "
                 "| valid range: **10 MeV–1 GeV**  — generates e⁺/e⁻, not muons  "
                 "— pair with angular mode ⑤ cos³θ"),
@@ -2733,7 +2750,9 @@ with tab_gen:
         else:
             st.markdown("**Energy range**")
             _ec1, _ec2 = st.columns(2)
-            st.session_state.setdefault("emin", 1.0)
+            # Defaults match the default spectrum model ① CosmoALEPH
+            # (valid ~100–2500 GeV/c) so a fresh session starts warning-free.
+            st.session_state.setdefault("emin", 100.0)
             st.session_state.setdefault("emax", 2500.0)
             e_min = _ec1.number_input("E min [GeV]", 0.01, 10000.0, step=0.1,
                                        format="%.2f", key="emin")
@@ -2745,7 +2764,7 @@ with tab_gen:
                        "[🧰 Helpers & calculators](#helpers)")
         # Out-of-range warnings per model
         _erange_warns = {
-            1: (e_min < 100.0 or e_max > 2500,  "CosmoALEPH fit reproduces the measurement only in ~100–2 500 GeV/c; below that it overestimates the flux (×2.5 at 10 GeV/c) — for shallow targets prefer ④ Guan, ⑤ Frosin or ⑦ Reyna–Bugaev."),
+            1: (e_min < 100.0 or e_max > 2500,  "CosmoALEPH fit reproduces the measurement only in ~100–2500 GeV/c; below that it overestimates the flux (×2.5 at 10 GeV/c) — for shallow targets prefer ④ Guan, ⑤ Frosin or ⑦ Reyna–Bugaev."),
             2: (e_min < 100.0,                   "Power-law E⁻³·⁷ is a sampling shape, not an absolute flux model — below ~100 GeV the real spectrum is much flatter."),
             4: (e_min < 10.0,                    "Guan (2015) suppresses surface flux by up to 50× below 10 GeV due to the atmospheric energy-loss correction."),
             5: (e_min < 10.0,                    "Frosin (2025) has the same atmospheric correction as Guan — surface flux unreliable below 10 GeV."),
@@ -3057,14 +3076,28 @@ with tab_gen:
                       "total tried = N / acceptance.\n\n"
                       "**Detector filter OFF:** this many muons generated and written directly."),
             ))
+            _gen_missing = _bin_path("ucmuon_gen_omp") is None
             n_threads = int(_samp_c2.slider(
                 "⚡ OpenMP threads", 1, min(64, os.cpu_count() or 8),
                 min(4, os.cpu_count() or 4), 1, key="nthreads",
-                help="Set to number of physical cores. Use `nproc` to check."))
-            if not (_BIN_DIR / "ucmuon_gen_omp").exists():
-                _samp_c2.warning("`ucmuon_gen_omp` not found — run `make local`")
+                disabled=(use_dasrem or _gen_missing),
+                help="Thread count inside the Fortran generator binary "
+                     "(Standard workflow only — guaranteed-hit mode is pure "
+                     "Python). Set to number of physical cores."))
+            if use_dasrem:
+                _samp_c2.caption("🐍 Guaranteed-hit mode uses the pure-Python "
+                                 "generator — no Fortran binary needed.")
+            elif _gen_missing:
+                _samp_c2.warning(
+                    "`ucmuon_gen_omp` not found — the **Standard** workflow needs the "
+                    "Fortran generator, so its Run button is disabled. Switch the "
+                    "Workflow (top of this tab) to **Guaranteed-hit mode**, which uses "
+                    "a pure-Python generator and works without Fortran. To enable the "
+                    "Standard workflow, "
+                    + ("install gfortran via MSYS2 and re-run the installer (see INSTALL.md)."
+                       if os.name == "nt" else "build it with `make local`."))
             else:
-                _samp_c2.success("✅  Generator ready", icon="✅")
+                _samp_c2.success("Generator ready", icon="✅")
 
     # ══════════════════════════════════════════════════════════════════════════
     # ROW 2 — conditional on workflow
@@ -3290,7 +3323,9 @@ with tab_gen:
     _run_label = ("▶  Run Generator  —  guaranteed-hit mode  (Python)"
                   if use_dasrem else "▶  Run UCMuon Surface Generator")
     run_gen  = _rb1.button(_run_label, type="primary", width='stretch',
-                           disabled=_gg("gen_running"))
+                           disabled=(_gg("gen_running")
+                                     or (not use_dasrem
+                                         and _bin_path("ucmuon_gen_omp") is None)))
     stop_gen = _rb2.button("⛔  Stop", key="stop_gen", width='stretch',
                            disabled=not _gg("gen_running"))
 
@@ -3386,8 +3421,14 @@ with tab_gen:
                 "output_all": output_all, "output_sel": output_sel,
                 "output_phits": output_phits,
             }
+            _gen_bin = _bin_path("ucmuon_gen_omp")
+            if _gen_bin is None:
+                st.error("❌  `ucmuon_gen_omp` not found — the Fortran generator is not built. "
+                         + ("Install gfortran via MSYS2 and re-run the installer (see INSTALL.md)."
+                            if os.name == "nt" else "Run `make local`."))
+                st.stop()
             _omp_env = {**os.environ, "OMP_NUM_THREADS": str(n_threads)}
-            start_run([str(_BIN_DIR / "ucmuon_gen_omp")], build_ucmuon_input(cfg), "gen",
+            start_run([str(_gen_bin)], build_ucmuon_input(cfg), "gen",
                       nmuons_gen, env=_omp_env)
 
         save_settings()
@@ -3684,7 +3725,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             st.info(
                 f"E band [{_emin_flux:.1f}–{_emax_flux:.0f} GeV] = **{100*_band_frac:.1f}%** of full spectrum.  "
                 f"Full-spectrum rate through this source: ≈ {_rate_full_m:,.0f} /min  "
-                f"(cf. ~10 000 m⁻²min⁻¹ rule of thumb)."
+                f"(cf. ~10000 m⁻²min⁻¹ rule of thumb)."
             )
 
     # ── Energy threshold estimator ────────────────────────────────────────────
@@ -3904,7 +3945,7 @@ Their correction term E_eff = E·(1 + a/(E·cosθ*^b)) pushes the effective ener
 **Flat-slab limitations — when NOT to trust this tool:**
 
 - **θ > 50° through real terrain**: the path is NOT L/cosθ for a volcano. Use the **Terrain** tab with a DEM.  
-- **X > 100 000 g/cm²**: models diverge by factors of 2–4 at extreme opacity. Full MC (MUSIC/PROPOSAL) is needed.  
+- **X > 100000 g/cm²**: models diverge by factors of 2–4 at extreme opacity. Full MC (MUSIC/PROPOSAL) is needed.  
 - **Azimuth φ**: all models ignore the ~2% East–West geomagnetic asymmetry. Use PARMA (generator spectrum ③) for φ-dependence.  
 - **CSDA E_min is a lower bound**: stochastic losses let some muons below E_min,CSDA survive. MUSIC thresholds are lower.
 
@@ -4254,8 +4295,8 @@ with tab_music:
 
     with _eng2:
         if transport_engine == "MUSIC":
-            _omp_ok_sel = (_BIN_DIR / "ucmuon_transport_music_omp").exists()
-            _ser_ok_sel = (_BIN_DIR / "ucmuon_transport_music").exists()
+            _omp_ok_sel = _bin_path("ucmuon_transport_music_omp") is not None
+            _ser_ok_sel = _bin_path("ucmuon_transport_music") is not None
             if _omp_ok_sel:
                 st.success("✅ **MUSIC** ready — `ucmuon_transport_music_omp` found.")
             elif _ser_ok_sel:
@@ -4289,7 +4330,7 @@ with tab_music:
                 st.warning("⚠️ **Backward MC** not ready — place `gui_stochastic_engine.py` in `gui/`.")
             st.caption("CSDA backward inversion · flux integrator · no generator step needed")
         elif transport_engine == "PUMAS":
-            _pumas_bin_ok = (_BIN_DIR / "ucmuon_transport_pumas").exists()
+            _pumas_bin_ok = _bin_path("ucmuon_transport_pumas") is not None
             _pumas_drv_ok = (_SCRIPT_DIR / "ucmuon_pumas_driver.py").exists()
             _pumas_mdf_ok = (_PROJECT_DIR / "external" / "pumas-master" / "examples" / "data" / "materials.xml").exists()
             if _pumas_bin_ok and _pumas_drv_ok and _pumas_mdf_ok:
@@ -4307,7 +4348,7 @@ with tab_music:
             else:
                 st.caption("First run builds physics tables (~10 s) and caches them in `bin/`")
         else:  # BB+MS
-            _bbms_ok_sel = (_BIN_DIR / "ucmuon_transport_bb_omp").exists()
+            _bbms_ok_sel = _bin_path("ucmuon_transport_bb_omp") is not None
             if _bbms_ok_sel:
                 st.success("✅ **Bethe-Bloch + Highland MS** ready — `ucmuon_transport_bb_omp` found.")
             else:
@@ -4916,7 +4957,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
             _pm1, _pm2 = st.columns([2, 3])
             with _pm1:
                 pumas_mode = st.radio(
-                    "Transport mode", ["backward", "forward"],
+                    "Transport mode", ["forward", "backward"],
                     format_func=lambda x: {"backward": "⬅ Backward MC (no muon file)",
                                            "forward":  "➡ Forward transport"}[x],
                     key="pumas_mode",
@@ -4984,7 +5025,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                     "N events", 100, 10_000_000,
                     int(st.session_state.get("pumas_n_events", 50000)),
                     step=1000, key="pumas_n_events",
-                    help="Number of backward MC events. 50 000 gives ~1% statistical error."))
+                    help="Number of backward MC events. 50000 gives ~1% statistical error."))
                 pumas_spectrum_id = _pb5.selectbox(
                     "Surface spectrum",
                     [0, 1],
@@ -5013,7 +5054,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
             phitsxs_mat_type = 1; phitsxs_ms_enable = True; phitsxs_custom = {}
             m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
 
-            _pumas_bin_ok2 = (_BIN_DIR / "ucmuon_transport_pumas").exists()
+            _pumas_bin_ok2 = _bin_path("ucmuon_transport_pumas") is not None
             _pumas_drv_ok2 = (_SCRIPT_DIR / "ucmuon_pumas_driver.py").exists()
             if _pumas_bin_ok2 and _pumas_drv_ok2:
                 st.success("✅  `ucmuon_transport_pumas` + `ucmuon_pumas_driver.py` ready")
@@ -5023,10 +5064,17 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                 st.error("❌  `ucmuon_pumas_driver.py` not found in `gui/`")
     
         # ── Underground detector filter ───────────────────────────────────────────
+        # Not shown for PUMAS backward mode: its output is a weighted flux
+        # spectrum, not a per-muon underground file, so there is nothing to filter.
+        _pumas_bwd = (transport_engine == "PUMAS"
+                      and st.session_state.get("pumas_mode", "forward") == "backward")
         st.divider()
         _det_ug = st.session_state.get("gen_detectors", []) \
                   if st.session_state.get("gen_use_detector", False) else []
-        if _det_ug:
+        if _pumas_bwd:
+            ug_use_filter  = False
+            ug_filter_file = "output/muons_ug_selected.dat"
+        elif _det_ug:
             ug_use_filter = st.checkbox(
                 f"🔍  Filter survived muons by detector  ({len(_det_ug)} detector(s) from the Generator tab)",
                 value=True)
@@ -5039,7 +5087,8 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
         else:
             ug_use_filter  = False
             ug_filter_file = "output/muons_ug_selected.dat"
-            st.info("ℹ️  No detector from the Generator tab — enable the detector filter there first.")
+            st.caption("Optional: define a detector in the Generator tab to filter "
+                       "survived muons by detector geometry after the run.")
     
         # ── Run ───────────────────────────────────────────────────────────────────
         st.divider()
@@ -5051,9 +5100,9 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                 min(4, os.cpu_count() or 4), 1, key="music_omp_threads",
                 help="N muons transported in parallel. Each thread has private RANLUX/RANMAR stream.")
         with _mc2:
-            _omp_bin     = (_BIN_DIR / "ucmuon_transport_music_omp").exists()
-            _serial_bin  = (_BIN_DIR / "ucmuon_transport_music").exists()
-            _bbms_bin    = (_BIN_DIR / "ucmuon_transport_bb_omp").exists()
+            _omp_bin     = _bin_path("ucmuon_transport_music_omp") is not None
+            _serial_bin  = _bin_path("ucmuon_transport_music") is not None
+            _bbms_bin    = _bin_path("ucmuon_transport_bb_omp") is not None
             if transport_engine == "MUSIC":
                 st.metric("Mode", "Serial" if n_threads_music == 1 else f"~{n_threads_music}× speedup")
                 if _omp_bin:      st.success("✅  `ucmuon_transport_music_omp`")
@@ -5076,9 +5125,9 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                 if _p_ok3: st.success(f"✅  UCMuon-MC v{_p_ver3}")
                 else:      st.error(f"❌  {_p_ver3}")
             elif transport_engine == "PUMAS":
-                _pm = st.session_state.get("pumas_mode", "backward")
+                _pm = st.session_state.get("pumas_mode", "forward")
                 st.metric("Mode", f"PUMAS {'backward MC' if _pm == 'backward' else 'forward'}")
-                _pb_ok = (_BIN_DIR / "ucmuon_transport_pumas").exists()
+                _pb_ok = _bin_path("ucmuon_transport_pumas") is not None
                 if _pb_ok:
                     _dump_cached = (_BIN_DIR / "pumas_StandardRock.pumas").exists()
                     st.success("✅  `ucmuon_transport_pumas`")
@@ -5100,7 +5149,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                         st.error("❌  Neither `ucmuon_bb_driver.py` nor `ucmuon_transport_bb_omp` found.")
     
         _rb1, _rb2 = st.columns([4, 1])
-        _btn_short = {"MUSIC":"MUSIC","Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":"Bethe-Bloch","PROPOSAL":"PROPOSAL","UCMuon Stochastic (Python)":"UCMuon-MC"}.get(transport_engine, transport_engine)
+        _btn_short = {"MUSIC":"MUSIC","Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":"Bethe-Bloch CSDA","PROPOSAL":"PROPOSAL","UCMuon Stochastic (Python)":"UCMuon-MC"}.get(transport_engine, transport_engine)
         _btn_label = f"▶  Run {_btn_short} Transport" 
         run_music  = _rb1.button(_btn_label, type="primary", width='stretch',
                                  disabled=_gg("music_running"))
@@ -5109,7 +5158,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
     
         # For PUMAS backward mode there is no surface muon file — use n_events
         _pumas_bwd = (transport_engine == "PUMAS"
-                      and st.session_state.get("pumas_mode", "backward") == "backward")
+                      and st.session_state.get("pumas_mode", "forward") == "backward")
         _n_run = int(st.session_state.get("pumas_n_events", 50000)) if _pumas_bwd else n_transport
 
         if run_music and not _gg("music_running"):
@@ -5127,10 +5176,10 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                            ncols=ncols_info, transport_all=transport_all)
     
                 if transport_engine == "MUSIC":
-                    if (_BIN_DIR / "ucmuon_transport_music_omp").exists():
-                        _bin = str(_BIN_DIR / "ucmuon_transport_music_omp")
-                    elif (_BIN_DIR / "ucmuon_transport_music").exists():
-                        _bin = str(_BIN_DIR / "ucmuon_transport_music")
+                    _music_bin = (_bin_path("ucmuon_transport_music_omp")
+                                  or _bin_path("ucmuon_transport_music"))
+                    if _music_bin is not None:
+                        _bin = str(_music_bin)
                     else:
                         st.error("❌  No MUSIC driver found — run `make local`."); st.stop()
                     _env = {**os.environ, "OMP_NUM_THREADS": str(n_threads_music)}
@@ -5172,13 +5221,13 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                               build_stochastic_stdin(_pcfg), "music", n_transport, env={**os.environ})
 
                 elif transport_engine == "PUMAS":
-                    _pb_bin = _BIN_DIR    / "ucmuon_transport_pumas"
+                    _pb_bin = _bin_path("ucmuon_transport_pumas")
                     _pb_drv = _SCRIPT_DIR / "ucmuon_pumas_driver.py"
-                    if not _pb_bin.exists():
+                    if _pb_bin is None:
                         st.error("❌  `ucmuon_transport_pumas` not found — run `make pumas`."); st.stop()
                     if not _pb_drv.exists():
                         st.error("❌  `ucmuon_pumas_driver.py` not found in `gui/`."); st.stop()
-                    _pm_now = st.session_state.get("pumas_mode", "backward")
+                    _pm_now = st.session_state.get("pumas_mode", "forward")
                     _pumas_outfile_now = (pumas_outfile if _pm_now == "backward"
                                          else m_outfile)
                     cfg["pumas_mode"]        = _pm_now
@@ -5201,8 +5250,8 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
 
                 else:  # Bethe-Bloch
                     _bb_py  = _SCRIPT_DIR / "ucmuon_bb_driver.py"
-                    _bb_bin = _BIN_DIR    / "ucmuon_transport_bb_omp"
-                    if not _bb_py.exists() and not _bb_bin.exists():
+                    _bb_bin = _bin_path("ucmuon_transport_bb_omp")
+                    if not _bb_py.exists() and _bb_bin is None:
                         st.error("❌  Neither `ucmuon_bb_driver.py` nor "
                                  "`ucmuon_transport_bb_omp` found."); st.stop()
                     cfg["phitsxs_mat_type"]  = phitsxs_mat_type
@@ -5220,7 +5269,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
     
                 _ug_file_out = (pumas_outfile
                                 if transport_engine == "PUMAS"
-                                and st.session_state.get("pumas_mode","backward") == "backward"
+                                and st.session_state.get("pumas_mode","forward") == "backward"
                                 else m_outfile)
                 st.session_state.update({
                     "ug_file":           _ug_file_out,

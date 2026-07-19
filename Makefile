@@ -260,10 +260,10 @@ $(BUILD)/ranlux.o: ranlux.f
 	$(FC) $(FFLAGS_F77) -c $< -o $@
 
 $(BUILD)/ranlux_omp.o: ranlux_omp.f
-	$(FC) $(FFLAGS_F77) -fopenmp -c $< -o $@
+	$(FC) $(FFLAGS_F77) -fopenmp -J$(BUILD) -c $< -o $@
 
 $(BUILD)/ranmar_omp.o: ranmar_omp.f
-	$(FC) $(FFLAGS_F77) -fopenmp -c $< -o $@
+	$(FC) $(FFLAGS_F77) -fopenmp -J$(BUILD) -c $< -o $@
 
 $(BUILD)/rnorml.o: rnorml.f
 	$(FC) $(FFLAGS_F77) -c $< -o $@

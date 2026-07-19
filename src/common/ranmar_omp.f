@@ -7,7 +7,20 @@
 *
 *
 *#include "kerngen_pilot.h"
+C  --- RNG state module (formerly COMMON/RANMA1/) ---------------------
+C  THREADPRIVATE COMMON makes gfortran emit a .tls_common directive that
+C  the Windows PE assembler does not implement (build error on MSYS2).
+C  Module variables with THREADPRIVATE use regular TLS and are portable.
+C  Storage layout and zero-initialisation are identical to the COMMON.
+      MODULE RANMA1_MOD
+      INTEGER IJKL, NTOT, NTOT2, I97, J97
+      REAL C, U(97)
+      SAVE
+C$OMP THREADPRIVATE(IJKL,NTOT,NTOT2,I97,J97,C,U)
+      END MODULE RANMA1_MOD
+
       SUBROUTINE RANMAR(RVEC,LENV)
+      USE RANMA1_MOD
 *#if defined(CERNLIB_QMCRY)
 *CDIR$ STACK
 *#endif
@@ -17,13 +30,11 @@ C ORIG. 01/03/89 FCA + FJ
 C
       DIMENSION RVEC(*)
 C
-      COMMON/RANMA1/IJKL,NTOT,NTOT2,I97,J97,C,U(97)
       LOGICAL FIRST
-C$OMP THREADPRIVATE(/RANMA1/)
       PARAMETER (TWOM24=2.**(-24),TWOM48=2.**(-48))
       PARAMETER (CD=7654321.*TWOM24,CM=16777213.*TWOM24)
       PARAMETER (CINT=362436.*TWOM24,MODCNS=1000000000)
-      SAVE /RANMA1/, FIRST
+      SAVE FIRST
       DATA FIRST/.TRUE./
 C
       IF(FIRST) THEN

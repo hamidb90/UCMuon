@@ -29,7 +29,7 @@ In gui_terrain_engine.py, replace the GeoTIFF-load block with:
 COORDINATE CONVENTION
 ──────────────────────
 All shapes are centred on the detector GPS position (lat0, lon0).
-The grid uses a flat-Earth approximation: 1° lat ≈ 111 320 m.
+The grid uses a flat-Earth approximation: 1° lat ≈ 111320 m.
 This is accurate to ≪1 m over the ~30 km extent used in practice.
 
 Grid coordinate system:
