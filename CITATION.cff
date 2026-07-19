@@ -26,12 +26,13 @@ abstract: >
   muon generation, transport, and muography. It runs either locally through a
   browser-based graphical interface or as command-line executables on HPC
   clusters. It provides surface muon generation (eight spectrum models, three
-  source geometries), six transport engines (MUSIC, Bethe-Bloch, PROPOSAL, the
-  native UCMuon-MC stochastic engine, backward Monte Carlo, and DEM-based
-  terrain ray-tracing for real field deployments), and a muographic density-
-  inversion suite. Primary applications are volcano imaging and subsurface
-  density monitoring. The MUSIC source code is not redistributed; see
-  docs/MUSIC_FILES.md for how to obtain it.
+  source geometries), seven transport engines (the native UCMuon-MC stochastic
+  engine, MUSIC, Bethe-Bloch, PROPOSAL, PUMAS backward/forward Monte Carlo, a
+  Python backward Monte Carlo, and DEM-based terrain ray-tracing for real
+  field deployments), and a muographic density-inversion suite. Primary
+  applications are volcano imaging and subsurface density monitoring. The
+  MUSIC source code is not redistributed (see docs/MUSIC_FILES.md for how to
+  obtain it); the PUMAS library is downloaded automatically by the installers.
 
 authors:
   - family-names: Basiri

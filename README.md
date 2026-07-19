@@ -12,7 +12,7 @@ MIT License · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20826984.svg)
 UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, with applications to muography of geological structures, CO₂ storage monitoring, and glacier/bedrock imaging. It can be run interactively through a browser-based GUI on any laptop, or in batch mode on an HPC cluster using MPI-parallelised Fortran executables.
 
 - **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Bugaev/Gaisser 1998, Reyna-Bugaev 2006, cosmic electrons), three source geometries, OpenMP and MPI parallelism
-- **Six transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, Backward MC, UCMuon Terrain (DEM ray-tracing)
+- **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, PUMAS (backward/forward MC), Backward MC, UCMuon Terrain (DEM ray-tracing)
 - **Streamlit GUI** — interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
 - **HPC workflow** — MPI+OMP Fortran executables, SLURM scripts, automatic PHITS conversion
 - **Transmission maps** — terrain engine outputs `T_sim = Φ_rock / Φ_sky` per direction; run at multiple densities to build a T_sim library for inversion
