@@ -1,6 +1,6 @@
 {
   "title": "UCMuon: A simulation suite for cosmic-ray muon generation, transport, and muography",
-  "description": "UCMuon (You See Muon!) is an open-source simulation suite for cosmic-ray muon generation, transport, and muography, with a browser-based graphical interface, deployable locally or as command-line executables on an HPC cluster. It provides surface muon generation (eight spectrum models, three source geometries), six transport engines including MUSIC, Bethe-Bloch, PROPOSAL, and a self-developed stochastic engine (UCMuon-MC), DEM-based terrain ray-tracing for real field deployments, and a muographic density-inversion suite. Primary applications are volcano muography (MURAVES/Vesuvius) and subsurface CO2 storage monitoring. The MUSIC engine is not redistributed; see docs/MUSIC_FILES.md.",
+  "description": "UCMuon (You See Muon!) is an open-source simulation suite for cosmic-ray muon generation, transport, and muography. It runs either locally through a browser-based graphical interface or as command-line executables on HPC clusters. It provides surface muon generation (eight spectrum models, three source geometries), six transport engines (MUSIC, Bethe-Bloch, PROPOSAL, the native UCMuon-MC stochastic engine, backward Monte Carlo, and DEM-based terrain ray-tracing for real field deployments), and a muographic density-inversion suite. Primary applications are volcano imaging and subsurface density monitoring. The MUSIC source code is not redistributed; see docs/MUSIC_FILES.md for how to obtain it.",
   "upload_type": "software",
   "license": "MIT",
   "version": "1.0.1",
@@ -22,5 +22,13 @@
     "volcano imaging",
     "HPC",
     "Fortran"
+  ],
+  "contributors": [
+    {
+      "name": "Giammanco, Andrea",
+      "orcid": "0000-0001-9640-8294",
+      "affiliation": "Centre for Cosmology, Particle Physics and Phenomenology (CP3), Université catholique de Louvain, Louvain-la-Neuve, Belgium",
+      "type": "Supervisor"
+    }
   ]
 }
