@@ -250,20 +250,9 @@ UCMuon/
 ├── examples/
 │   ├── vesuvius/                 MURAVES-style Vesuvius worked example
 │   └── terrain/                  terrain engine example script
-│
-├── benchmark/                    6-code validation (Geant4, PHITS, 4 UCMuon engines)
-│   ├── codes/                    per-code source + README (geant4, phits, music, …)
-│   ├── analysis/                 cross-code scripts (benchmark_analysis.py, …)
-│   ├── results/                  summary CSVs + timing files
-│   ├── figures/                  canonical comparison plots (v2_six_code/)
-│   ├── reports/                  BENCHMARK_FEEDBACK.md (v2 reference), write-ups
-│   └── geant4_muon_rock_v5/      git-ignored scratch tree (~8 GB raw .dat)
-│
 ├── external/                     vendored third-party libraries
 │   └── pumas-master/             PUMAS C library (used by Engine 7 / Makefile)
 │
-├── manuscript/                   paper (ucmuon_cpc_paper.tex/.pdf, scripts/, figs/)
-├── misc/                         loose regenerable scratch (validate_spectra.py, …)
 └── references/                   literature PDFs (kept private; stripped at public release)
 ```
 
@@ -343,33 +332,9 @@ The script automatically finds a working Python+PROPOSAL installation — if the
 
 ---
 
-## Full benchmark suite
+## Validation
 
-The curated 6-code benchmark lives in `benchmark/`. It cross-checks the four UCMuon engines against Geant4 11.2 and PHITS 3.36 using an identical 6 × 10⁵ muon source population (six monoenergetic beams, 5–300 GeV) in Standard Rock.
-
-```bash
-# Run all 4 UCMuon engines at 5 depths (1, 25, 50, 100, 200 m) — takes ~40 min
-cd benchmark/analysis
-bash run_benchmark.sh
-
-# Then regenerate the paper's survival table:
-python3 manuscript/scripts/make_survival_table.py > manuscript/tab_survival_matrix.tex
-```
-
-See [`benchmark/README.md`](benchmark/README.md) for the full reproduction roadmap (source generation, per-code instructions, analysis steps).
-
-**Measured survival fractions at d = 100 m** (N = 6 × 10⁵, single thread, Standard Rock, Apple Silicon Mac, 2026):
-
-| Engine | Survival fraction | Time per 10⁵ | Bias vs Geant4 |
-|---|:---:|:---:|:---:|
-| Geant4 (FTFP_BERT) | 32.7 ± 0.1% | — | Reference |
-| PHITS 3.36 | 32.6 ± 0.1% | — | −0.4% |
-| MUSIC | 32.9 ± 0.1% | ~9 s | +0.6% |
-| PROPOSAL | 32.8 ± 0.1% | ~98 s | +0.3% |
-| Bethe-Bloch | 33.3 ± 0.1% | ~28 s | +1.9% |
-| **UCMuon-MC** | 32.3 ± 0.1% | ~12 s | −1.3% |
-
-All UCMuon engines agree with Geant4 within ±2% at all depths ≥ 25 m. The 10m depth is excluded from Geant4 comparison due to a CSDA boundary effect for the 5 GeV group. UCMuon-MC bias vs MUSIC was reduced from −1.1% to −0.6% by switching to the Bethe-Heitler (1−v)/v hard-event spectrum (PDG 2024 range table). BB timing improved to ~28 s after adding a CSDA range pre-filter.
+UCMuon has been validated against Geant4 11.2, PHITS 3.36, and MUSIC across monoenergetic and realistic-spectrum test suites. The full benchmark suite (comparison-code setups, analysis scripts, figures, and timing data) will be released with the accompanying publication.
 
 ---
 

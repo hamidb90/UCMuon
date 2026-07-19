@@ -1,9 +1,0 @@
-# run.mac — true batch mode, no GUI
-# Usage: ./MuonRock run.mac
-
-/run/verbose 1
-/event/verbose 0
-/tracking/verbose 0
-
-/run/initialize
-/run/beamOn 10003

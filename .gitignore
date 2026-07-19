@@ -47,6 +47,10 @@ output/
 src/transport/music/music.f
 src/transport/music/music-crosssections.f
 
+# -- Benchmark campaign (paper material) -- released with the publication -----
+# Kept in the private development tree; do not re-add before the paper is out.
+benchmark/
+
 # ── GUI session state ─────────────────────────────────────────────────────────
 ucmuon_autosave.json
 

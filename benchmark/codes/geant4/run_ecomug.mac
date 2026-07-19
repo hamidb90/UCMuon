@@ -1,8 +1,0 @@
-# ============================================================
-# run_ecomug.mac  — Source mode: ECOMUG
-# Set SOURCE_MODE = SourceMode::ECOMUG in SimConfig.hh
-# Compile with -DUSE_ECOMUG and add EcoMug.h to include path.
-# ============================================================
-/run/initialize
-/run/setCut 10.0 mm
-/run/beamOn 50000

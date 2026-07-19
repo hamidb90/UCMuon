@@ -1,8 +1,0 @@
-# ============================================================
-# run_powerlaw.mac  — Source mode: POWERLAW
-# Set SOURCE_MODE = SourceMode::POWERLAW in SimConfig.hh
-# SPEC_EMIN_GEV=100, SPEC_EMAX_GEV=10000, SPEC_GAMMA=2.7
-# ============================================================
-/run/initialize
-/run/setCut 10.0 mm
-/run/beamOn 50000
