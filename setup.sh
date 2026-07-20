@@ -208,9 +208,12 @@ else
     echo "      See docs/MUSIC_FILES.md"
     MISS_MUSIC=1
 fi
-for f in data/music-eloss-rock.dat data/music-double-diff-rock.dat; do
-    [ -f "$f" ] && echo "  OK  $f" || echo "  --  $f  (MISSING)"
-done
+if [ "$MISS_MUSIC" -eq 0 ]; then
+    f=data/music-double-diff-rock.dat
+    [ -f "$f" ] \
+        && echo "  OK  $f" \
+        || echo "  --  $f  (needed for Engine 2 — obtain from author, see docs/MUSIC_FILES.md)"
+fi
 
 # Optional: PUMAS source for Engine 7 (downloaded, not bundled: LGPL-3.0)
 PUMAS_SRC="external/pumas-master/src/pumas.c"

@@ -148,27 +148,25 @@ endif
 # ---------------------------------------------------------------------------
 #  MUSIC data symlinks — created in bin/ (CWD when binaries run)
 #  Falls back to cp if ln -sf is unavailable.
+#
+#  The MUSIC data tables are NOT distributed (see docs/MUSIC_FILES.md).
+#  When MUSIC is unavailable this target is a no-op, so the other engines
+#  build normally. When the user has dropped MUSIC files into data/, any
+#  that are present are linked into bin/; missing ones are skipped
+#  silently (e.g. the cross-section / eloss tables are generated on the
+#  first MUSIC run).
 # ---------------------------------------------------------------------------
-data-links: $(BIN)/music-eloss-rock.dat $(BIN)/music-double-diff-rock.dat \
-            $(BIN)/music-cross-sections-rock.dat
-
-$(BIN)/music-eloss-rock.dat: data/music-eloss-rock.dat
-	@if [ ! -e $@ ]; then \
-	    ln -sf $(abspath $<) $@ 2>/dev/null || cp $< $@; \
-	    echo "  LINK  $@ -> $<"; \
-	fi
-
-$(BIN)/music-double-diff-rock.dat: data/music-double-diff-rock.dat
-	@if [ ! -e $@ ]; then \
-	    ln -sf $(abspath $<) $@ 2>/dev/null || cp $< $@; \
-	    echo "  LINK  $@ -> $<"; \
-	fi
-
-$(BIN)/music-cross-sections-rock.dat: data/music-cross-sections-rock.dat
-	@if [ ! -e $@ ]; then \
-	    ln -sf $(abspath $<) $@ 2>/dev/null || cp $< $@; \
-	    echo "  LINK  $@ -> $<"; \
-	fi
+data-links:
+ifeq ($(MUSIC_AVAIL),yes)
+	@for f in music-double-diff-rock.dat music-double-diff-water.dat \
+	          music-eloss-rock.dat music-eloss-water.dat \
+	          music-cross-sections-rock.dat; do \
+	    if [ -e data/$$f ] && [ ! -e $(BIN)/$$f ]; then \
+	        ln -sf $(abspath data)/$$f $(BIN)/$$f 2>/dev/null || cp data/$$f $(BIN)/$$f; \
+	        echo "  LINK  $(BIN)/$$f"; \
+	    fi; \
+	done
+endif
 
 # ---------------------------------------------------------------------------
 #  Binaries — OMP only (local / GUI)  →  go to bin/
