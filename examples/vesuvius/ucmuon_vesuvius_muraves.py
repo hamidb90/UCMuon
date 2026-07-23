@@ -2,20 +2,19 @@
 """
 ucmuon_vesuvius_muraves.py  —  UCLouvain Muography Group
 ─────────────────────────────────────────────────────────────────────────────
-Reproduces the four key MURAVES simulation outputs from the Muographers 2026
-presentation (Rajan et al., Budapest, 4 Jun 2026):
+Reproduces four standard MURAVES muography outputs for Mt. Vesuvius:
 
-  Fig 1  — Rock-thickness map   (az × el heatmap)         ↔ slide 9
-  Fig 2  — Flux vs elevation at az=summit                 ↔ slides 11, 20
-  Fig 3  — Free-sky vs through-rock flux maps             ↔ slide 12
-  Fig 4  — Transmission ratio T_sim = Φ_rock / Φ_sky     ↔ slide 14
+  Fig 1  — Rock-thickness map   (az × el heatmap)
+  Fig 2  — Flux vs elevation at az=summit
+  Fig 3  — Free-sky vs through-rock flux maps
+  Fig 4  — Transmission ratio T_sim = Φ_rock / Φ_sky
 
 DEM handling
 ────────────
 If a DEM file is passed on the command line the full UCMuon terrain engine is
 used (requires rasterio).  Without a DEM, a smooth truncated-cone model of
-Vesuvius is used for the geometry — good enough to reproduce the slide shapes
-and all physics comparisons.
+Vesuvius is used for the geometry — good enough to reproduce the overall
+figure shapes and all physics comparisons.
 
 Usage:
     python ucmuon_vesuvius_muraves.py                      # cone model
@@ -25,9 +24,8 @@ Usage:
 Output:  four PNG figures saved to the current directory.
 
 References:
-  Tioukov et al. (2019) Sci. Rep. 9, 6695
-  Lo Bue   et al. (2023) J. Geophys. Res. 128, e2022JB025446
-  Rajan    et al. (2026) MURAVES/Muographers26 presentation
+  Hong  et al. (2025) J. Appl. Phys. 138, doi:10.1063/5.0275078  (MURAVES at Mt. Vesuvius)
+  Rajan  et al. (2026) MURAVES/Muographers26 presentation
 """
 
 from __future__ import annotations
@@ -62,7 +60,7 @@ _bmc = _load_module("ucmuon_backward_mc",   _GUI / "ucmuon_backward_mc.py")
 _drv = _load_module("ucmuon_terrain_driver", _GUI / "ucmuon_terrain_driver.py")
 
 # ─────────────────────────────────────────────────────────────────────────────
-# MURAVES geometry (Rajan 2026 / Tioukov 2019)
+# MURAVES geometry (Hong et al. 2025 / Rajan 2026)
 # ─────────────────────────────────────────────────────────────────────────────
 DET_LAT  = 40.8271      # MURAVES detector, SW flank
 DET_LON  = 14.4006
@@ -93,7 +91,7 @@ N_ZE     = 85     # 1° steps, ze = 0.5° … 84.5°
 ZE_MAX   = 85.0
 
 # Simulation parameters
-RHO_REF  = 2.65   # g/cm³ — reference density used in MURAVES T_sim slide
+RHO_REF  = 2.65   # g/cm³ — reference density used in MURAVES T_sim analysis
 SPEC_MODE = 3     # Guan et al. 2015 — used by MURAVES
 E_MIN    = 1.0    # GeV
 E_MAX    = 2500.0 # GeV
@@ -291,7 +289,7 @@ def _summit_indicator(ax, az_to_sum: float, el_to_sum: float, label=True):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 1 — Rock-thickness map  (slide 9)
+# Figure 1 — Rock-thickness map
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_thickness_map(az_c, ze_c, overburden, rho, outfile="fig_vesuvius_thickness.png"):
@@ -341,7 +339,7 @@ def plot_thickness_map(az_c, ze_c, overburden, rho, outfile="fig_vesuvius_thickn
     for sp in ax2.spines.values():
         sp.set_edgecolor("white")
 
-    fig.suptitle("UCMuon / MURAVES — Mt. Vesuvius  (slide 9 equivalent)",
+    fig.suptitle("UCMuon / MURAVES — Mt. Vesuvius rock-thickness map",
                  color="white", fontsize=12, y=1.01)
     fig.tight_layout()
     fig.savefig(outfile, dpi=150, bbox_inches="tight",
@@ -351,7 +349,7 @@ def plot_thickness_map(az_c, ze_c, overburden, rho, outfile="fig_vesuvius_thickn
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 2 — Flux vs elevation for multiple densities  (slides 11, 20)
+# Figure 2 — Flux vs elevation for multiple densities
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_flux_vs_elevation(el_c, sky_flux, rock_fluxes_by_rho,
@@ -386,7 +384,7 @@ def plot_flux_vs_elevation(el_c, sky_flux, rock_fluxes_by_rho,
     for sp in ax.spines.values():
         sp.set_edgecolor("white")
 
-    fig.suptitle("UCMuon / MURAVES — Flux vs elevation (slides 11, 20)",
+    fig.suptitle("UCMuon / MURAVES — Flux vs elevation",
                  color="white", fontsize=11, y=1.01)
     fig.tight_layout()
     fig.savefig(outfile, dpi=150, bbox_inches="tight",
@@ -396,7 +394,7 @@ def plot_flux_vs_elevation(el_c, sky_flux, rock_fluxes_by_rho,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 3 — Free-sky and through-rock flux maps side by side  (slide 12)
+# Figure 3 — Free-sky and through-rock flux maps side by side
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_flux_maps(az_c, ze_c, flux_map, sky_flux,
@@ -434,7 +432,7 @@ def plot_flux_maps(az_c, ze_c, flux_map, sky_flux,
     note = ("Note: MURAVES azimuth convention centres the summit at 180°.  "
             f"In geographic convention (0=N) the summit is at az={AZ_TO_SUMMIT:.0f}°.")
     fig.text(0.5, -0.04, note, ha="center", color="grey", fontsize=7)
-    fig.suptitle(f"UCMuon / MURAVES — Simulated muon flux  ρ = {RHO_REF} g/cm³  (slide 12)",
+    fig.suptitle(f"UCMuon / MURAVES — Simulated muon flux  ρ = {RHO_REF} g/cm³",
                  color="white", fontsize=11, y=1.02)
     fig.tight_layout()
     fig.savefig(outfile, dpi=150, bbox_inches="tight",
@@ -444,7 +442,7 @@ def plot_flux_maps(az_c, ze_c, flux_map, sky_flux,
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Figure 4 — Transmission ratio map  (slide 14)
+# Figure 4 — Transmission ratio map
 # ─────────────────────────────────────────────────────────────────────────────
 
 def plot_transmission_map(az_c, ze_c, T_sim,
@@ -469,7 +467,7 @@ def plot_transmission_map(az_c, ze_c, T_sim,
     for sp in ax.spines.values():
         sp.set_edgecolor("white")
 
-    fig.suptitle(f"UCMuon / MURAVES — Transmission ratio  ρ_sim = {RHO_REF} g/cm³  (slide 14)",
+    fig.suptitle(f"UCMuon / MURAVES — Transmission ratio  ρ_sim = {RHO_REF} g/cm³",
                  color="white", fontsize=11)
     fig.tight_layout()
     fig.savefig(outfile, dpi=150, bbox_inches="tight",
@@ -503,7 +501,7 @@ def main():
     import time
 
     p = argparse.ArgumentParser(
-        description="UCMuon/MURAVES Vesuvius simulation — reproduces slides 9, 11, 12, 14")
+        description="UCMuon/MURAVES Vesuvius simulation — thickness, flux and transmission maps")
     p.add_argument("dem", nargs="?", default=None,
                    help="DEM file (.tif / .xyz / .asc).  Omit to use synthetic cone model.")
     p.add_argument("--rho",    type=float, default=RHO_REF,
@@ -595,7 +593,7 @@ def main():
     print(f"  Figures written to: {out_dir.resolve()}", flush=True)
     print(f"  ─────────────────────────────────────────", flush=True)
     print(f"  Azimuth note: geographic convention (0=North, 90=East).", flush=True)
-    print(f"  MURAVES slides centre the summit at az=180°.", flush=True)
+    print(f"  The MURAVES convention centres the summit at az=180°.", flush=True)
     print(f"  Summit is at az={AZ_TO_SUMMIT:.0f}° in this output.", flush=True)
     print(f"  Rotate/remap azimuth by ({180 - AZ_TO_SUMMIT:.0f}°) for direct comparison.", flush=True)
 

@@ -636,6 +636,12 @@ def _polar_heatmap(az_c, ze_c, data, title, unit, colorscale="Jet", mask=None,
 # DEM download helper (OpenTopography — free, no account for SRTM)
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Bundled sample DEM: Mt. Vesuvius, SRTM GL1 30 m (public domain, NASA/USGS).
+# Matches the examples/vesuvius MURAVES example — see examples/vesuvius/DEM_SOURCE.md
+_BUNDLED_VESUVIUS_DEM = (Path(__file__).resolve().parent.parent
+                         / "examples" / "vesuvius" / "vesuvius_dem.tif")
+
+
 def _download_dem(south, north, west, east, product, outpath, api_key="demoapikeyot2022"):
     try:
         import requests
@@ -1641,10 +1647,26 @@ def render_terrain_tab(script_dir, project_dir,
                 st.session_state.pop("terrain_dem_path", None)
                 _dem_ss = ""
 
+            # No DEM selected yet — fall back to the bundled Vesuvius sample.
+            # Written to session_state so the Overburden-map and Run sub-tabs
+            # (which read terrain_dem_path) see it too.
+            if not _dem_ss and _BUNDLED_VESUVIUS_DEM.exists():
+                _dem_ss = str(_BUNDLED_VESUVIUS_DEM)
+                st.session_state["terrain_dem_path"] = _dem_ss
+
             if _dem_ss and Path(_dem_ss).exists():
                 dem_path = _dem_ss
-                st.caption(f"📍 Current DEM: `{Path(dem_path).name}`  "
-                           f"({Path(dem_path).stat().st_size/1e6:.1f} MB)")
+                if Path(dem_path) == _BUNDLED_VESUVIUS_DEM:
+                    st.caption(
+                        f"📍 Default DEM: bundled Mt. Vesuvius sample "
+                        f"`{_BUNDLED_VESUVIUS_DEM.name}` (SRTM GL1 30 m, "
+                        f"14.35–14.52 °E / 40.76–40.90 °N).  "
+                        f"Press **🌋 muRAvES / Vesuvius example** below to set matching "
+                        f"detector coordinates, or upload / download a DEM for your own site."
+                    )
+                else:
+                    st.caption(f"📍 Current DEM: `{Path(dem_path).name}`  "
+                               f"({Path(dem_path).stat().st_size/1e6:.1f} MB)")
             else:
                 _manual_dem = st.text_input("Or enter path to existing GeoTIFF", value="",
                                             key="terrain_dem_manual", placeholder="/path/to/dem.tif")
@@ -1705,12 +1727,15 @@ def render_terrain_tab(script_dir, project_dir,
 
             # muRAvES / Vesuvius example preset button
             if st.button("🌋  muRAvES / Vesuvius example", key="terrain_muraves_preset"):
+                # Detector = MURAVES site, SW flank (examples/vesuvius/MURAVES_GUIDE.md)
                 st.session_state.update({
-                    "terrain_lat": 40.808, "terrain_lon": 14.408,
-                    "terrain_alt": 400.0, "terrain_rho": 2.65,
+                    "terrain_lat": 40.8271, "terrain_lon": 14.4006,
+                    "terrain_alt": 608.0, "terrain_rho": 2.65,
                     "terrain_naz": 36, "terrain_nze": 18,
                     "terrain_zemax": 85.0, "terrain_step": 50.0,
                 })
+                if _BUNDLED_VESUVIUS_DEM.exists():
+                    st.session_state["terrain_dem_path"] = str(_BUNDLED_VESUVIUS_DEM)
                 st.rerun()
 
             _gp1, _gp2, _gp3 = st.columns(3)
@@ -2645,17 +2670,28 @@ def render_terrain_tab(script_dir, project_dir,
                 if "terrain_3d_view_mode" not in st.session_state:
                     st.session_state["terrain_3d_view_mode"] = "🗺️ Top-down map"
 
-                _ptab1, _ptab2, _ptab3, _ptab4, _ptab5, _ptab6, _ptab7 = st.tabs([
+                # Keyed segmented control instead of st.tabs: st.tabs keeps its
+                # selection client-side only, so the rerun triggered by any
+                # widget inside a view (3D radio, radius slider, …) snapped the
+                # strip back to the first view.  The key persists the selection.
+                _RESULT_VIEWS = [
                     "🗺️ Overburden (polar)",
                     "📐 Muogram (az×el)",
                     "📡 Survival rate",
                     "📈 Transmission",
                     "📊 Energy spectrum",
                     "🏔️ 3D Terrain",
-                    "🔬 MURAVES Comparison",
-                ])
+                    "🔬 Literature cross-check",
+                ]
+                if st.session_state.get("terrain_results_view") not in _RESULT_VIEWS:
+                    st.session_state["terrain_results_view"] = _RESULT_VIEWS[0]
+                _res_view = st.segmented_control(
+                    "Results view", _RESULT_VIEWS,
+                    key="terrain_results_view",
+                    label_visibility="collapsed",
+                ) or _RESULT_VIEWS[0]   # clicking the active segment deselects → fall back
     
-                with _ptab1:
+                if _res_view == _RESULT_VIEWS[0]:
                     st.caption(
                         "Skymap view: **radial axis = zenith angle** (0° = directly overhead, 90° = horizon).  "
                         "**Angular axis = geographic azimuth** (N=top, E=right, clockwise).  "
@@ -2676,7 +2712,7 @@ def render_terrain_tab(script_dir, project_dir,
                         "Compare directly to MURAVES Fig. 1 or CCS monitoring skymaps."
                     )
     
-                with _ptab2:
+                if _res_view == _RESULT_VIEWS[1]:
                     st.caption(
                         "Standard muography display.  "
                         "X = azimuth (N=0, E=90), Y = elevation = 90 minus zenith.  "
@@ -2715,7 +2751,7 @@ def render_terrain_tab(script_dir, project_dir,
                         icon="🌋"
                     )
     
-                with _ptab3:
+                if _res_view == _RESULT_VIEWS[2]:
                     _valid = ~np.isnan(rate_map) & (rate_map > 0)
                     if _valid.any():
                         _c1, _c2 = st.columns(2)
@@ -2748,7 +2784,7 @@ def render_terrain_tab(script_dir, project_dir,
                     else:
                         st.info("No directional survival data — run the transport first.")
     
-                with _ptab4:
+                if _res_view == _RESULT_VIEWS[3]:
                     st.caption(
                         "**Transmission map** T(az, el) = survived/input per bin.  "
                         "This normalises out the cos²θ flux weighting and shows **only the terrain effect**.  "
@@ -2828,7 +2864,7 @@ def render_terrain_tab(script_dir, project_dir,
                             except Exception as _tsim_err:
                                 st.error(f"Failed to write T_sim file: {_tsim_err}")
 
-                with _ptab5:
+                if _res_view == _RESULT_VIEWS[4]:
                     if "E" in df_ug.columns and "alive" in df_ug.columns:
                         _e_surv = df_ug.loc[df_ug["alive"] == 1, "E"].values
                         _e_surf = df_ug["Es"].values if "Es" in df_ug.columns else None
@@ -2880,7 +2916,7 @@ def render_terrain_tab(script_dir, project_dir,
                             "Enable log Y to reveal the hardened green spectrum."
                         )
     
-                with _ptab6:
+                if _res_view == _RESULT_VIEWS[5]:
                     _dem_path_3d  = st.session_state.get("terrain_dem_path", "")
                     _synth_elev   = st.session_state.get("terrain_result_elev")
                     _synth_tfm    = st.session_state.get("terrain_result_tfm")
@@ -3098,8 +3134,7 @@ def render_terrain_tab(script_dir, project_dir,
             | Site | Reference | Detector position | Notes |
             |------|-----------|-------------------|-------|
             | Puy de Dôme | Carloganu et al. 2013, GIDS **2**, 55 | 45.742°N 2.955°E 870 m | 2° bins, ~350,000 g/cm² max |
-            | Mt. Vesuvius | Tioukov et al. 2019, Sci. Rep. **9**, 6695 | 40.827°N 14.401°E 608 m | nuclear emulsion, E_min ≈ 1 GeV |
-            | Mt. Vesuvius | Lo Bue et al. 2023, JGR **128** | same | joint inversion, ρ = 1.5–2.4 g/cm³ |
+            | Mt. Vesuvius | Hong et al. 2025, J. Appl. Phys. **138**, doi:10.1063/5.0275078 | 40.827°N 14.401°E 608 m | MURAVES scintillator tracker, E_min ≈ 1 GeV |
     
             **Angular resolution:** to resolve a structure of angular width θ, use bin size ≤ θ/3.
             A 600 m dome at 2 km subtends ≈ 17° → use ≤ 5° bins (180 az × 45 ze) for shape imaging.
@@ -3125,31 +3160,29 @@ def render_terrain_tab(script_dir, project_dir,
                                 icon="✅"
                             )
     
-                # ── Tab 7: MURAVES Comparison ─────────────────────────────────────────────
-                with _ptab7:
-                    st.markdown("""
-            **Cross-check with Mulder/MURAVES simulation** (Yanwen Hong, VUB, Feb 2026 collaboration meeting).
-    
-            This tab reproduces the four key plots from the MURAVES simulation status presentation that are
-            directly comparable with UCMuon:
-    
-            | Mulder slide | This tab | Quantity |
-            |---|---|---|
-            | Slide 4 | Thickness map | Slant rock path L(az, el) [m] |
-            | Slide 7 (right) | Azimuth slice | Thickness vs elevation at chosen az |
-            | Slide 8/9 | Flux vs elevation | Integrated flux Φ(el) from backward MC |
-            | Slide 5/6 | Open-sky benchmark | UCMuon Guan flux vs Mulder reference |
-    
-            ⚠️ **Convention note:** Mulder uses MURAVES coordinates (40.810°N, 14.412°E, 598 m).
-            Your detector position may differ — the thickness profile shape should agree but the
-            absolute azimuth of the blocked region will shift accordingly.
-                    """)
-    
+                # ── View 7: Literature cross-check ────────────────────────────────────────
+                if _res_view == _RESULT_VIEWS[6]:
+                    st.markdown(
+                        "**Literature cross-check.** Compare UCMuon's terrain overburden and "
+                        "integrated flux against published muography references for Mt. Vesuvius. "
+                        "UCMuon curves are computed from your DEM and detector position; external "
+                        "overlays are drawn only from peer-reviewed sources and labelled with their "
+                        "citation."
+                    )
+                    st.caption(
+                        "Convention: the published MURAVES analysis (Hong et al. 2025, "
+                        "J. Appl. Phys. 138) uses a detector at ~40.81 °N, 14.41 °E, 598 m a.s.l. "
+                        "and a detector-centric azimuth with the summit near 180°. If your detector "
+                        "differs, the thickness-profile *shape* should still agree, but the absolute "
+                        "azimuth of the blocked region shifts accordingly. UCMuon uses geographic "
+                        "azimuth (N = 0°, E = 90°)."
+                    )
+
                     _rho_comp  = _sf(st.session_state.get("terrain_rho", 2.65), 2.65)
                     _det_lat_c = _sf(st.session_state.get("terrain_lat", 40.827), 40.827)
                     _det_lon_c = _sf(st.session_state.get("terrain_lon", 14.401), 14.401)
                     _det_alt_c = _sf(st.session_state.get("terrain_alt", 608.0), 608.0)
-    
+
                     # Load backward MC module once
                     try:
                         import importlib as _il
@@ -3163,78 +3196,122 @@ def render_terrain_tab(script_dir, project_dir,
                     except Exception as _bmc_err:
                         _bmc_ok = False
                         st.warning(f"ucmuon_backward_mc.py not found — flux plots unavailable: {_bmc_err}")
-    
-                    # ── Azimuth slice selector ─────────────────────────────────────────────
-                    st.markdown("#### 1 — Select azimuth slice")
+
+                    # ── 1 — Select target azimuth ─────────────────────────────────────────
+                    st.markdown("#### 1 — Select target azimuth")
+                    st.caption(
+                        "Pick the azimuth pointing toward the geological target (e.g. the crater). "
+                        "It defaults to the direction of maximum rock overburden. The 2D map below "
+                        "marks your choice; the profiles further down are taken along it."
+                    )
                     _col_sl1, _col_sl2 = st.columns([2, 1])
                     _az_target = _col_sl1.number_input(
                         "Target azimuth [° geographic, N=0°, E=90°]", 0.0, 360.0,
                         float(az_c[np.argmax(ob_map.max(axis=1))]),
                         1.0, key="comp_az_target",
-                        help="Choose the azimuth that points toward the geological target (e.g. crater). "
-                             "The bin nearest to this value will be selected."
+                        help="The bin nearest to this value will be selected.",
                     )
                     _az_slice_idx = int(np.argmin(np.abs(az_c - _az_target)))
                     _az_slice_deg = float(az_c[_az_slice_idx])
                     _col_sl2.metric("Nearest bin centre", f"{_az_slice_deg:.1f}°")
-    
-                    # ── Plot 1: Slant-path thickness vs elevation (Mulder slide 7 right) ──
-                    st.markdown("#### 2 — Rock thickness vs elevation at selected azimuth")
+                    _el_c = 90.0 - ze_c   # elevation centres
+
+                    # ── 2 — Full rock-thickness map L(az, el) ─────────────────────────────
+                    st.markdown("#### 2 — Rock thickness map  L(az, el)")
                     st.caption(
-                        "Reproduces **Mulder slide 7 (right)**. Y-axis: slant rock path [m] = overburden g/cm² / (ρ×100). "
-                        "X-axis: elevation angle = 90° − zenith. Open-sky bins are excluded (zero thickness)."
+                        "The 2D slant-rock-path map — the overburden input a TURTLE/Mulder-style "
+                        "backward transport would use. Colour = slant path [m]. Use it to choose the "
+                        "target azimuth above; the gold dotted line marks the current selection."
                     )
-                    _el_c = 90.0 - ze_c           # elevation centres
+                    _thick_map = ob_map / (_rho_comp * 100.0)   # m, shape (n_az, n_ze)
+                    _thick_map_masked = _thick_map.copy().astype(float)
+                    _thick_map_masked[sky_m] = np.nan
+                    _el_centres = 90.0 - ze_c
+                    _az_cent_shifted = (az_c + 180.0) % 360.0 - 180.0   # centre on N
+                    _sort_az = np.argsort(_az_cent_shifted)
+                    _Z_thick = _thick_map_masked[_sort_az, :].T   # (n_ze, n_az) for plotly heatmap
+                    _fig_thmap = go.Figure(go.Heatmap(
+                        x=_az_cent_shifted[_sort_az],
+                        y=_el_centres,
+                        z=_Z_thick,
+                        colorscale="Plasma",
+                        colorbar=dict(
+                            title=dict(text="Rock thickness [m]", font=dict(color="white")),
+                            tickfont=dict(color="white"),
+                        ),
+                        hoverongaps=False,
+                        xgap=1, ygap=1,
+                        hovertemplate="az=%{x:.1f}°  el=%{y:.1f}°  L=%{z:.0f} m<extra></extra>",
+                    ))
+                    _fig_thmap.add_vline(
+                        x=(_az_slice_deg + 180.0) % 360.0 - 180.0,
+                        line=dict(color="#ffd700", width=2, dash="dot"),
+                        annotation_text=f"selected az={_az_slice_deg:.0f}°",
+                        annotation_font=dict(color="#ffd700", size=10),
+                    )
+                    _fig_thmap.update_layout(
+                        **DARK, height=380,
+                        title=dict(text="Rock thickness map  L(az, el)  [m]", font=dict(size=12)),
+                        xaxis=dict(title="Azimuth [°]  (N=0°, E=90°, W=−90°)", gridcolor="#2a2a3a",
+                                   zeroline=True, zerolinecolor="#ffd700", zerolinewidth=1),
+                        yaxis=dict(title="Elevation above horizon [°]", gridcolor="#2a2a3a"),
+                        margin=dict(l=65, r=20, t=50, b=55),
+                    )
+                    st.plotly_chart(_fig_thmap, config={"displayModeBar": True}, key="comp_thickness_map")
+                    _th_max_v = float(np.nanmax(_thick_map_masked)) if np.any(~np.isnan(_thick_map_masked)) else 0
+                    _imax_all = np.unravel_index(np.argmax(ob_map), ob_map.shape)
+                    st.caption(
+                        f"Max thickness: **{_th_max_v:.0f} m** at az={az_c[_imax_all[0]]:.0f}°, "
+                        f"el={90-ze_c[_imax_all[1]]:.0f}°.  "
+                        "Compare with the published MURAVES thickness map for Mt. Vesuvius in "
+                        "Hong et al. (2025), J. Appl. Phys. 138.  "
+                        "Gray bins = open sky (no terrain intersection)."
+                    )
+
+                    # ── 3 — Rock thickness vs elevation at selected azimuth ───────────────
+                    st.markdown("#### 3 — Rock thickness vs elevation at selected azimuth")
+                    st.caption(
+                        "Slant rock path [m] = overburden [g/cm²] / (ρ × 100), along the azimuth "
+                        "selected above. Open-sky bins are excluded. Elevation = 90° − zenith."
+                    )
                     _thick_slice = ob_map[_az_slice_idx, :] / (_rho_comp * 100.0)  # m
                     _sky_slice   = sky_m[_az_slice_idx, :]
-    
                     _fig_thick = go.Figure()
                     _fig_thick.add_trace(go.Scatter(
                         x=_el_c[~_sky_slice],
                         y=_thick_slice[~_sky_slice],
                         mode="lines+markers",
-                        name=f"az = {_az_slice_deg:.1f}°  ρ = {_rho_comp:.2f} g/cm³",
+                        name=f"UCMuon  az = {_az_slice_deg:.1f}°  ρ = {_rho_comp:.2f} g/cm³",
                         line=dict(color="#00b4d8", width=2.5),
                         marker=dict(size=7, color="#00b4d8"),
                         hovertemplate="el = %{x:.1f}°  thickness = %{y:.0f} m<extra></extra>",
                     ))
-                    # MURAVES reference (Tioukov 2019 Table 1: ~2000 m at el=14°, ~0 at el=22°)
-                    _muraves_el  = np.array([10., 12., 14., 16., 18., 20., 22.])
-                    _muraves_th  = np.array([2400, 2200, 2000, 1700, 1200, 500, 0.])
-                    _fig_thick.add_trace(go.Scatter(
-                        x=_muraves_el, y=_muraves_th,
-                        mode="lines+markers",
-                        name="MURAVES reference (Tioukov 2019, az~180° local)",
-                        line=dict(color="#ffd700", width=1.5, dash="dash"),
-                        marker=dict(size=6, symbol="diamond", color="#ffd700"),
-                        hovertemplate="el = %{x:.1f}°  ref = %{y:.0f} m<extra></extra>",
-                    ))
                     _fig_thick.update_layout(
                         **DARK, height=360,
-                        title=dict(text=f"Rock thickness vs elevation — az = {_az_slice_deg:.1f}°  (Mulder slide 7)",
+                        title=dict(text=f"Rock thickness vs elevation — az = {_az_slice_deg:.1f}°",
                                    font=dict(size=12)),
                         xaxis=dict(title="Elevation above horizon [°]", gridcolor="#2a2a3a"),
                         yaxis=dict(title="Rock thickness [m]", gridcolor="#2a2a3a"),
                         legend=dict(bgcolor="rgba(0,0,0,0.5)", font=dict(size=10)),
                         margin=dict(l=70, r=20, t=50, b=55),
                     )
-                    st.plotly_chart(_fig_thick,                                     config={"displayModeBar": True}, key="comp_thick_profile")
+                    st.plotly_chart(_fig_thick, config={"displayModeBar": True}, key="comp_thick_profile")
                     st.caption(
-                        "Gold dashed = MURAVES reference values from Tioukov et al. (2019) at their detector "
-                        f"position (40.810°N, 14.412°E, 598 m) at their local az=180° (pointing toward crater).  "
-                        f"Your curve uses detector at {_det_lat_c:.4f}°N, {_det_lon_c:.4f}°E, {_det_alt_c:.0f} m a.s.l."
-                        f"  at geographic az = {_az_slice_deg:.1f}°.  "
-                        "Differences reflect DEM resolution (30 m SRTM vs 5 m LIDAR), detector position, and azimuth offset."
+                        f"UCMuon slant path along geographic az = {_az_slice_deg:.1f}° at detector "
+                        f"{_det_lat_c:.4f} °N, {_det_lon_c:.4f} °E, {_det_alt_c:.0f} m.  "
+                        "For a published MURAVES thickness/transmission comparison at Mt. Vesuvius see "
+                        "Hong et al. (2025), J. Appl. Phys. 138, doi:10.1063/5.0275078 — note their "
+                        "profile uses a 5 m LIDAR DEM and their own detector position and azimuth "
+                        "convention, so absolute values and azimuth will differ from a 30 m SRTM run."
                     )
-    
-                    # ── Plot 2: Integrated flux vs elevation (Mulder slide 8/9) ──────────
-                    st.markdown("#### 3 — Integrated muon flux vs elevation at selected azimuth")
+
+                    # ── 4 — Integrated muon flux vs elevation (backward MC) ────────────────
+                    st.markdown("#### 4 — Integrated muon flux vs elevation at selected azimuth")
                     st.caption(
-                        "Reproduces **Mulder slide 8/9**. Backward MC (Guan 2015, CSDA+stochastic correction) "
-                        "is run for each elevation bin at the selected azimuth. "
-                        "Both terrain-blocked and open-sky directions are shown."
+                        "Backward MC (Guan et al. 2015 CSDA + stochastic correction) run for each "
+                        "elevation bin at the selected azimuth, for both terrain-blocked and "
+                        "open-sky directions."
                     )
-    
                     if _bmc_ok:
                         _spec_mode_comp = st.selectbox(
                             "Spectrum model for flux calculation",
@@ -3245,7 +3322,7 @@ def render_terrain_tab(script_dir, project_dir,
                         )
                         _emin_comp = st.number_input("E_min [GeV]", 0.1, 100.0, 1.0, 0.1, key="comp_emin")
                         _emax_comp = st.number_input("E_max [GeV]", 10.0, 5000.0, 1000.0, 10.0, key="comp_emax")
-    
+
                         if st.button("▶  Compute flux vs elevation (backward MC)", key="comp_flux_btn",
                                      width='stretch', type="primary"):
                             _flux_terrain  = np.full(len(ze_c), np.nan)
@@ -3264,14 +3341,12 @@ def render_terrain_tab(script_dir, project_dir,
                                         theta_max_deg=_ze_c_v, n_E=40, n_theta=1,
                                         mode=1,
                                     )
-                                    # Convert rate [m⁻² s⁻¹] → flux [m⁻² s⁻¹ sr⁻¹] by dividing solid angle
                                     _dze  = ze_c[1] - ze_c[0] if len(ze_c) > 1 else 5.0
                                     _daz  = 360.0 / len(az_c)
                                     _dO   = np.radians(_daz) * np.radians(_dze) * np.cos(np.radians(_ze_c_v))
                                     _flux_opensky[_iz_c] = _res_sky["rate_m2_s"] / max(_dO, 1e-6)
                                 except Exception:
                                     pass
-    
                                 # Terrain flux: use slant overburden for this bin
                                 if not _sky_slice[_iz_c] and ob_map[_az_slice_idx, _iz_c] > 1.0:
                                     _ob_sl = float(ob_map[_az_slice_idx, _iz_c])
@@ -3290,21 +3365,17 @@ def render_terrain_tab(script_dir, project_dir,
                                         pass
                                 _prog_comp.progress((_iz_c + 1) / len(ze_c),
                                                     text=f"⏳  el = {_el_v:.1f}°  ({_iz_c+1}/{len(ze_c)})")
-    
                             st.session_state["comp_flux_terrain"] = _flux_terrain
                             st.session_state["comp_flux_opensky"] = _flux_opensky
                             st.session_state["comp_flux_el"]      = _el_c
                             _prog_comp.progress(1.0, text="✅  Done.")
-    
-                        # Plot if available
+
                         if "comp_flux_terrain" in st.session_state:
                             _ft = st.session_state["comp_flux_terrain"]
                             _fo = st.session_state["comp_flux_opensky"]
                             _el_ax = st.session_state["comp_flux_el"]
                             _log_flux = st.checkbox("Log scale (recommended)", value=True, key="comp_logscale")
-    
                             _fig_flux = go.Figure()
-                            # Open-sky reference
                             _ok_sky = ~np.isnan(_fo) & (_fo > 0)
                             if _ok_sky.any():
                                 _fig_flux.add_trace(go.Scatter(
@@ -3314,7 +3385,6 @@ def render_terrain_tab(script_dir, project_dir,
                                     line=dict(color="#ffd700", width=2, dash="dash"),
                                     marker=dict(size=6, symbol="circle", color="#ffd700"),
                                 ))
-                            # Terrain flux
                             _ok_ter = ~np.isnan(_ft) & (_ft > 0)
                             if _ok_ter.any():
                                 _fig_flux.add_trace(go.Scatter(
@@ -3324,19 +3394,10 @@ def render_terrain_tab(script_dir, project_dir,
                                     line=dict(color="#00b4d8", width=2.5),
                                     marker=dict(size=7, color="#00b4d8"),
                                 ))
-                            # MURAVES reference points from slide 9 (ρ=2.65, discrete, az=180°)
-                            _mur_el_ref  = np.array([14., 16., 18., 20., 22.])
-                            _mur_flux_ref = np.array([1e-4, 5e-4, 2e-3, 1e-2, 8e-1])
-                            _fig_flux.add_trace(go.Scatter(
-                                x=_mur_el_ref, y=_mur_flux_ref,
-                                mode="markers",
-                                name="MURAVES reference (Mulder discrete, ρ=2.65, slide 9)",
-                                marker=dict(size=9, color="#ff6b6b", symbol="diamond"),
-                            ))
                             _fig_flux.update_layout(
                                 **DARK, height=400,
                                 title=dict(
-                                    text=f"Integrated flux vs elevation — az = {_az_slice_deg:.1f}°  (Mulder slide 8/9)",
+                                    text=f"Integrated flux vs elevation — az = {_az_slice_deg:.1f}°",
                                     font=dict(size=12)
                                 ),
                                 xaxis=dict(title="Elevation above horizon [°]", gridcolor="#2a2a3a"),
@@ -3348,79 +3409,21 @@ def render_terrain_tab(script_dir, project_dir,
                                 legend=dict(bgcolor="rgba(0,0,0,0.5)", font=dict(size=10)),
                                 margin=dict(l=75, r=20, t=50, b=55),
                             )
-                            st.plotly_chart(_fig_flux,                                             config={"displayModeBar": True}, key="comp_flux_plot")
+                            st.plotly_chart(_fig_flux, config={"displayModeBar": True}, key="comp_flux_plot")
                             st.caption(
-                                "UCMuon uses backward CSDA+stochastic MC (same physics as Mulder continuous/mixed mode).  "
-                                "MURAVES reference diamonds from Yanwen Hong's presentation (Feb 2026, slide 9), "
-                                "Mulder discrete mode, ρ=2.65 g/cm³, az=180° local ≈ NNE geographic from their detector.  "
-                                "Agreement validates the terrain overburden computation and transport physics."
+                                "UCMuon backward CSDA + stochastic MC: open-sky (gold dashed) vs "
+                                "terrain-blocked (blue) integrated flux. A published MURAVES flux "
+                                "reference can be overlaid here once digitised from a peer-reviewed source."
                             )
                     else:
                         st.info("Install ucmuon_backward_mc.py alongside gui_terrain_engine.py to enable flux plots.")
-    
-                    # ── Plot 3: Full thickness 2D map (Mulder slide 4 equivalent) ─────────
-                    st.markdown("#### 4 — Full rock thickness map L(az, el)")
-                    st.caption(
-                        "Reproduces **Mulder slide 4** — the 2D thickness map L(φ, θ) used by TURTLE/Mulder as input. "
-                        "Colour = slant path [m]. Compare shape and magnitude with MURAVES figure "
-                        "(note azimuth offset between your geographic convention and Mulder's local convention)."
-                    )
-                    _thick_map = ob_map / (_rho_comp * 100.0)   # m, shape (n_az, n_ze)
-                    _thick_map_masked = _thick_map.copy().astype(float)
-                    _thick_map_masked[sky_m] = np.nan
-    
-                    # Display as heatmap (Mulder style: el on Y, az on X)
-                    _el_centres = 90.0 - ze_c
-                    _az_cent_shifted = (az_c + 180.0) % 360.0 - 180.0   # centre on N
-                    _sort_az = np.argsort(_az_cent_shifted)
-                    _Z_thick = _thick_map_masked[_sort_az, :].T   # (n_ze, n_az) for plotly heatmap
-    
-                    _fig_thmap = go.Figure(go.Heatmap(
-                        x=_az_cent_shifted[_sort_az],
-                        y=_el_centres,
-                        z=_Z_thick,
-                        colorscale="Plasma",
-                        colorbar=dict(
-                            title=dict(text="Rock thickness [m]", font=dict(color="white")),
-                            tickfont=dict(color="white"),
-                        ),
-                        hoverongaps=False,
-                        xgap=1, ygap=1,
-                        hovertemplate="az=%{x:.1f}°  el=%{y:.1f}°  L=%{z:.0f} m<extra></extra>",
-                    ))
-                    # Mark selected azimuth slice
-                    _fig_thmap.add_vline(
-                        x=(_az_slice_deg + 180.0) % 360.0 - 180.0,
-                        line=dict(color="#ffd700", width=2, dash="dot"),
-                        annotation_text=f"selected az={_az_slice_deg:.0f}°",
-                        annotation_font=dict(color="#ffd700", size=10),
-                    )
-                    _fig_thmap.update_layout(
-                        **DARK, height=380,
-                        title=dict(text="Rock thickness map L(az, el)  [m]  — Mulder slide 4 equivalent",
-                                   font=dict(size=12)),
-                        xaxis=dict(title="Azimuth [°]  (N=0°, E=90°, W=−90°)", gridcolor="#2a2a3a",
-                                   zeroline=True, zerolinecolor="#ffd700", zerolinewidth=1),
-                        yaxis=dict(title="Elevation above horizon [°]", gridcolor="#2a2a3a"),
-                        margin=dict(l=65, r=20, t=50, b=55),
-                    )
-                    st.plotly_chart(_fig_thmap,                                     config={"displayModeBar": True}, key="comp_thickness_map")
-                    _th_max_v = float(np.nanmax(_thick_map_masked)) if np.any(~np.isnan(_thick_map_masked)) else 0
-                    _imax_all = np.unravel_index(np.argmax(ob_map), ob_map.shape)
-                    st.caption(
-                        f"Max thickness: **{_th_max_v:.0f} m** at az={az_c[_imax_all[0]]:.0f}°, "
-                        f"el={90-ze_c[_imax_all[1]]:.0f}°.  "
-                        "MURAVES/Mulder reference: ~2500 m at their local az=180°, el≈14–16°.  "
-                        "Gold dashed line = selected azimuth slice used in plots above.  "
-                        "Gray bins = open sky (no terrain intersection)."
-                    )
-    
-                    # ── Export overburden map ──────────────────────────────────────────────
+
+                    # ── 5 — Export thickness map ──────────────────────────────────────────
                     st.markdown("#### 5 — Export thickness map for external comparison")
                     st.caption(
-                        "Download the thickness map as a text file (cols: az[°], el[°], thickness[m], overburden[g/cm²]). "
-                        "This format can be compared directly with Mulder's TURTLE output or used with the standalone "
-                        "cross-check script `ucmuon_mulder_crosscheck.py`."
+                        "Download the thickness map as text (cols: az[°], el[°], thickness[m], "
+                        "overburden[g/cm²], open_sky). The format matches TURTLE/Mulder-style "
+                        "overburden input for external cross-checks."
                     )
                     _lines_export = ["# az[deg]  el[deg]  thickness[m]  overburden[g/cm2]  open_sky\n"]
                     for _ia_e, _az_e in enumerate(az_c):
@@ -3438,7 +3441,7 @@ def render_terrain_tab(script_dir, project_dir,
                         width='stretch',
                         key="comp_export_thick",
                     )
-    
+
                 # Download
                 out_path = st.session_state.get("terrain_result_outfile", t_outfile)
                 if Path(out_path).exists():

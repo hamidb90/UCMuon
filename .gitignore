@@ -61,6 +61,8 @@ ucmuon_autosave.json
 *.tif
 *.tiff
 *.geotiff
+# Bundled sample DEM (SRTM GL1, public domain — see examples/vesuvius/DEM_SOURCE.md)
+!examples/vesuvius/vesuvius_dem.tif
 
 # ── External library sources (not part of UCMuon, cloned separately) ─────────
 external/
@@ -90,6 +92,10 @@ misc/
 references/Guide for authors*
 references/cpc_author_guide_files/
 manuscript/Guide for authors*
+
+# ── Third-party reference papers (copyright — never redistribute) ─────────────
+references/groom.pdf
+references/muraves/
 
 # ── Claude Code internal ──────────────────────────────────────────────────────
 .claude/

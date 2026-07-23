@@ -126,7 +126,7 @@ def render_stochastic_settings():
             "🔀 Highland MS deflections", value=True,
             key="stochastic_ms_enable",
             help=(
-                "Apply Highland (1979) multiple Coulomb scattering per step.\n\n"
+                "Apply Highland (1975) multiple Coulomb scattering per step.\n\n"
                 "θ₀ = (13.6 MeV / βp) × √(x/X₀) × [1 + 0.038 ln(x/X₀)]\n\n"
                 "~5% runtime overhead.  Disable only for sensitivity studies."
             ),

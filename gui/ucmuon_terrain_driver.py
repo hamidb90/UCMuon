@@ -274,7 +274,7 @@ def load_dem(dem_path):
 
     Supported formats (auto-detected from file extension):
       .tif / .tiff  →  GeoTIFF via rasterio   (SRTM, Copernicus, etc.)
-      .xyz          →  XYZ point cloud         (Yanwen / MURAVES 5-m Vesuvius)
+      .xyz          →  XYZ point cloud         (e.g. MURAVES 5-m Vesuvius LIDAR)
       .asc          →  Esri ASCII Grid         (common European survey format)
 
     Returns:

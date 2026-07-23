@@ -26,7 +26,7 @@ Total energy loss per step dx [g/cm²]:
   (1/v, Bethe-Heitler) remain selectable for reproducibility.
 
 Additional physics:
-  · Multiple scattering  : Highland (1979) projected angles per step
+  · Multiple scattering  : Highland (1975) projected angles per step
   · Muon decay           : Poisson probability per step (p·cτ, p = √(E²−m²))
   · Pre-filter           : muons whose *deterministic-loss* range (a_ion +
                            v_cut·L_rad only — a strict upper bound on

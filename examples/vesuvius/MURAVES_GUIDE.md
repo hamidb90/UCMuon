@@ -6,8 +6,7 @@ and terrain engine. No GUI needed. Runs in **~3 seconds** at full resolution
 and outputs four publication-style figures directly into `examples/vesuvius/figs/`.
 
 **References**
-- Tioukov et al. (2019) *Sci. Rep.* **9**, 6695 — first muography of Vesuvius
-- Lo Bue et al. (2023) *J. Geophys. Res.* **128**, e2022JB025446 — joint muography + gravimetry
+- Hong et al. (2025) *J. Appl. Phys.* **138**, [doi:10.1063/5.0275078](https://doi.org/10.1063/5.0275078) — MURAVES project updates at Mt. Vesuvius
 - Rajan et al. (2026) MURAVES/Muographers26 presentation
 
 ---
@@ -40,9 +39,9 @@ Mt. Vesuvius in a single script:
 3. **Computes the through-rock flux map** — backward-MC at each direction using
    the ray-traced path length.
 4. **Computes the transmission map** — `T_sim = Φ_rock / Φ_sky` per direction.
-5. **Generates four figures** corresponding to MURAVES slides 9, 11, 12, 14.
+5. **Generates four figures**: thickness map, flux vs elevation, flux maps, transmission ratio.
 
-**Geometry** (MURAVES / Tioukov 2019):
+**Geometry** (MURAVES / Hong et al. 2025):
 
 | | Value |
 |---|---|
@@ -120,7 +119,7 @@ python examples/vesuvius/ucmuon_vesuvius_muraves.py --n-az 72 --n-ze 30
 
 ## Output figures
 
-### Fig 1 — Rock thickness map (`fig_vesuvius_thickness.png`) ↔ MURAVES slide 9
+### Fig 1 — Rock thickness map (`fig_vesuvius_thickness.png`)
 
 ![thickness](figs/fig_vesuvius_thickness.png)
 
@@ -137,7 +136,7 @@ the cone. Above that elevation the ray exits the cone entirely.
 
 ---
 
-### Fig 2 — Flux vs elevation (`fig_vesuvius_flux_elevation.png`) ↔ MURAVES slides 11, 20
+### Fig 2 — Flux vs elevation (`fig_vesuvius_flux_elevation.png`)
 
 ![flux_elevation](figs/fig_vesuvius_flux_elevation.png)
 
@@ -161,7 +160,7 @@ geometry. A real DEM would show a broader, more gradual transition.
 
 ---
 
-### Fig 3 — Free-sky vs through-rock flux maps (`fig_vesuvius_flux_maps.png`) ↔ MURAVES slide 12
+### Fig 3 — Free-sky vs through-rock flux maps (`fig_vesuvius_flux_maps.png`)
 
 ![flux_maps](figs/fig_vesuvius_flux_maps.png)
 
@@ -175,13 +174,13 @@ is the small bright triangular feature; bright here means near-zero flux because
 the YlGn colormap runs white (low) → green (high).
 
 > **Azimuth convention:** this script uses geographic convention (0 = North,
-> 90 = East). The MURAVES slides use a detector-centric convention where the
+> 90 = East). MURAVES figures use a detector-centric convention where the
 > summit is placed at az = 180°. Summit is at **az = 105°** here.
 > To match MURAVES figures directly, rotate by 75° (180° − 105°).
 
 ---
 
-### Fig 4 — Transmission ratio (`fig_vesuvius_transmission.png`) ↔ MURAVES slide 14
+### Fig 4 — Transmission ratio (`fig_vesuvius_transmission.png`)
 
 ![transmission](figs/fig_vesuvius_transmission.png)
 
@@ -288,6 +287,17 @@ For the synthetic test (ρ_true = 2.0, N = 10⁵):
 ---
 
 ## Getting a real DEM
+
+**A DEM is already bundled**: `vesuvius_dem.tif` in this directory (SRTM GL1
+30 m, W=14.35, S=40.76, E=14.52, N=40.90; public domain, see
+[`DEM_SOURCE.md`](DEM_SOURCE.md)). The GUI Terrain tab loads it by default,
+and the script accepts it directly:
+
+```bash
+python examples/vesuvius/ucmuon_vesuvius_muraves.py examples/vesuvius/vesuvius_dem.tif
+```
+
+To re-download it or fetch a different area:
 
 **Option A — eio (command line, no account):**
 ```bash

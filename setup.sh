@@ -307,7 +307,7 @@ echo "    See hpc/README_HPC.md for full workflow."
 echo ""
 if [ "$MISS_MUSIC" -eq 1 ]; then
     echo "  NOTE: Engine 2 unavailable — music.f not found."
-    echo "  Engines 2–6 are fully functional."
+    echo "  All other engines (1, 3–7) are fully functional."
     echo "  See docs/MUSIC_FILES.md to enable Engine 2."
     echo ""
 fi

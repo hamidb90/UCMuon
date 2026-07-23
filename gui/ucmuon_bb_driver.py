@@ -16,7 +16,7 @@ Physics
 -------
   Continuous energy loss from PDG 2024 CSDA range table (direct dE/dx column,
   56 entries).  Optional Groom 2001 table for comparison.
-  No stochastic fluctuations (pure CSDA).  Optional Highland (1979) MCS.
+  No stochastic fluctuations (pure CSDA).  Optional Highland (1975) MCS.
 
 Stdin (drop-in for ucmuon_transport_bb_omp — same parameter order)
 -------------------------------------------------------------------
@@ -84,7 +84,7 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     depth_m     : vertical overburden [m]
     mat         : material dict from _BB_MAT (or custom dict with same keys)
     n_steps     : integration steps (MS mode only); 0 = auto (≥ 50, 100 g/cm² each)
-    ms_enable   : Highland (1979) multiple Coulomb scattering
+    ms_enable   : Highland (1975) multiple Coulomb scattering
     rng         : np.random.default_rng instance
     progress_cb : callable(n_transported, n_survived, n_total)
     range_table : 'pdg2024' (default) or 'groom2001'

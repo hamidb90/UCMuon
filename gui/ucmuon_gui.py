@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.0.1"          # app version — keep in sync with CITATION.cff
+__version__ = "1.0.2"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -4378,7 +4378,7 @@ $$\text{MUSIC} \lesssim \text{PROPOSAL} \lesssim \text{UCMuon-MC} < \text{UCMuon
 
 UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPOSAL differ by ~10% in bremsstrahlung parametrisation — both physically valid, known inter-code systematic.
 """)
-        st.caption("Kudryavtsev (2009) CPC 180, 339 · Koehne+ (2013) CPC 184, 2070 · Alameddine+ (2024) CPC 305, 109243 · Groom+ (2001) ADNDT 78, 183")
+        st.caption("Kudryavtsev (2009) CPC 180, 339 · Koehne+ (2013) CPC 184, 2070 · Alameddine+ (2024) CPC 302, 109243 · Groom+ (2001) ADNDT 78, 183")
 
     st.divider()
 
@@ -4929,7 +4929,7 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
 | $a$ = 1.96 MeV cm²/g | ionisation (Bethe-Bloch plateau) | ≈ constant at muography energies |
 | $b$ = 3.64×10⁻⁶ cm²/g | radiative total (brems + pair + photonuclear) | grows linearly with $E$ |
 
-**Multiple scattering (Highland 1979):** applied per step.
+**Multiple scattering (Highland 1975):** applied per step.
 $\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln(x/X_0)\right]$
 
 **Accuracy:** good for 50 GeV – 3 TeV in rock-like media.
@@ -4940,7 +4940,7 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
 
 **Use for:** fast scans, parameter studies, upper-bound estimates.
 """)
-                st.caption("PDG 2022 §34 · Groom et al. (2001) ADNDT 78, 183 · Highland (1979) NIM 129, 497")
+                st.caption("PDG 2022 §34 · Groom et al. (2001) ADNDT 78, 183 · Highland (1975) NIM 129, 497")
     
             phitsxs_custom = {}
             if phitsxs_mat_type == 5:

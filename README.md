@@ -357,7 +357,7 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 - **Native per-material tables** for Standard Rock, water, ice, and iron — no rescaling approximation (the old rock-rescale underestimated iron radiative losses by ~38% at 1 TeV); seawater uses the water table with sub-percent composition rescaling, custom materials rescale the rock table
 - Hard radiative events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, pair `1/v³`, photonuclear `1/v`
 - **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the Rutherford `1/T²` spectrum; the continuous ionisation term is restricted accordingly (ionisation straggling — the dominant fluctuation below ~100 GeV)
-- Multiple scattering: Highland (1979) per step; muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
+- Multiple scattering: Highland (1975) per step; muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
 - **Per-muon adaptive stepping**: every muon gets `dx ≈ 5 g/cm²` regardless of zenith angle
 - Deterministic-bound pre-filter: only muons that cannot survive even with zero stochastic losses are killed instantly (strict upper bound on penetration — does not bias survival)
 - Multiprocess-parallel: muons split across worker processes with independent RNG streams (`0 = auto`, near-linear speedup; reproducible for a fixed seed + worker count)
@@ -568,12 +568,12 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for:
 |---|---|
 | Kudryavtsev (2009), CPC 180, 339 | MUSIC engine |
 | Koehne et al. (2013), CPC 184, 2070 | PROPOSAL cross-sections |
-| Alameddine et al. (2024), CPC 305, 109243 | PROPOSAL v7 |
+| Alameddine et al. (2024), CPC 302, 109243 | PROPOSAL v7 |
 | Groom, Mokhov & Striganov (2001), ADNDT 78, 183 | dE/dx tables — Engines 1, 5, 6 |
 | Sato (2015), PLOS ONE 10(12) | PARMA/EXPACS spectrum |
 | Guan et al. (2015), arXiv:1509.06176 | Guan 2015 spectrum |
 | Frosin et al. (2025), J. Phys. G 52, 035002 | Frosin 2025 spectrum |
-| Highland (1979), NIM 129, 497 | Multiple Coulomb scattering |
+| Highland (1975), NIM 129, 497 | Multiple Coulomb scattering |
 | Lüscher (1994), CPC 79, 100 | RANLUX RNG |
 | NASA/JPL SRTM (2000) | DEM source for Engine 6 |
 
