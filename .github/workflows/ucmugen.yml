@@ -1,0 +1,90 @@
+name: UCMuGen
+
+# UCMuGen is a header-only library whose whole promise is "drop this file in and
+# it compiles". That promise is only worth as much as the compilers it has been
+# tried on, so the core job is a matrix rather than a single build.
+#
+# Not covered here, deliberately:
+#   - test_geant4 needs a Geant4 installation (a multi-GB build). run_tests.sh
+#     skips it rather than failing, and it is run locally before releases.
+#   - the PARMA spectrum is licensed separately by JAEA and is not in the tree.
+
+on:
+  push:
+    paths:
+      - 'ucmugen/**'
+      - 'src/generator/**'
+      - '.github/workflows/ucmugen.yml'
+  pull_request:
+    paths:
+      - 'ucmugen/**'
+      - 'src/generator/**'
+      - '.github/workflows/ucmugen.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  # The portability claim: four compiler/platform combinations, warnings fatal.
+  suite:
+    name: ${{ matrix.os }} / ${{ matrix.cxx }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: ubuntu-latest, cxx: g++ }
+          - { os: ubuntu-latest, cxx: clang++ }
+          - { os: macos-latest,  cxx: clang++ }
+          - { os: macos-latest,  cxx: g++-14 }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Compiler version
+        run: ${{ matrix.cxx }} --version
+
+      # -Werror is applied here rather than inside run_tests.sh so that a local
+      # run stays usable on a compiler with a different warning set, while CI
+      # still refuses to let a warning land.
+      - name: Header compiles clean, standalone
+        run: |
+          printf '#include "UCMuGen.h"\nint main(){ return 0; }\n' > /tmp/hdr.cc
+          ${{ matrix.cxx }} -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -I ucmugen/include /tmp/hdr.cc -o /tmp/hdr
+
+      - name: Validation suite
+        env:
+          CXX: ${{ matrix.cxx }}
+        run: ./ucmugen/validation/run_tests.sh
+
+  # The strongest check in the project: UCMuGen reproduces the Fortran RNG
+  # bit-for-bit, so agreement is exact event equality rather than a tolerance.
+  # A single differing event fails the build.
+  bit-exact:
+    name: bit-exact vs Fortran
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install gfortran and numpy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+          python3 -m pip install --upgrade pip numpy
+
+      - name: Build the Fortran generator
+        run: make ucmuon_gen_omp
+
+      - name: Build the UCMuGen dump tool
+        run: |
+          c++ -std=c++17 -O2 -Wall -Wextra -I ucmugen/include \
+            ucmugen/validation/dump_ucmugen.cc -o ucmugen/validation/dump_ucmugen
+
+      - name: Exact event comparison
+        working-directory: ucmugen/validation
+        run: python3 compare_legacy.py --n 20000

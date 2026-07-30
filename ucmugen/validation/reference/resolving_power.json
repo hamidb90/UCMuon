@@ -1,0 +1,134 @@
+[
+  {
+    "n": 50000,
+    "n_pairs": 6,
+    "null_passes": true,
+    "null_failures": [],
+    "thresholds": {
+      "ks:p": 0.01580999999999999,
+      "ks:cos_theta": 0.01638000000000006,
+      "ks:phi": 0.012930000000000108,
+      "ks:x": 0.01590000000000008,
+      "ks:y": 0.015149999999999997,
+      "median:p": 0.009215421518767154,
+      "iqr:p": 0.023248005600422866,
+      "mean:p": 0.021252401232973905,
+      "charge:mu+ fraction": 1.3841894145197604,
+      "chi2:(log10_p,cos_theta)": 2.9607390785928387,
+      "mean:cos_theta": 0.00323109931535941
+    },
+    "resolving_power": {
+      "momentum scale": 0.006734372938189575,
+      "spectral index": 0.007070762593895872,
+      "angular exponent": 0.010040072178161392,
+      "charge fraction": 0.009360205408512571
+    },
+    "resolving_power_spread": {
+      "momentum scale": [
+        0.0001,
+        0.01276311126205209
+      ],
+      "spectral index": [
+        0.0001,
+        0.013528276870198338
+      ],
+      "angular exponent": [
+        0.0001,
+        0.013444147741923963
+      ],
+      "charge fraction": [
+        0.0001,
+        0.014250142398849275
+      ]
+    },
+    "calibration_seconds": 4.7
+  },
+  {
+    "n": 200000,
+    "n_pairs": 6,
+    "null_passes": true,
+    "null_failures": [],
+    "thresholds": {
+      "ks:p": 0.007170000000000093,
+      "ks:cos_theta": 0.007379999999999887,
+      "ks:phi": 0.008392500000000025,
+      "ks:x": 0.008302499999999935,
+      "ks:y": 0.007559999999999983,
+      "median:p": 0.006593285996519685,
+      "iqr:p": 0.012149985429207928,
+      "mean:p": 0.00981225341150991,
+      "charge:mu+ fraction": 2.177107699295876,
+      "chi2:(log10_p,cos_theta)": 2.946445047558259,
+      "mean:cos_theta": 0.0012876220644332807
+    },
+    "resolving_power": {
+      "momentum scale": 0.005259074264775274,
+      "spectral index": 0.006997646405616112,
+      "angular exponent": 0.005987429781364745,
+      "charge fraction": 0.0044561770111403425
+    },
+    "resolving_power_spread": {
+      "momentum scale": [
+        0.0001,
+        0.007356026926561954
+      ],
+      "spectral index": [
+        0.0001,
+        0.008128129513403302
+      ],
+      "angular exponent": [
+        0.0001,
+        0.008925421059089153
+      ],
+      "charge fraction": [
+        0.0001,
+        0.014073457018779536
+      ]
+    },
+    "calibration_seconds": 18.3
+  },
+  {
+    "n": 800000,
+    "n_pairs": 6,
+    "null_passes": true,
+    "null_failures": [],
+    "thresholds": {
+      "ks:p": 0.0034387500000000043,
+      "ks:cos_theta": 0.004096874999999986,
+      "ks:phi": 0.003913124999999906,
+      "ks:x": 0.0038981250000000994,
+      "ks:y": 0.005186249999999962,
+      "median:p": 0.004462162487557783,
+      "iqr:p": 0.00622403995613133,
+      "mean:p": 0.0067726540658955515,
+      "charge:mu+ fraction": 1.339029617217515,
+      "chi2:(log10_p,cos_theta)": 2.8545086992129987,
+      "mean:cos_theta": 0.0007967496396200835
+    },
+    "resolving_power": {
+      "momentum scale": 0.0027521708076736016,
+      "spectral index": 0.0031484447233411593,
+      "angular exponent": 0.0029349671093247143,
+      "charge fraction": 0.002253205958485262
+    },
+    "resolving_power_spread": {
+      "momentum scale": [
+        0.0001,
+        0.005407407769213318
+      ],
+      "spectral index": [
+        0.0001,
+        0.0047830845577029706
+      ],
+      "angular exponent": [
+        0.0001,
+        0.005252259276667358
+      ],
+      "charge fraction": [
+        0.0001,
+        0.003950260394484785
+      ]
+    },
+    "calibration_seconds": 79.0
+  }
+]

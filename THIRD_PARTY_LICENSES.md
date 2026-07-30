@@ -15,12 +15,23 @@ tables developed by **Dr. Tatsuhiko Sato, Japan Atomic Energy Agency (JAEA)**.
 - Copyright (c) Japan Atomic Energy Agency (JAEA).
 - **Non-commercial use only.** Commercial use is NOT allowed without a prior
   agreement with JAEA.
+- **Redistribution and modification are permitted** for any non-commercial
+  purpose: the published "Conditions for Use" state that "these program are
+  free softwares; you can redistribute them and/or modify them for any purposes
+  except for commercial use". This covers the PARMA source and its data tables
+  as distributed in `parma.zip` / `parma_cpp.zip`.
 - Any published use **must cite**:
   - T. Sato, *PLoS ONE* **10**(12): e0144679 (2015). doi:10.1371/journal.pone.0144679
   - T. Sato, *PLoS ONE* **11**(8): e0160390 (2016). doi:10.1371/journal.pone.0160390
   - and acknowledge the URL https://phits.jaea.go.jp/expacs
 - Contact: nsed-expacs@jaea.go.jp
 - PARMA bundles a Mersenne Twister RNG by Prof. M. Matsumoto (Hiroshima Univ.).
+
+`ucmugen/include/UCMuGen_PARMA.h` is a **generated** file containing PARMA
+routines and tables, produced by `ucmugen/tools/make_parma_header.py` from
+JAEA's official `parma_cpp` release. It carries the same terms. `UCMuGen.h`
+itself contains no PARMA code and stays MIT; the two are separate files
+precisely so that including PARMA is an explicit, visible choice.
 
 Full conditions: `data/EXPACS/EXPACS_CONDITIONS_FOR_USE.txt`.
 The UCMuon copy is unmodified physics; only the data-directory path was made

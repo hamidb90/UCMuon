@@ -2546,7 +2546,7 @@ def _render_mcs_margin_helper(detectors=None):
     if _eff < 5.0:
         st.warning(
             f"⚠️ 1σ scatter (**{_sig1:.0f} cm**) ≫ detector radius (**{_r_det:.1f} cm**) — the "
-            f"detector pre-filter keeps < {_eff:.2f} % of useful muons. Disable the filter and "
+            f"detector acceptance cut keeps < {_eff:.2f} % of useful muons. Disable the cut and "
             "generate over the full source area instead."
         )
     else:

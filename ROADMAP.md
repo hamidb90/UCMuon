@@ -66,13 +66,13 @@ everything in the scratch block is regenerable and can be deleted/ignored.
 - **Code:** compiles and runs; GUI verified. **UCMuon-MC (Engine ①) now has the
   v2 physics**: per-process hard-event spectra (brems (1−v)/v, pair 1/v³,
   photonuclear 1/v), explicit δ-ray straggling, and the *deterministic-bound*
-  pre-filter that removes the old mean-loss CSDA survival bias.
+  range cut that removes the old mean-loss CSDA survival bias.
 - **Manuscript:** compiles clean (42 pp, no undefined refs). Structure, novelty
   framing, density-inversion narrative, and the §8.4 "disabled scattering"
   rewording are done. **BUT the validation numbers (Table 1, survival matrix,
   exit-KE table, engine timings, quoted −1.2 % bias) are still from the
   2026-05-25 v2 benchmark run of the OLD engine** (v1 physics + mean-loss
-  pre-filter). Two dated TODO comments in the .tex (lines ~952, ~1106) mark
+  range cut). Two dated TODO comments in the .tex (lines ~952, ~1106) mark
   this; §8.4 currently *explains* a bias that §4.1 says no longer exists.
 - **Benchmark:** curated `benchmark/` folder in place; raw 8 GB scratch in
   git-ignored `geant4_muon_rock_v5/`. Geant4/PHITS reference rows are verified
@@ -112,8 +112,8 @@ cd manuscript && latexmk -pdf ucmuon_cpc_paper
 ```
 
 ### Step 4 — update the prose that depends on the numbers
-- §8.4: replace the "residual bias stems from the CSDA pre-filter" paragraph
-  (now contradicts §4.1's deterministic-bound pre-filter) with the new measured
+- §8.4: replace the "residual bias stems from the CSDA range cut" paragraph
+  (now contradicts §4.1's deterministic-bound range cut) with the new measured
   bias; delete both `% TODO (2026-06-10)` comments.
 - §9.4 (multi-engine cross-validation): still calls UCMuon-MC a
   "mean-energy-loss engine" and quotes the old 36–47 % spread — re-measure and

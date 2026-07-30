@@ -358,8 +358,8 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 - Hard radiative events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, pair `1/v³`, photonuclear `1/v`
 - **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the Rutherford `1/T²` spectrum; the continuous ionisation term is restricted accordingly (ionisation straggling — the dominant fluctuation below ~100 GeV)
 - Multiple scattering: Highland (1975) per step; muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
-- **Per-muon adaptive stepping**: every muon gets `dx ≈ 5 g/cm²` regardless of zenith angle
-- Deterministic-bound pre-filter: only muons that cannot survive even with zero stochastic losses are killed instantly (strict upper bound on penetration — does not bias survival)
+- **Per-muon adaptive stepping**: every muon gets `dx ≈ 20 g/cm²` regardless of zenith angle
+- Deterministic-bound range cut: only muons that cannot survive even with zero stochastic losses are killed instantly (strict upper bound on penetration — does not bias survival)
 - Multiprocess-parallel: muons split across worker processes with independent RNG streams (`0 = auto`, near-linear speedup; reproducible for a fixed seed + worker count)
 
 **Validation:** mean energy loss matches the PDG table integral to < 0.3% (40k-muon monoenergetic beams at 25/50 m); legacy v1 spectra (`1/v`, Bethe–Heitler single-shape) remain selectable for reproducibility.

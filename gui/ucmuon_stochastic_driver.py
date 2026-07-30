@@ -28,7 +28,7 @@ Total energy loss per step dx [g/cm²]:
 Additional physics:
   · Multiple scattering  : Highland (1975) projected angles per step
   · Muon decay           : Poisson probability per step (p·cτ, p = √(E²−m²))
-  · Pre-filter           : muons whose *deterministic-loss* range (a_ion +
+  · Range cut            : muons whose *deterministic-loss* range (a_ion +
                            v_cut·L_rad only — a strict upper bound on
                            penetration) is below the slant path are marked
                            dead instantly.  Muons between the mean-loss CSDA
@@ -735,7 +735,7 @@ def _det_range(E_MeV, mat, v_cut, delta_rays=False):
     a_res (δ-rays are stochastic), keeping the bound strict.
 
     A muon can never lose less than the deterministic component, so this is
-    a strict upper bound on penetration depth.  The pre-filter uses it so
+    a strict upper bound on penetration depth.  The range cut uses it so
     that only muons that cannot survive even with zero stochastic losses
     are killed outright; the mean-loss CSDA range (which includes the hard
     component) also killed muons that could have survived by avoiding hard
@@ -985,15 +985,15 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     slant_cm   = d_cm / depth_cos
     slant_gcm2 = slant_cm * rho
 
-    # Pre-filter on the deterministic-loss range (strict upper bound on
+    # Range cut on the deterministic-loss range (strict upper bound on
     # penetration): only muons that cannot survive even with zero hard
     # radiative events are killed outright.  Muons between the mean-loss
     # CSDA range and this bound are transported stochastically.
     R_det   = _det_range(muons["Ekin_MeV"], mat, v_cut, delta_rays=delta_rays)
-    prefilt = R_det < slant_gcm2
-    alive[prefilt] = False
+    range_cut = R_det < slant_gcm2
+    alive[range_cut] = False
 
-    # Per-muon adaptive step count: target dx ≈ 5 g/cm² for every muon (the
+    # Per-muon adaptive step count: target dx ≈ DX_TARGET for every muon (the
     # old global count, set from the median slant, gave near-horizontal muons
     # steps up to ~50× larger).  Work scales with Σ n_steps_i because only
     # muons with remaining steps are processed each iteration.
@@ -1023,15 +1023,15 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     y_acc = np.zeros(N)
     z_acc = np.zeros(N)   # z displacement — stopping depth + non-XY sources
 
-    # Pre-filtered muons never enter the stepping loop; give them their CSDA
+    # Range-cut muons never enter the stepping loop; give them their CSDA
     # stopping displacement so z_stop reports a physical depth instead of 0.
     # (min with R_det: the deterministic-only range is an upper bound.)
-    if prefilt.any():
+    if range_cut.any():
         R_stop = np.minimum(
             _csda_range(muons["Ekin_MeV"], mat["a_scale"],
                         _PDG24_T_FINE, _PDG24_R_FINE),
             R_det)
-        z_acc[prefilt] = muons["cz"][prefilt] * (R_stop[prefilt] / rho)
+        z_acc[range_cut] = muons["cz"][range_cut] * (R_stop[range_cut] / rho)
 
     E_stop = 1.0                                # stop if Ekin < 1 MeV
     prev_reported = 0

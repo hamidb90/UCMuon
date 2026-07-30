@@ -123,7 +123,7 @@ program ucmuon_gen_omp
   integer  :: j
   integer(8)  :: ntry           ! total attempts (SHARED, ATOMIC CAPTURE)
   integer(8)  :: i              ! accepted count (SHARED, updated in CRITICAL)
-  integer     :: tim(8), iranlux
+  integer     :: iranlux
   integer     :: use_defaults
   character(512) :: output_all, output_sel, output_phits
   real(8)        :: depth
@@ -654,8 +654,7 @@ program ucmuon_gen_omp
   ! RNG INITIALISATION  (OMP change: par_init_rng instead of RLUXGO)
   !===========================================================================
   write(*,*) ' Initializing RNG streams...'
-  call DATE_AND_TIME(VALUES=tim)
-  iranlux = tim(6) + tim(5)*60 + tim(4)*3600
+  iranlux = ucmuon_base_seed()    ! UCMUON_SEED env var, else clock+pid
   call par_init_rng(iranlux)      ! <-- OMP: initialises one stream per thread
 
   if (spectrum_mode_in /= 3) then

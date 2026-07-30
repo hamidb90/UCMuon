@@ -1,0 +1,5 @@
+__pycache__/
+*.pyc
+validation/dump_ucmugen
+validation/test_projection
+validation/reference/*.npz

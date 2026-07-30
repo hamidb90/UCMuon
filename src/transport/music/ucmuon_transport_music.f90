@@ -240,7 +240,8 @@ program ucmuon_transport_music
     write(*,*) ' --- [6/6] Transport scope ---'
     write(*,*) ' Transport ALL muons?'
     write(*,*) '   0 = only muons with hit_flag=1 (detector-aimed, recommended)'
-    write(*,*) '   1 = all muons in file (use if file is already pre-filtered)'
+    write(*,*) '   1 = all muons in file (use if the detector acceptance cut'
+    write(*,*) '       was already applied when the file was generated)'
     write(*,*) '   Note: auto-detected 13-col format always transports all.'
     read(*,*) transport_all
 

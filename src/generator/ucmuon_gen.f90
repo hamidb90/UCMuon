@@ -163,7 +163,7 @@ program ucmuon_gen
   integer  :: j, id, kk
   integer(8)  :: ntry           ! per-rank attempts
   integer(8)  :: i              ! per-rank accepted count
-  integer     :: tim(8), iranlux
+  integer     :: iranlux
   integer     :: use_defaults
   character(512) :: output_all, output_sel, output_phits
   character(512) :: stem_all, stem_sel      ! base path without .dat, used for rank files
@@ -825,8 +825,7 @@ program ucmuon_gen
   !   999983 is prime → seeds are well-separated in state space.
   !===========================================================================
   if (my_rank == 0) then
-    call DATE_AND_TIME(VALUES=tim)
-    iranlux = tim(6) + tim(5)*60 + tim(4)*3600
+    iranlux = ucmuon_base_seed()   ! UCMUON_SEED env var, else clock+pid
   end if
   call MPI_Bcast(iranlux, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
 

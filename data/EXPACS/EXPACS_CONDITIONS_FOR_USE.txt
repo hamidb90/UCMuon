@@ -7,8 +7,35 @@ Source: https://phits.jaea.go.jp/expacs
 
 Copyright (c) Japan Atomic Energy Agency (JAEA). All rights reserved.
 
-Conditions (from the EXPACS distribution Readme, Q8, and the EXPACS
-"Conditions for Use" accepted at download time):
+VERBATIM "Conditions for Use of EXPACS / EXPACS-V", as published on the
+download page https://phits.jaea.go.jp/expacs/download-eng.htm and accepted
+at download time. The same conditions govern parma.zip (FORTRAN) and
+parma_cpp.zip (C++), which the page requires you to agree with before
+downloading:
+
+  1. Copyright(c) 2006 Japan Atomic Energy Agency, All Rights Reserved
+  2. These program are free softwares; you can redistribute them and/or
+     modify them for any purposes except for commercial use.
+  3. Japan Atomic Energy Agency is not responsible or liable for any loss or
+     damage of any sort incurred as the result of the use of these softwares.
+  4. For publishing results obtained by using these softwares, the use of
+     these softwares must be acknowledged explicitly by quoting the following
+     reference and URL:
+       T. Sato, Analytical Model for Estimating the Zenith Angle Dependence
+       of Terrestrial Cosmic Ray Fluxes, PLOS ONE, 11(8): e0160390 (2016)
+       T. Sato, Analytical model for estimating terrestrial cosmic ray fluxes
+       nearly anytime and anywhere in the world: Extension of PARMA/EXPACS,
+       PLOS ONE, 10(12): e0144679. (2015)
+       http://phits.jaea.go.jp/expacs/
+     You must send a copy of any publications using these data to
+     nsed-expacs@jaea.go.jp
+
+Note on clause 2: redistribution and modification ARE granted for any
+non-commercial purpose. "All Rights Reserved" in clause 1 is the copyright
+notice, not a withholding of that grant. Verified against the live download
+page on 2026-07-29.
+
+Summary of the same conditions as stated in the distribution Readme, Q8:
 
   - For NON-COMMERCIAL use, you must refer to the following manuscripts in any
     published use of this program:

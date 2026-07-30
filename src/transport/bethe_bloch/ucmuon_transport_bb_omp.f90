@@ -427,7 +427,7 @@ program ucmuon_transport_bb_omp
       slant_cm = PATH_MAX   ! near-horizontal -> always absorbed
     end if
 
-    !-- CSDA pre-filter: skip transport when range < required slant depth --
+    !-- CSDA range cut: skip transport when range < required slant depth --
     slant_gcm2 = rho_mat * slant_cm
     if (csda_range(emu, I_eV, Z_eff, A_eff, b_rad, C_dens) < slant_gcm2) then
       out_alive(i) = 0;  out_e_ug(i) = 0.d0;  nstop = nstop + 1
@@ -721,12 +721,12 @@ end subroutine transport_bb
 
 
 !=============================================================================
-! csda_range  —  CSDA range [g/cm²] used by the pre-filter
+! csda_range  —  CSDA range [g/cm²] used by the range cut
 !
 ! Integrates the same Bethe-Bloch + radiative dE/dx as transport_bb from
 ! E_init down to EMIN using NR uniform energy steps.  Because the transport
 ! is purely deterministic (CSDA), range < slant_gcm2 is an exact stopping
-! criterion — no surviving muon is ever killed by this pre-filter.
+! criterion — no surviving muon is ever killed by this range cut.
 !=============================================================================
 real(8) function csda_range(E_init, I_eV, Zat, Aat, b_rad, C_dens)
   use bb_constants

@@ -143,7 +143,7 @@ def render_stochastic_settings():
             key="stochastic_range_table",
             help=(
                 "CSDA range and dE/dx table used for continuous energy loss and the "
-                "CSDA pre-filter.\n\n"
+                "CSDA range cut.\n\n"
                 "**PDG 2024** — 56 entries, direct dE/dx column (no differentiation "
                 "noise), same Standard Rock parametrisation.\n\n"
                 "**Groom 2001** — original 33-entry table; kept for reproducibility."

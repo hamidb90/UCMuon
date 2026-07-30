@@ -150,13 +150,13 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     else:
         alive = np.ones(N, dtype=bool)
 
-        # CSDA pre-filter: instantly kill muons with insufficient range.
-        # Pre-filtered muons never enter the stepping loop — assign their CSDA
+        # CSDA range cut: instantly kill muons with insufficient range.
+        # Range-cut muons never enter the stepping loop — assign their CSDA
         # stopping displacement so z_stop reports a physical depth, not 0.
         R0 = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab) * a_scale
-        prefilt = R0 < slant_gcm2
-        alive[prefilt] = False
-        z_acc[prefilt] = cz_c[prefilt] * (R0[prefilt] / rho)
+        range_cut = R0 < slant_gcm2
+        alive[range_cut] = False
+        z_acc[range_cut] = cz_c[range_cut] * (R0[range_cut] / rho)
 
         # Adaptive step: 100 g/cm² default (26× larger than Fortran's 10 g/cm²)
         if n_steps <= 0:
