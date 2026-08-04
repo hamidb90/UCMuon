@@ -214,9 +214,35 @@ int main() {
     if (m.pdg == -13) ++mu_plus;
   }
   expect_true("20k generated muons are all well formed", bad == 0);
+
+  // The generated charge must follow PARMA, not the built-in sea-level table.
+  // PARMA models mu+ and mu- separately, so its ratio depends on atmospheric
+  // depth and cutoff as well as momentum; the table is flat at 1.252 below
+  // 112 GeV/c. Generating with a site-aware spectrum and a site-independent
+  // charge split would discard half of what the model provides.
   const double ratio = double(mu_plus) / double(kN - mu_plus);
-  std::printf("  [info] mu+/mu- from UCMuGen's ratio = %.3f; PARMA's own at "
-              "10 GeV/c = %.3f\n", ratio, parma::charge_ratio(site, 10.0));
+  const double sea = charge_ratio(10.0);                  // built-in table
+  const double pr = parma::charge_ratio(site, 10.0);      // PARMA's own
+  std::printf("  [info] generated mu+/mu- = %.3f; PARMA at 10 GeV/c = %.3f; "
+              "built-in table = %.3f\n", ratio, pr, sea);
+  // Momentum-averaged, so compare loosely; the point is which of the two it
+  // tracks, and the two differ by ~6%.
+  expect_true("generated charge follows PARMA, not the sea-level table",
+              std::fabs(ratio - pr) < std::fabs(ratio - sea));
+
+  // Altitude must move it, which is the whole reason for the hook.
+  parma::Site high = site;
+  high.depth_gcm2 = parma::depth_from_altitude(5.0, 50.67);
+  std::printf("  [info] PARMA ratio at 1 GeV/c: sea level %.3f, 5 km %.3f\n",
+              parma::charge_ratio(site, 1.0), parma::charge_ratio(high, 1.0));
+  expect_true("PARMA charge ratio depends on altitude",
+              parma::charge_ratio(high, 1.0) < parma::charge_ratio(site, 1.0));
+
+  // And removing PARMA must restore the built-in table.
+  parma::uninstall();
+  expect_true("uninstall restores the built-in charge ratio",
+              charge_ratio(Spectrum::Parma, 10.0) == sea);
+  parma::install(site);
 
   std::printf("\n%s (%d failure%s)\n",
               g_failures ? "FAILURES PRESENT" : "ALL PASSED", g_failures,

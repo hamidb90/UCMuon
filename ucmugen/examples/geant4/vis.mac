@@ -1,0 +1,15 @@
+# Interactive visualisation. Started automatically when the example is run
+# with no arguments.
+/run/initialize
+/vis/open OGL 900x700-0+0
+/vis/drawVolume
+/vis/viewer/set/viewpointThetaPhi 70 20
+/vis/viewer/set/style wireframe
+/vis/viewer/set/autoRefresh true
+/vis/scene/add/axes 0 0 0 1 m
+/vis/scene/add/trajectories smooth
+/vis/scene/endOfEventAction accumulate 200
+/vis/modeling/trajectories/create/drawByCharge
+/vis/modeling/trajectories/drawByCharge-0/set 1 blue
+/vis/modeling/trajectories/drawByCharge-0/set -1 red
+/run/beamOn 200

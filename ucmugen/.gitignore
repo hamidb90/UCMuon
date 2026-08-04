@@ -3,3 +3,7 @@ __pycache__/
 validation/dump_ucmugen
 validation/test_projection
 validation/reference/*.npz
+examples/geant4/build/
+validation/dump_rays
+examples/geant4/ucmugen_tracks.png
+examples/geant4/out.eps

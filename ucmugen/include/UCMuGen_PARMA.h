@@ -2759,10 +2759,19 @@ inline void install(const Site& s) {
   flux::parma_provider() = [s](double p_GeV, double cos_theta) {
     return intensity(s, p_GeV, cos_theta);
   };
+  // PARMA models the two charges separately, so it also supplies the charge
+  // ratio. Without this the generator would use a site-independent sea-level
+  // fit alongside a site-aware spectrum, which is inconsistent: at 5 km the
+  // fit is high by about 12% at 1 GeV/c.
+  charge_ratio_provider() = [s](double p_GeV) { return charge_ratio(s, p_GeV); };
 }
 
-/// Remove the provider, so Spectrum::Parma throws again.
-inline void uninstall() { flux::parma_provider() = nullptr; }
+/// Remove both providers, so Spectrum::Parma throws again and the charge ratio
+/// reverts to the built-in table.
+inline void uninstall() {
+  flux::parma_provider() = nullptr;
+  charge_ratio_provider() = nullptr;
+}
 
 }  // namespace parma
 }  // namespace ucmugen

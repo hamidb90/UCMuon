@@ -506,6 +506,20 @@ inline double sample(Rng& rng, Angular mode, double theta_max, double E_GeV,
 /// monotonic (the 0.648 at 1413-1778 GeV/c is a real downward fluctuation in
 /// the input data, not a transcription error). EcoMug uses a single constant
 /// ratio, so this is one of the places the two generators genuinely differ.
+/// Hook for a spectrum that models the two charges separately and therefore
+/// knows its own ratio.
+///
+/// PARMA is the case: it computes mu+ and mu- fluxes independently, so its
+/// ratio varies with atmospheric depth and geomagnetic cutoff as well as with
+/// momentum, where the table below is a sea-level fit and flat below 112 GeV/c.
+/// Using a site-aware flux and then overriding its charge split with a
+/// sea-level constant discards half of what the model provides. Installed by
+/// UCMuGen_PARMA.h; empty otherwise.
+inline std::function<double(double p_GeV)>& charge_ratio_provider() {
+  static std::function<double(double p_GeV)> f;
+  return f;
+}
+
 inline double charge_ratio(double p_GeV) {
   if (p_GeV <=  112.0) return 1.252;
   if (p_GeV <=  141.0) return 1.293;
@@ -521,6 +535,15 @@ inline double charge_ratio(double p_GeV) {
   if (p_GeV <= 1413.0) return 1.361;
   if (p_GeV <= 1778.0) return 0.648;
   return 1.495;
+}
+
+/// The ratio to use for a given spectrum: the spectrum's own where it has one,
+/// the sea-level table otherwise. This is what the generators call, so a
+/// spectrum that knows its charge composition is never overridden by the fit.
+inline double charge_ratio(Spectrum s, double p_GeV) {
+  if (s == Spectrum::Parma && charge_ratio_provider())
+    return charge_ratio_provider()(p_GeV);
+  return charge_ratio(p_GeV);
 }
 
 // =============================================================================
@@ -1121,7 +1144,11 @@ class Generator {
         mu.charge = (rng_->flat() < 0.5) ? 1 : -1;
         mu.pdg = (mu.charge == 1) ? -11 : 11;
       } else {
-        const double r = charge_ratio(p);
+        // Spectrum-aware: PARMA supplies its own site-dependent ratio, every
+        // other spectrum falls back to the sea-level table. The legacy driver
+        // deliberately does not do this, because its contract is bit-exact
+        // reproduction of the Fortran, which uses the table unconditionally.
+        const double r = charge_ratio(spectrum_, p);
         mu.charge = (rng_->flat() < r / (1.0 + r)) ? 1 : -1;
         mu.pdg = (mu.charge == 1) ? -13 : 13;
       }
@@ -1442,6 +1469,18 @@ class Generator {
 // =============================================================================
 #if defined(UCMUGEN_WITH_GEANT4) && !defined(UCMUGEN_GEANT4_H)
 #define UCMUGEN_GEANT4_H
+
+// Pulled in here rather than assumed, so this block does not depend on the
+// order in which the including file happens to have arranged its own includes.
+// Defining UCMUGEN_WITH_GEANT4 *before* including this header would otherwise
+// compile FireG4 with none of these types declared, which is a confusing error
+// a long way from its cause. Requiring only that the macro be defined is a
+// simpler contract than requiring a particular include order.
+#include "G4Event.hh"
+#include "G4ParticleGun.hh"
+#include "G4ParticleTable.hh"
+#include "G4SystemOfUnits.hh"
+#include "G4ThreeVector.hh"
 
 namespace ucmugen {
 

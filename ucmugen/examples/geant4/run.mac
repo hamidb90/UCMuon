@@ -1,0 +1,4 @@
+# Batch run: generate muons, count those entering the plate, report the rate.
+/run/initialize
+/run/printProgress 20000
+/run/beamOn 100000

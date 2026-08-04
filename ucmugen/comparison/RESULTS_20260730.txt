@@ -1,0 +1,55 @@
+UCMuGen vs EcoMug, measured 2026-07-30. Geant4 11.4.1, EcoMug v2.2, Apple
+Silicon Mac. Both generators given the identical differential flux (UCMuGen's
+Guan parametrisation, handed to EcoMug via SetDifferentialFlux), p in
+[1, 1000] GeV/c, theta < 70 deg.
+
+== rate_crosscheck ==============================================================
+Two independently written rate integrators on the same function.
+
+  horizontal plane   UCMuGen 9.82058e-3 +- 2e-6  cm^-2 s^-1
+                     EcoMug  9.82213e-3 +- 5e-6  cm^-2 s^-1
+                     -> 1.6e-4 relative, 0.30 sigma
+
+  cylinder, lateral  UCMuGen 224.141 +- 0.112 Hz
+                     EcoMug  224.304 +- 0.259 Hz
+                     -> 7e-4 relative
+
+  live time for 1e6 muons through a 2 x 2 m plane
+                     UCMuGen 2553 s
+                     EcoMug  0 s   (GetEstimatedTime exits early for custom J)
+
+EcoMug's value is the mean over 8 seeds at 5e7 points each, with the spread of
+the means as its uncertainty. Its estimator samples uniformly in momentum over a
+steeply falling spectrum, so a single run at 2e7 points sat 1.9 sigma away; the
+per-run quoted error is optimistic.
+
+== cylinder_g4 ==================================================================
+1 x 1 x 0.1 m plate at the origin, 8e6 primaries per case, tracked in Geant4
+with transportation only through vacuum (the quantity under test is geometric
+acceptance).
+
+  case                                  hit frac      rate into plate [Hz]
+  0  UCMuGen plane 7x7 m at z=1 m       2.2472%       108.13 +- 0.26
+  4  UCMuGen plane 5x5 m at z=0.5 m     4.3918%       107.81 +- 0.18
+  1  UCMuGen cylinder r=1.5 h=1, caps   11.7141%      107.56 +- 0.13
+  2  UCMuGen same cylinder, caps OFF    0.4229%       0.9478 +- 0.0052
+  3  EcoMug  same cylinder (lateral)    0.4352%       0.9761 +- 0.0054
+
+  surface independence:  plane1 vs cylinder +0.53%, plane2 vs cylinder +0.24%,
+                         all pairwise differences within 2 sigma
+  caps disabled:         factor 113.5 low
+  EcoMug:                factor 110.2 low; within 2.98% of the caps-off case,
+                         which localises the deficit to the missing caps
+
+The 2.98% residual between EcoMug and the caps-off configuration is real
+(3.8 sigma at 8e6, and 2.5% at 2e6) and reflects a small difference in the
+angular distribution sampled across the lateral surface. It is not the caps.
+
+== two mistakes made and fixed, recorded so they are not repeated ==============
+1. The first reference plane (7x7 m at z=2 m) truncated the acceptance: a 70 deg
+   muon travels 2*tan(70) = 5.5 m laterally, beyond the 3.5 m half-width, so the
+   "reference" came out BELOW the cylinder. A second plane of different size and
+   height was added as an independent check.
+2. Only the binomial error on the hit fraction was propagated at first, ignoring
+   the Monte Carlo error on the surface rate. That understated the total and
+   made a 0.5% agreement look like a 2 sigma discrepancy.

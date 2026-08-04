@@ -1,0 +1,59 @@
+# =============================================================================
+# tracks.mac -- render muon trajectories to an image file, no display needed.
+#
+#   ./ucmugen_example tracks.mac
+#
+# Uses TOOLSSG_OFFSCREEN, so it runs headless and on a batch node. Everything
+# here is standard Geant4 visualisation: nothing about it is specific to
+# UCMuGen except that the primaries come from it.
+# =============================================================================
+/run/initialize
+
+# 1 mm keeps delta rays visible where they matter, inside the plate, without
+# filling the surrounding air with low-energy spirals that dominate the frame.
+/run/setCut 1 mm
+
+/vis/open TSG_OFFSCREEN
+/vis/tsg/offscreen/set/size 1400 1000
+/vis/tsg/offscreen/set/format zb_png
+/vis/tsg/offscreen/set/file ucmugen_tracks.png
+/vis/drawVolume
+# z is the vertical here, so tell the viewer that or the horizontal
+# plate is rendered edge-on and reads as a wall.
+/vis/viewer/set/upVector 0 0 1
+/vis/viewer/set/viewpointThetaPhi 65 30
+/vis/viewer/set/style surface
+/vis/viewer/set/hiddenMarker true
+/vis/viewer/set/auxiliaryEdge true
+/vis/viewer/set/background white
+# Centre on the plate. Without this the view is dominated by metres of
+# track continuing below it, and the subject ends up in a corner.
+/vis/viewer/set/targetPoint 0 0 0 m
+/vis/viewer/zoomTo 1.05
+
+# Geometry: the plate solid, the world invisible so it does not box the view.
+/vis/geometry/set/visibility World 0 false
+/vis/geometry/set/colour Detector 0 0.78 0.16 0.16 0.45
+
+/vis/scene/add/scale 1 m x 1 0 0 manual 0 -2.2 -1.9 m
+/vis/scene/add/trajectories smooth
+/vis/scene/add/hits
+
+# Colour by particle so the muon and its secondaries are distinguishable:
+# muons teal to match the generator figure, electrons orange, gammas green.
+/vis/modeling/trajectories/create/drawByParticleID
+/vis/modeling/trajectories/drawByParticleID-0/setRGBA mu- 0.0 0.514 0.561 1
+/vis/modeling/trajectories/drawByParticleID-0/setRGBA mu+ 0.0 0.514 0.561 1
+/vis/modeling/trajectories/drawByParticleID-0/setRGBA e- 1.0 0.561 0.0 1
+/vis/modeling/trajectories/drawByParticleID-0/setRGBA e+ 1.0 0.561 0.0 1
+/vis/modeling/trajectories/drawByParticleID-0/setRGBA gamma 0.18 0.49 0.20 1
+/vis/modeling/trajectories/drawByParticleID-0/setDefaultRGBA 0.55 0.55 0.55 1
+
+/vis/scene/endOfEventAction accumulate
+
+/run/beamOn 12
+
+/vis/viewer/flush
+
+# The offscreen viewer writes the file on flush. A bare /vis/tsg/export
+# would additionally emit out.eps with the command's own defaults.
