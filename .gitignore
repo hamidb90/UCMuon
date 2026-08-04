@@ -42,10 +42,13 @@ output/
 *.swp
 *~
 
-# ── MUSIC source (V.A. Kudryavtsev) — NOT redistributable ────────────────────
+# ── MUSIC (V.A. Kudryavtsev) — NOT redistributable ───────────────────────────
 # Obtain from the author per docs/MUSIC_FILES.md; never commit these.
+# The data tables are covered as well as the sources: MUSIC_FILES.md asks you
+# to paste them into data/, and the rule above for *.dat is root-level only.
 src/transport/music/music.f
 src/transport/music/music-crosssections.f
+data/music-*.dat
 
 # -- Benchmark campaign (paper material) -- released with the publication -----
 # Kept in the private development tree; do not re-add before the paper is out.
