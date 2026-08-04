@@ -39,7 +39,7 @@ if [[ ! -f "$INPUT" ]]; then
     echo "ERROR: input file '$INPUT' not found."; exit 1
 fi
 if [[ ! -x "./bin/ucmuon_gen" ]]; then
-    echo "ERROR: ./bin/ucmuon_gen not found. Run: make local"; exit 1
+    echo "ERROR: ./bin/ucmuon_gen not found. Run: make hpc"; exit 1
 fi
 
 # -----------------------------------------------------------------------------

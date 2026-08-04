@@ -141,7 +141,7 @@ ifeq ($(MUSIC_AVAIL),no)
 endif
 ifeq ($(PUMAS_AVAIL),no)
 	@echo "  NOTE: PUMAS engine not built — external/pumas-master/src/pumas.c not found."
-	@echo "        Clone pumas into external/pumas-master/ (see docs/MUSIC_FILES.md)."
+	@echo "        Run ./setup.sh to fetch it, or see INSTALL.md."
 	@echo ""
 endif
 
