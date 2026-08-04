@@ -21,10 +21,41 @@
 - Continuous integration for UCMuGen across four compiler and platform
   combinations, plus a bit-exactness job against the Fortran generator
   (`.github/workflows/ucmugen.yml`).
+- `ucmugen/examples/geant4/`, a complete Geant4 application: geometry, physics
+  list, macros and CMake, so the integration can be run and not only read. It
+  runs multithreaded, and reports its predicted rate against the rate Geant4
+  measures (325.517 Hz against 325.234 Hz, 0.09%), which checks the flux
+  normalisation, the surface projection and the unit conversions end to end.
+- `ucmugen/examples/features/`, a tour of the whole API in one file: all eight
+  spectra, all four surfaces, all three detector shapes, the angular ranges,
+  seeding, normalisation and the legacy driver. No Geant4 and no external data,
+  about two seconds to run.
+- `ucmugen/comparison/`, the two measured UCMuGen vs EcoMug programs, both
+  driven by an identical differential flux so what is compared is the machinery
+  rather than the default parametrisations.
 
 ### Fixed
 - RNG seed collision: runs started within the same minute produced identical
   event streams.
+- UCMuGen: `parma::install()` writes a process-wide provider, so calling it
+  from a per-thread constructor was a data race. The Geant4 example installs it
+  once before the workers start, and the constraint is now documented on the
+  provider, on `install()` and in both example READMEs.
+- UCMuGen: `UCMuGen.h` includes the Geant4 headers its `FireG4` block needs
+  instead of assuming the including file arranged its own includes in a
+  particular order. Defining `UCMUGEN_WITH_GEANT4` before the include used to
+  fail a long way from the cause.
+- UCMuGen: PARMA now supplies its own charge ratio. It models the two charges
+  separately, so its ratio varies with atmospheric depth and cutoff, where the
+  built-in table is a sea-level fit that is flat below 112 GeV/c. At 5 km the
+  fit is high by about 12% at 1 GeV/c.
+- The MUSIC data tables are now covered by `.gitignore` alongside the MUSIC
+  sources. `docs/MUSIC_FILES.md` asks the user to paste them into `data/` to
+  enable Engine 2, and the existing rule reached only the repository root.
+- `hpc/run_ucmuon_gen.sh` reported the wrong build target when `bin/ucmuon_gen`
+  was missing: that binary is MPI and comes from `make hpc`, not `make local`.
+- The PUMAS "not built" note pointed at `docs/MUSIC_FILES.md` instead of
+  `setup.sh`, which offers to download it.
 - PARMA/EXPACS licence terms were recorded incorrectly. The published
   conditions **do** grant redistribution and modification for non-commercial
   use; the repository previously stated otherwise.
@@ -35,6 +66,11 @@
   the control.
 
 ### Changed
+- `data/EXPACS/` now ships only the PARMA data the engine reads
+  (`parma/input/`), not the whole EXPACS distribution. Every file the engine
+  opens lives under `input/`; the sample run output, the dose-calculator inputs
+  and the EXPACS spreadsheet were unreachable. The model is unchanged, verified
+  bit-identical against the full data. 21 MB to 3.4 MB.
 - Terminology: "pre-filter" named two unrelated mechanisms and is replaced by
   **detector acceptance cut** (geometry) and **range cut** (CSDA). In
   muography "target" denotes the imaged body, so the detector volume is never
