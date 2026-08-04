@@ -81,41 +81,42 @@ class SteppingAction : public G4UserSteppingAction {
 // ---------------------------------------------------------------------------
 // Turn the count into a rate, which is the point of the exercise.
 // ---------------------------------------------------------------------------
+// The rate and live time come from PrimaryGeneratorAction's static accessors
+// rather than from an instance, because in MT the master thread that reports
+// the run has no PrimaryGeneratorAction of its own. The counter is atomic and
+// shared, so the workers' hits are already summed by the time we read it.
 class RunAction : public G4UserRunAction {
  public:
-  explicit RunAction(const PrimaryGeneratorAction* gen) : fGen(gen) {}
-
-  void BeginOfRunAction(const G4Run*) override { gMuonsInDetector = 0; }
+  void BeginOfRunAction(const G4Run*) override {
+    if (IsMaster()) gMuonsInDetector = 0;
+  }
 
   void EndOfRunAction(const G4Run* run) override {
     if (!IsMaster()) return;
     const long long n = run->GetNumberOfEvent();
     if (n == 0) return;
     const long long hits = gMuonsInDetector.load();
-    const double live = fGen ? fGen->LiveTime(n) : 0.0;
+    const double live = PrimaryGeneratorAction::LiveTime(n);
     G4cout << "\n---------------- UCMuGen example ----------------\n"
            << "  generated muons        : " << n << "\n"
            << "  muons entering the plate: " << hits << "  ("
            << (100.0 * hits / n) << " %)\n";
     if (live > 0.0) {
-      G4cout << "  rate into the detector : " << fGen->Rate() << " Hz\n"
+      G4cout << "  rate into the detector : " << PrimaryGeneratorAction::Rate()
+             << " Hz\n"
              << "  live time of this run  : " << live << " s\n"
              << "  measured hit rate      : " << (hits / live) << " Hz\n";
     }
     G4cout << "-------------------------------------------------" << G4endl;
   }
-
- private:
-  const PrimaryGeneratorAction* fGen;
 };
 
 class ActionInitialization : public G4VUserActionInitialization {
  public:
-  void BuildForMaster() const override { SetUserAction(new RunAction(nullptr)); }
+  void BuildForMaster() const override { SetUserAction(new RunAction); }
   void Build() const override {
-    auto* gen = new PrimaryGeneratorAction;
-    SetUserAction(gen);
-    SetUserAction(new RunAction(gen));
+    SetUserAction(new PrimaryGeneratorAction);
+    SetUserAction(new RunAction);
     SetUserAction(new SteppingAction);
   }
 };
@@ -123,11 +124,28 @@ class ActionInitialization : public G4VUserActionInitialization {
 int main(int argc, char** argv) {
   G4UIExecutive* ui = (argc == 1) ? new G4UIExecutive(argc, argv) : nullptr;
 
-  // Serial by default: the example prints a single rate, and one generator per
-  // worker with independent streams is a separate discussion. UCMuGen is fine
-  // in MT, one Generator per thread.
+  // Any process-wide flux provider must be installed before the worker threads
+  // exist. This is the one piece of UCMuGen setup that is not per-generator.
+  PrimaryGeneratorAction::InstallFlux();
+
+  // Printed once here rather than from the generator's constructor, which in
+  // MT would run on every worker and say the same thing ten times.
+  G4cout << "[UCMuGen] " << PrimaryGeneratorAction::MakeGenerator().provenance()
+         << G4endl;
+  G4cout << "[UCMuGen] rate into the detector : "
+         << PrimaryGeneratorAction::Rate() << " Hz" << G4endl;
+  G4cout << "[UCMuGen] 1e6 muons correspond to: "
+         << PrimaryGeneratorAction::LiveTime(1000000) << " s of live time"
+         << G4endl;
+
+  // Multithreaded, because that is how Geant4 is normally run and because the
+  // per-thread story is worth showing rather than deferring. Each worker builds
+  // its own PrimaryGeneratorAction and therefore its own Generator, which is
+  // the supported pattern: a Generator owns its RNG and its cached momentum
+  // CDF and shares nothing. Here each one also draws from G4UniformRand, so the
+  // per-thread streams are the ones Geant4 has already made independent.
   auto* runManager =
-      G4RunManagerFactory::CreateRunManager(G4RunManagerType::Serial);
+      G4RunManagerFactory::CreateRunManager(G4RunManagerType::Default);
   runManager->SetUserInitialization(new DetectorConstruction);
   runManager->SetUserInitialization(new FTFP_BERT);
   runManager->SetUserInitialization(new ActionInitialization);

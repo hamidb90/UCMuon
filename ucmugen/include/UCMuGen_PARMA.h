@@ -2755,6 +2755,11 @@ inline double charge_ratio(const Site& s, double p_GeV) {
 /// Wire this site into Spectrum::Parma, so the generator, the momentum CDF and
 /// rate() all use it. Call again to change site; the caller must mark the
 /// generator dirty (any setter does) for the CDF to rebuild.
+///
+/// Threading: installs process-wide state. Call it once before any worker
+/// thread starts, never from a per-thread constructor. See the note on
+/// flux::parma_provider() in UCMuGen.h, and InstallFlux() in
+/// examples/geant4/PrimaryGeneratorAction.hh for the pattern.
 inline void install(const Site& s) {
   flux::parma_provider() = [s](double p_GeV, double cos_theta) {
     return intensity(s, p_GeV, cos_theta);

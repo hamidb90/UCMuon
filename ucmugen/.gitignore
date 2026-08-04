@@ -7,3 +7,4 @@ examples/geant4/build/
 validation/dump_rays
 examples/geant4/ucmugen_tracks.png
 examples/geant4/out.eps
+examples/features/feature_tour

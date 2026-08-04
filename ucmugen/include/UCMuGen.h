@@ -258,6 +258,13 @@ inline bool guan_family(Spectrum s, double* a, double* b) {
 /// JAEA's, non-commercial-only, so putting it here would make this header
 /// non-commercial too. Including UCMuGen_PARMA.h installs a provider; without
 /// it, Spectrum::Parma throws rather than silently returning a wrong number.
+///
+/// Threading: this is process-wide state, not per-generator. Install the
+/// provider once, before any worker thread starts, and treat it as read-only
+/// afterwards. Installing it from a per-thread constructor is a data race:
+/// every thread would write the same std::function while the others read it
+/// through intensity(). Everything else in this header is per-instance, so one
+/// Generator per thread needs no further care.
 using IntensityFn = std::function<double(double p_GeV, double cos_theta)>;
 inline IntensityFn& parma_provider() {
   static IntensityFn f;

@@ -181,9 +181,17 @@ cutoff, depth, geometry mode, energy and angle, and agrees **bit-for-bit**.
 
 ```
 include/UCMuGen.h              the library
-examples/geant4/               a complete PrimaryGeneratorAction
+examples/geant4/               a complete, multithreaded Geant4 application
+examples/features/             every option, with the numbers each produces
+comparison/                    measured UCMuGen vs EcoMug
 validation/                    the test suite (see its README)
 ```
+
+Start with `examples/geant4/` to integrate, and `examples/features/` to decide
+what to integrate: the first is the minimum you need and is meant to be copied,
+the second exercises all eight spectra, all four surfaces, all three detector
+shapes, the angular ranges, seeding and normalisation, and prints what each
+choice does to the rate. It needs no Geant4 and runs in two seconds.
 
 ## Citing
 

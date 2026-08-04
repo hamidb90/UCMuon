@@ -10,6 +10,10 @@ cd build
 ./ucmugen_example               # interactive, with visualisation
 ```
 
+Runs multithreaded, which is how Geant4 is normally used. For a tour of every
+option the generator has rather than the minimum needed to integrate it, see
+[`../features/`](../features/).
+
 ## What you actually need to copy
 
 `PrimaryGeneratorAction.hh` and `PrimaryGeneratorAction.cc`. That is the whole
@@ -61,6 +65,32 @@ survives to it. The missing 0.07% is decay in flight across 3 m of air, which is
 the right order for these momenta. If you disable the detector (comment out
 `setDetector`) the run still works and gives the same rate, but generates
 hundreds of times more muons to get there.
+
+## Threads
+
+One `Generator` per worker, which is what Geant4's model wants and what this
+example does: each worker builds its own `PrimaryGeneratorAction`, and a
+`Generator` owns its RNG and its cached momentum CDF and shares nothing. Each
+one draws from `G4UniformRand`, so the per-thread streams are the ones Geant4
+has already made independent.
+
+The same run on this machine takes 23 s on one thread and 4 s on ten, and gives
+*identical* output: 99913 muons into the plate and 325.234 Hz measured, either
+way. Geant4 seeds per event rather than per thread, so results do not depend on
+how many threads you used.
+
+Two things are deliberately not per-thread:
+
+- **`InstallFlux()`** must be called once, from `main()`, before the run manager
+  exists. PARMA installs into a process-wide provider, not into a generator, so
+  calling it from the constructor would have every worker writing the same
+  provider while the others read it. This is the only piece of UCMuGen setup
+  that is not per-generator.
+- **`Rate()`** is static and computed once. Every worker configures an identical
+  generator, so the rate is a property of the setup, and the Monte Carlo
+  integral behind it is not worth repeating per worker. Being static is also
+  what lets the master thread report it, since in MT the master has no
+  `PrimaryGeneratorAction` of its own.
 
 ## Options
 

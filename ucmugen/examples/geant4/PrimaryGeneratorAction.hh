@@ -22,18 +22,40 @@ class PrimaryGeneratorAction : public G4VUserPrimaryGeneratorAction {
 
   /// Rate through the generation surface, s^-1. With a detector attached this
   /// is the rate *into the detector*, which is what a run normalises to.
-  double Rate() const { return fRate; }
+  ///
+  /// Static and computed once. Every worker configures an identical generator,
+  /// so the rate is a property of the setup rather than of a thread, and the
+  /// Monte Carlo integral behind it is not worth repeating per worker. Being
+  /// static is also what lets the master thread report it: in MT the master
+  /// has no PrimaryGeneratorAction of its own.
+  static double Rate();
 
   /// Seconds of real time that `n` generated muons correspond to.
-  double LiveTime(long long n) const { return (fRate > 0.0) ? n / fRate : 0.0; }
+  static double LiveTime(long long n) {
+    const double r = Rate();
+    return (r > 0.0) ? n / r : 0.0;
+  }
 
   /// Exposed so the run action can report on the sampling.
   const ucmugen::Generator& generator() const { return fGen; }
 
+  /// Build the configured generator. One place, so the generator the workers
+  /// run and the generator the rate is computed from cannot drift apart.
+  static ucmugen::Generator MakeGenerator();
+
+  /// Install the PARMA flux, once, before any worker thread starts.
+  ///
+  /// PARMA is installed into a process-wide provider rather than into a
+  /// generator, so this must NOT go in the constructor: Geant4 builds one
+  /// PrimaryGeneratorAction per worker, and that would have every thread
+  /// writing the same provider while the others read it. Call it from main()
+  /// before the run manager exists. Without PARMA compiled in it does nothing,
+  /// so it is always safe to call.
+  static void InstallFlux();
+
  private:
   G4ParticleGun* fGun = nullptr;
   ucmugen::Generator fGen;
-  double fRate = 0.0;
 };
 
 #endif  // UCMUGEN_EXAMPLE_PRIMARYGENERATORACTION_HH
