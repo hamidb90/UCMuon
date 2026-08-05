@@ -31,8 +31,13 @@ status=0
 # a second translation unit includes the header, and a broken include guard only
 # shows up on the second include in one file. Both are cheap to rule out.
 echo "=== header hygiene (double include, two-TU link)"
-hdr_a=$(mktemp -t ucmugen_a).cc
-hdr_b=$(mktemp -t ucmugen_b).cc
+# Written into $OUT rather than via `mktemp -t`: BSD mktemp treats -t's
+# argument as a prefix, GNU treats it as a template and fails unless it ends in
+# XXXXXX. On GNU the substitution came back empty, both names collapsed to the
+# literal ".cc", and the one file was compiled twice, which fails as a
+# duplicate main() rather than as anything to do with the header.
+hdr_a="$OUT/ucmugen_tu_a.cc"
+hdr_b="$OUT/ucmugen_tu_b.cc"
 printf '#include "UCMuGen.h"\n#include "UCMuGen.h"\nint tu_a(){ return int(ucmugen::flux::intensity(ucmugen::Spectrum::Guan,10.0,1.0)>0); }\n' > "$hdr_a"
 printf '#include "UCMuGen.h"\nint tu_a();\nint main(){ ucmugen::Generator g; (void)g; return tu_a()?0:1; }\n' > "$hdr_b"
 if $CXX $FLAGS "$hdr_a" "$hdr_b" -o "$OUT/hdr_hygiene" && "$OUT/hdr_hygiene"; then
