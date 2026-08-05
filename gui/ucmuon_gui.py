@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.0.2"          # app version — keep in sync with CITATION.cff
+__version__ = "1.1.0"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup

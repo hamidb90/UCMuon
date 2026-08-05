@@ -1,6 +1,6 @@
 # Changelog
 
-## [Unreleased]
+## [1.1.0] — 2026-08-05
 
 ### Added
 - **UCMuGen** (`ucmugen/`), a single-file, dependency-free C++17 port of the
