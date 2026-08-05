@@ -165,7 +165,9 @@ program ucmuon_gen
   integer(8)  :: i              ! per-rank accepted count
   integer     :: iranlux
   integer     :: use_defaults
-  character(512) :: output_all, output_sel, output_phits
+  ! Blank-initialised on every rank, so that a short broadcast can only ever
+  ! truncate a path, never splice uninitialised memory onto the end of one.
+  character(512) :: output_all = '', output_sel = '', output_phits = ''
   character(512) :: stem_all, stem_sel      ! base path without .dat, used for rank files
   character(524) :: fname_rank              ! per-rank filename scratch buffer (stem + _RRRRR.dat)
   real(8)        :: depth
@@ -601,10 +603,18 @@ program ucmuon_gen
   call MPI_Bcast(parma_ratio_plus, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
 
   ! --- Character strings ---
-  call MPI_Bcast(output_all,    120, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-  call MPI_Bcast(output_sel,    120, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-  call MPI_Bcast(output_phits,  120, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
-  call MPI_Bcast(parma_datapath,200, MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+  ! Send the whole declared length, never a literal. These were sent as 120
+  ! characters while being declared character(512), so every rank except 0
+  ! received a string whose tail was uninitialised memory. trim() then kept
+  ! that garbage, the result overflowed the fname_rank buffer below, and the
+  ! _RRRRR.dat suffix was truncated away: ranks 1..n-1 all opened one and the
+  ! same malformed file and overwrote each other, so only rank 0's muons
+  ! survived. The run still reported the full total, because that comes from a
+  ! reduction over counters rather than from the files.
+  call MPI_Bcast(output_all,    len(output_all),    MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+  call MPI_Bcast(output_sel,    len(output_sel),    MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+  call MPI_Bcast(output_phits,  len(output_phits),  MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
+  call MPI_Bcast(parma_datapath,len(parma_datapath),MPI_CHARACTER, 0, MPI_COMM_WORLD, ierr)
 
   ! --- Detector shape flags ---
   call MPI_Bcast(det_shape_arr, MAX_DET, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
