@@ -35,6 +35,15 @@
   rather than the default parametrisations.
 
 ### Fixed
+- **MPI generator kept only rank 0's muons.** `output_all`, `output_sel` and
+  `output_phits` are `character(512)` but were broadcast as 120 characters, so
+  on every rank except 0 the tail of the string was uninitialised memory.
+  `trim()` kept it, the result overflowed the per-rank filename buffer, and the
+  `_RRRRR.dat` suffix was truncated away: ranks 1..n-1 all opened the same
+  malformed file and overwrote each other. An 8-rank job wrote an eighth of the
+  muons it reported, because the totals come from a reduction over counters
+  rather than from the files. Affects every MPI run of `bin/ucmuon_gen`;
+  single-process and OpenMP runs are unaffected.
 - RNG seed collision: runs started within the same minute produced identical
   event streams.
 - UCMuGen: `parma::install()` writes a process-wide provider, so calling it
