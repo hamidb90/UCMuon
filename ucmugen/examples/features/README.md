@@ -16,6 +16,12 @@ Runs in about two seconds. No Geant4, no external data. To include the
 site-aware PARMA spectrum, generate `UCMuGen_PARMA.h` first (see
 `ucmugen/tools/make_parma_header.py`) and add `-DUCMUGEN_TOUR_PARMA`.
 
+`./feature_tour --numbers` prints the same values as machine-readable
+`key value` pairs. That is what CI diffs against
+`ucmugen/validation/reference/tour_numbers.txt`, so the numbers quoted below
+cannot go stale without the build failing. See
+`ucmugen/validation/README.md`, "Numbers in the documentation".
+
 ## What it covers
 
 | Section | Feature |
@@ -46,16 +52,23 @@ correctness requirement rather than a nice result.
 as the detector covers less of the sky:
 
 ```
-  detector half-size         directed        blind   speed-up
-  200 x 200 cm               6.89e-02     1.51e-02         5x
-  60 x 60 cm                 8.33e-02     1.50e-03        56x
-  20 x 20 cm                 8.22e-02     2.32e-04       354x
-  6 x 6 cm                   3.69e-02     4.09e-05       902x
+  plate (full size)     acc dir  acc blind  dir us/mu blind us/mu  speed-up
+  200 x 200 cm         6.89e-02   1.42e-02       1.86        4.6        2x
+  60 x 60 cm           8.33e-02   1.52e-03       1.64       35.1       21x
+  20 x 20 cm           8.22e-02   2.33e-04       1.98      213.5      108x
+  6 x 6 cm             3.69e-02   3.94e-05       2.88     1257.7      436x
+  2 x 2 cm             1.15e-02   1.23e-05       6.82     3965.9      581x
 ```
 
 A plate that fills the view from the source plane gains almost nothing, because
 blind sampling was already hitting it most of the time. Real muography detectors
 sit at the bottom of that table.
+
+The acceptance columns and the speed-up column are deliberately separate
+numbers. The ratio of the acceptances is the saving in *proposals*; the
+wall-clock speed-up is about three times smaller, because a directed proposal
+costs more than a blind one (a cone has to be built and a ray-geometry test
+run). Quoting the acceptance ratio as a speed-up would overstate the win.
 
 ## The surfaces are the part with no equivalent elsewhere
 

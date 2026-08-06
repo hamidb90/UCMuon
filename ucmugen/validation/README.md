@@ -78,6 +78,43 @@ first version:
   a bootstrap and perturbs the sample even at shift = 0, which fakes an
   arbitrarily good resolving power under bisection.
 
+## Numbers in the documentation
+
+A number lives in three places: the program that computes it, the README that
+quotes it, and the paper that quotes it. Only the first executes. The other two
+are transcriptions, and transcriptions rot as the code changes underneath them.
+
+Both known instances were found by hand rather than by a test, which is the
+reason this check exists:
+
+- the Geant4 example's README advertised `99928` muons and `325.283 Hz`, from
+  before that example became multithreaded;
+- `feature_tour.cc` printed a ratio of *acceptances* under a column headed
+  `speed-up`, with a code comment asserting the two were interchangeable. They
+  differ by a factor of two to three, because a directed proposal costs more
+  than a blind one.
+
+Neither changed any physics. Both would have been quoted by a reader as fact.
+
+```
+feature_tour --numbers | check_numbers.py --exe <feature_tour>
+```
+
+`--numbers` emits every documented value as `key value`; `check_numbers.py`
+diffs that against `reference/tour_numbers.txt` and, when a value has moved,
+names the documents that quote it so the fix is a list to follow rather than a
+memory test. Refresh with `--update` after an intended change, and read the
+resulting diff as the checklist of documents to update.
+
+The configurations behind these values are declared once in `feature_tour.cc`
+and shared between the printed tables and `--numbers`, so the check cannot
+verify one set of configurations while the tour prints another.
+
+Timings are deliberately excluded: they are properties of the machine rather
+than of the physics, so they are quoted with the machine named beside them and
+cannot be diffed. Tolerances are set by what the platform can do to a value,
+and are documented next to them in `check_numbers.py`.
+
 ## Reproducibility
 
 The Fortran generator seeds its RNG from `UCMUON_SEED` when set. Runs are made
@@ -130,6 +167,7 @@ run_tests.sh         build and run the C++ suites
 test_projection.cc   closed-form checks of the surface projection
 test_detector.cc     closed-form checks of detector-directed sampling
 test_geant4.cc       the Geant4 hand-off, needs a Geant4 install
+check_numbers.py     documented numbers vs the code that produces them
 ucmuref/fortran.py   drive the Fortran generator, parse its output
 ucmuref/stats.py     probes, null calibration, resolving power
 ucmuref/cases.py     the 23-configuration spanning set

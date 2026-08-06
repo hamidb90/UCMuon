@@ -58,6 +58,29 @@ jobs:
           CXX: ${{ matrix.cxx }}
         run: ./ucmugen/validation/run_tests.sh
 
+      # The feature tour is documentation that runs, and the paper quotes its
+      # numbers, so it has to keep building and keep finishing. It needs no
+      # Geant4 and takes a few seconds. The Geant4 example cannot be built here
+      # for the same reason test_geant4 is not run; it is a pre-release step.
+      #
+      # -Werror is applied here and not in run_tests.sh for the same reason as
+      # the header check above: a local run stays usable on a compiler with a
+      # different warning set, CI does not.
+      - name: Feature tour example
+        run: |
+          ${{ matrix.cxx }} -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror \
+            -I ucmugen/include ucmugen/examples/features/feature_tour.cc \
+            -o /tmp/feature_tour
+          /tmp/feature_tour
+
+      # run_tests.sh already runs this, but it is repeated as a named step so
+      # that a documentation number going stale reads as its own failure in the
+      # UI rather than as a line buried in the suite's output. This is the check
+      # that would have caught the two defects that motivated it.
+      - name: Documented numbers still match the code
+        run: |
+          python3 ucmugen/validation/check_numbers.py --exe /tmp/feature_tour
+
   # The strongest check in the project: UCMuGen reproduces the Fortran RNG
   # bit-for-bit, so agreement is exact event equality rather than a tolerance.
   # A single differing event fails the build.

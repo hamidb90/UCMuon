@@ -24,6 +24,7 @@
 #include "UCMuGen_PARMA.h"
 #endif
 
+#include <chrono>
 #include <cmath>
 #include <cstdio>
 #include <memory>
@@ -57,6 +58,64 @@ Generator baseline() {
   return g;
 }
 
+// The configurations below are shared between the tour's printed tables and the
+// --numbers mode that CI diffs against a committed reference. They are declared
+// once, deliberately: if the tour printed one set of configurations and the
+// check verified another, a number could drift in the documentation while the
+// check stayed green, which is the exact failure this file already made once.
+struct SpectrumEntry { Spectrum s; const char* key; const char* name; const char* note; };
+const std::vector<SpectrumEntry>& spectra() {
+  static const std::vector<SpectrumEntry> v = {
+      {Spectrum::CosmoALEPH,    "cosmoaleph",     "CosmoALEPH",    "cosmoALEPH fit"},
+      {Spectrum::PowerLaw,      "powerlaw",       "PowerLaw",      "shape only, no normalisation"},
+      {Spectrum::Guan,          "guan",           "Guan",          "modified Gaisser, 2015"},
+      {Spectrum::Frosin,        "frosin",         "Frosin",        "Guan form, refitted 2025"},
+      {Spectrum::GaisserBugaev, "gaisser_bugaev", "GaisserBugaev", "no atmospheric correction"},
+      {Spectrum::ReynaBugaev,   "reyna_bugaev",   "ReynaBugaev",   "Reyna 2006 parametrisation"},
+      {Spectrum::Electron,      "electron",       "Electron",      "cosmic e+/e-, shape only"},
+  };
+  return v;
+}
+
+struct SurfaceEntry { std::shared_ptr<Surface> s; const char* key; const char* name; const char* note; };
+const std::vector<SurfaceEntry>& surfaces() {
+  static const std::vector<SurfaceEntry> v = {
+      {std::make_shared<Plane>(300.0, 300.0, Vec3{0, 0, 300}),
+       "plane_flat", "Plane (flat)", "6 m x 6 m sky plane, normal +Z"},
+      {std::make_shared<Plane>(300.0, 300.0, Vec3{0, 0, 300},
+                               Vec3{0.0, std::sin(0.5), std::cos(0.5)}),
+       "plane_tilted", "Plane (tilted)", "same plane tilted 28.6 deg"},
+      {std::make_shared<Disk>(300.0, Vec3{0, 0, 300}),
+       "disk", "Disk", "3 m radius, normal +Z"},
+      {std::make_shared<HSphere>(500.0, Vec3{0, 0, 0}),
+       "hsphere", "HSphere", "5 m dome over the detector"},
+      {std::make_shared<Cylinder>(400.0, 600.0, Vec3{0, 0, 0}, true),
+       "cylinder", "Cylinder", "4 m radius, 6 m tall, with caps"},
+  };
+  return v;
+}
+
+struct AngleEntry { double t0, t1, p0, p1; const char* key; const char* name; };
+const std::vector<AngleEntry>& angle_ranges() {
+  static const std::vector<AngleEntry> v = {
+      {0.0, 70.0 * kPi / 180.0, 0.0, 2 * kPi, "theta_0_70", "theta 0-70 deg, all azimuth"},
+      {0.0, 30.0 * kPi / 180.0, 0.0, 2 * kPi, "theta_0_30", "theta 0-30 deg, all azimuth"},
+      {0.0, 10.0 * kPi / 180.0, 0.0, 2 * kPi, "theta_0_10", "theta 0-10 deg (near vertical)"},
+      {30.0 * kPi / 180.0, 70.0 * kPi / 180.0, 0.0, 2 * kPi, "theta_30_70",
+       "theta 30-70 deg (annulus)"},
+      {0.0, 70.0 * kPi / 180.0, 0.0, kPi, "azimuth_half", "theta 0-70, azimuth half-sky"},
+      {0.0, 70.0 * kPi / 180.0, 0.0, kPi / 2.0, "azimuth_quadrant",
+       "theta 0-70, azimuth quadrant"},
+  };
+  return v;
+}
+
+/// Detector half-widths, cm. The tour prints the full size, which is 2x these.
+const std::vector<double>& detector_half_sizes() {
+  static const std::vector<double> v = {100.0, 30.0, 10.0, 3.0, 1.0};
+  return v;
+}
+
 }  // namespace
 
 // ---------------------------------------------------------------------------
@@ -69,21 +128,10 @@ Generator baseline() {
 void tour_spectra() {
   heading("1. Spectra");
 
-  struct Entry { Spectrum s; const char* name; const char* note; };
-  const std::vector<Entry> entries = {
-      {Spectrum::CosmoALEPH,    "CosmoALEPH",    "cosmoALEPH fit"},
-      {Spectrum::PowerLaw,      "PowerLaw",      "shape only, no normalisation"},
-      {Spectrum::Guan,          "Guan",          "modified Gaisser, 2015"},
-      {Spectrum::Frosin,        "Frosin",        "Guan form, refitted 2025"},
-      {Spectrum::GaisserBugaev, "GaisserBugaev", "no atmospheric correction"},
-      {Spectrum::ReynaBugaev,   "ReynaBugaev",   "Reyna 2006 parametrisation"},
-      {Spectrum::Electron,      "Electron",      "cosmic e+/e-, shape only"},
-  };
-
   std::printf("\n  %-16s %14s   %s\n", "spectrum", "rate [Hz]", "note");
   std::printf("  %-16s %14s   %s\n", "----------------", "--------------",
               "----");
-  for (const auto& e : entries) {
+  for (const auto& e : spectra()) {
     Generator g = baseline();
     g.setSpectrum(e.s);
     const double r = g.rate(kRatePoints);
@@ -126,26 +174,11 @@ void tour_spectra() {
 void tour_surfaces() {
   heading("2. Generation surfaces");
 
-  struct Entry { std::shared_ptr<Surface> s; const char* name; const char* note; };
-  const std::vector<Entry> entries = {
-      {std::make_shared<Plane>(300.0, 300.0, Vec3{0, 0, 300}),
-       "Plane (flat)", "6 m x 6 m sky plane, normal +Z"},
-      {std::make_shared<Plane>(300.0, 300.0, Vec3{0, 0, 300},
-                               Vec3{0.0, std::sin(0.5), std::cos(0.5)}),
-       "Plane (tilted)", "same plane tilted 28.6 deg"},
-      {std::make_shared<Disk>(300.0, Vec3{0, 0, 300}),
-       "Disk", "3 m radius, normal +Z"},
-      {std::make_shared<HSphere>(500.0, Vec3{0, 0, 0}),
-       "HSphere", "5 m dome over the detector"},
-      {std::make_shared<Cylinder>(400.0, 600.0, Vec3{0, 0, 0}, true),
-       "Cylinder", "4 m radius, 6 m tall, with caps"},
-  };
-
   std::printf("\n  %-16s %12s %14s   %s\n", "surface", "area [cm2]",
               "rate [Hz]", "note");
   std::printf("  %-16s %12s %14s   %s\n", "----------------", "------------",
               "--------------", "----");
-  for (const auto& e : entries) {
+  for (const auto& e : surfaces()) {
     Generator g = baseline();
     g.setSurface(e.s);
     // A dome and a cylinder see the whole sky, including muons arriving from
@@ -207,37 +240,52 @@ void tour_detectors() {
                 rb, eb, ok ? "yes" : "NO");
   }
 
-  // The reason to bother. Acceptance is the fraction of proposals that
-  // survive, so the ratio of the two is roughly the saving in wall time.
+  // The reason to bother, and the two numbers are deliberately not the same
+  // one. Acceptance is the fraction of proposals that survive, so its ratio is
+  // the saving in *proposals*; the wall-clock speed-up is smaller, because a
+  // directed proposal costs more than a blind one (a cone has to be built and
+  // a ray-geometry test run). Reporting the acceptance ratio as a speed-up
+  // would overstate the win by a factor of about three here.
   //
   // The size of the win is not a property of the generator, it is a property
   // of how much of the sky the detector covers. A plate that fills the view
   // from the source plane gains little, because blind sampling was already
   // hitting it most of the time. Shrink the detector and the gain grows
   // without limit, which is exactly the regime real muography lives in.
-  std::printf("\n  %-22s %12s %12s %10s\n", "detector half-size",
-              "directed", "blind", "speed-up");
-  std::printf("  %-22s %12s %12s %10s\n", "----------------------",
-              "------------", "------------", "----------");
-  for (const double h : {100.0, 30.0, 10.0, 3.0, 1.0}) {
+  std::printf("\n  %-18s %10s %10s %10s %10s %9s\n", "plate (full size)",
+              "acc dir", "acc blind", "dir us/mu", "blind us/mu", "speed-up");
+  std::printf("  %-18s %10s %10s %10s %10s %9s\n", "------------------",
+              "----------", "----------", "----------", "----------",
+              "---------");
+  for (const double h : detector_half_sizes()) {
     auto det = BoxDetector::centred(Vec3{0, 0, 0}, h, h, 10.0);
 
-    Generator gd = baseline();
-    gd.setDetector(det).setDirectedSampling(true);
-    for (int i = 0; i < 20000; ++i) gd.generate();
-
     // Blind sampling on a small detector is slow by construction, which is the
-    // point being made, so ask it for only a few hundred muons. acceptance()
-    // is accepted/tried, so a few hundred is already a stable estimate.
-    Generator gb = baseline();
-    gb.setDetector(det).setDirectedSampling(false);
-    for (int i = 0; i < 300; ++i) gb.generate();
-    const double acc_blind = gb.acceptance();
+    // point being made, so it is asked for fewer muons the smaller the
+    // detector. acceptance() is accepted/tried and the timing is per muon, so
+    // both stay comparable; only the run time is bounded.
+    const int n_blind = (h >= 100.0) ? 20000 : (h >= 10.0 ? 3000 : 400);
+
+    double us_per_muon[2] = {0.0, 0.0};
+    double acc[2] = {0.0, 0.0};
+    int idx = 0;
+    for (const bool directed : {true, false}) {
+      Generator g = baseline();
+      g.setDetector(det).setDirectedSampling(directed);
+      const int n = directed ? 20000 : n_blind;
+      const auto t0 = std::chrono::steady_clock::now();
+      for (int i = 0; i < n; ++i) g.generate();
+      us_per_muon[idx] = std::chrono::duration<double, std::micro>(
+                             std::chrono::steady_clock::now() - t0).count() / n;
+      acc[idx] = g.acceptance();
+      ++idx;
+    }
 
     char buf[32];
     std::snprintf(buf, sizeof buf, "%.0f x %.0f cm", 2 * h, 2 * h);
-    std::printf("  %-22s %12.2e %12.2e %9.0fx\n", buf, gd.acceptance(),
-                acc_blind, gd.acceptance() / acc_blind);
+    std::printf("  %-18s %10.2e %10.2e %10.2f %10.1f %8.0fx\n", buf, acc[0],
+                acc[1], us_per_muon[0], us_per_muon[1],
+                us_per_muon[1] / us_per_muon[0]);
   }
 }
 
@@ -255,17 +303,7 @@ void tour_angles() {
   std::printf("  %-34s %14s\n", "----------------------------------",
               "--------------");
 
-  struct Entry { double t0, t1, p0, p1; const char* name; };
-  const std::vector<Entry> entries = {
-      {0.0, 70.0 * kPi / 180.0, 0.0, 2 * kPi, "theta 0-70 deg, all azimuth"},
-      {0.0, 30.0 * kPi / 180.0, 0.0, 2 * kPi, "theta 0-30 deg, all azimuth"},
-      {0.0, 10.0 * kPi / 180.0, 0.0, 2 * kPi, "theta 0-10 deg (near vertical)"},
-      {30.0 * kPi / 180.0, 70.0 * kPi / 180.0, 0.0, 2 * kPi,
-       "theta 30-70 deg (annulus)"},
-      {0.0, 70.0 * kPi / 180.0, 0.0, kPi, "theta 0-70, azimuth half-sky"},
-      {0.0, 70.0 * kPi / 180.0, 0.0, kPi / 2.0, "theta 0-70, azimuth quadrant"},
-  };
-  for (const auto& e : entries) {
+  for (const auto& e : angle_ranges()) {
     Generator g = baseline();
     g.setThetaRange(e.t0, e.t1).setPhiRange(e.p0, e.p1);
     std::printf("  %-34s %14.3f\n", e.name, g.rate(kRatePoints));
@@ -385,7 +423,63 @@ void tour_legacy() {
               "  distribution follows from the flux and the surface.\n");
 }
 
-int main() {
+// ---------------------------------------------------------------------------
+// --numbers: the machine-readable form, for CI
+// ---------------------------------------------------------------------------
+// Every number this file prints in prose, or that a README or the paper quotes
+// from it, is emitted here as `key value`. check_numbers.py diffs the result
+// against validation/reference/tour_numbers.txt, so a value that moves fails the
+// build and names the documents that quote it, instead of silently rotting.
+//
+// Timings are deliberately absent. They are the one thing here that is a
+// property of the machine rather than of the physics, so they cannot be
+// diffed; the speed-up they feed is quoted with the machine named beside it.
+void emit_numbers() {
+  for (const auto& e : spectra()) {
+    Generator g = baseline();
+    g.setSpectrum(e.s);
+    const double r = g.rate(kRatePoints);
+    // Shape-only spectra return a negative sentinel; emit it as-is so that a
+    // spectrum silently acquiring or losing a normalisation is also caught.
+    std::printf("spectrum_rate.%s %.6f\n", e.key, r);
+  }
+
+  for (const auto& e : surfaces()) {
+    Generator g = baseline();
+    g.setSurface(e.s).setThetaRange(0.0, kPi / 2.0);
+    std::printf("surface_area.%s %.6f\n", e.key, e.s->area());
+    std::printf("surface_rate.%s %.6f\n", e.key, g.rate(kRatePoints));
+  }
+
+  for (const auto& e : angle_ranges()) {
+    Generator g = baseline();
+    g.setThetaRange(e.t0, e.t1).setPhiRange(e.p0, e.p1);
+    std::printf("angular_rate.%s %.6f\n", e.key, g.rate(kRatePoints));
+  }
+
+  for (const double h : detector_half_sizes()) {
+    Generator gd = baseline();
+    gd.setDetector(BoxDetector::centred(Vec3{0, 0, 0}, h, h, 10.0))
+        .setDirectedSampling(true);
+    for (int i = 0; i < 20000; ++i) gd.generate();
+    std::printf("acceptance.directed.%gcm %.6g\n", 2 * h, gd.acceptance());
+  }
+
+  // The normalisation the Geant4 example prints and the paper quotes in
+  // Section 6.6. Computable without Geant4, which is why it can live in CI.
+  Generator g = baseline();
+  const double r = g.rate(200000);
+  std::printf("detector_rate_hz %.6f\n", r);
+  std::printf("live_time_1e5_s %.6f\n", 100000.0 / r);
+  std::printf("live_time_1e6_s %.6f\n", 1000000.0 / r);
+}
+
+int main(int argc, char** argv) {
+  if (argc > 1 && std::string(argv[1]) == "--numbers") {
+    emit_numbers();
+    return 0;
+  }
+
   std::printf("UCMuGen feature tour\n");
   std::printf("Units throughout: cm, GeV, s.\n");
 

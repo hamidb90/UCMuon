@@ -1,0 +1,41 @@
+# Numbers the documentation quotes, as produced by
+#     feature_tour --numbers
+#
+# Format:  key | value | documents that quote it
+#
+# Regenerate with check_numbers.py --update. Do not hand-edit a value:
+# the point of the file is that every value in it came out of a run.
+# The third column is the reason the file exists. When a value moves,
+# it is the list of places that have to move with it.
+
+spectrum_rate.cosmoaleph      | 23438.443683     | 
+spectrum_rate.powerlaw        | -1.000000        | 
+spectrum_rate.guan            | 323.401136       | examples/features/README.md (section 1)
+spectrum_rate.frosin          | 332.773868       | 
+spectrum_rate.gaisser_bugaev  | 6173.252214      | 
+spectrum_rate.reyna_bugaev    | 657.107496       | 
+spectrum_rate.electron        | -1.000000        | 
+surface_area.plane_flat       | 360000.000000    | 
+surface_rate.plane_flat       | 323.401136       | 
+surface_area.plane_tilted     | 360000.000000    | 
+surface_rate.plane_tilted     | 309.920660       | examples/features/README.md (surfaces)
+surface_area.disk             | 282743.338860    | 
+surface_rate.disk             | 300.696409       | 
+surface_area.hsphere          | 1570796.327000   | 
+surface_rate.hsphere          | 439.744989       | 
+surface_area.cylinder         | 2513274.123200   | 
+surface_rate.cylinder         | 424.562526       | 
+angular_rate.theta_0_70       | 323.401136       | examples/features/README.md (rates add up)
+angular_rate.theta_0_30       | 173.345477       | examples/features/README.md (rates add up)
+angular_rate.theta_0_10       | 22.666144        | 
+angular_rate.theta_30_70      | 150.055658       | examples/features/README.md (rates add up)
+angular_rate.azimuth_half     | 161.759787       | examples/features/README.md (rates add up)
+angular_rate.azimuth_quadrant | 81.002181        | 
+acceptance.directed.200cm     | 0.068907         | examples/features/README.md (speed-up table); manuscript Table 5
+acceptance.directed.60cm      | 0.083253         | examples/features/README.md (speed-up table); manuscript Table 5
+acceptance.directed.20cm      | 0.082225         | examples/features/README.md (speed-up table); manuscript Table 5
+acceptance.directed.6cm       | 0.036896         | examples/features/README.md (speed-up table); manuscript Table 5
+acceptance.directed.2cm       | 0.011472         | examples/features/README.md (speed-up table); manuscript Table 5
+detector_rate_hz              | 325.517215       | examples/geant4/README.md (what the run prints); manuscript Sec. 6.6
+live_time_1e5_s               | 307.203414       | examples/geant4/README.md (what the run prints); manuscript Sec. 6.6
+live_time_1e6_s               | 3072.034143      | examples/geant4/README.md (what the run prints)

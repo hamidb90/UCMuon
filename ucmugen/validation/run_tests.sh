@@ -71,6 +71,23 @@ else
 fi
 echo
 
+# The numbers the documentation quotes, against the code that produces them.
+# Kept here rather than only in CI because the failure it catches is one a
+# developer creates locally: change a default, and every README and paper line
+# quoting a rate is silently wrong until someone re-measures. Needs python3
+# only for the comparison; the values come from the example itself.
+echo "=== documented numbers"
+if $CXX $FLAGS ../examples/features/feature_tour.cc -o "$OUT/feature_tour"; then
+  if command -v python3 >/dev/null 2>&1; then
+    python3 check_numbers.py --exe "$OUT/feature_tour" || status=1
+  else
+    echo "  skipped: python3 not found"
+  fi
+else
+  echo "  BUILD FAILED"; status=1
+fi
+echo
+
 echo "=== test_geant4"
 if command -v geant4-config >/dev/null 2>&1; then
   # geant4-config --cflags brings its own -std and warning set.

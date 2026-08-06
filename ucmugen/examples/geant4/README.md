@@ -41,17 +41,17 @@ file does not matter.
 [UCMuGen] 1e6 muons correspond to: 3072.03 s of live time
 ---------------- UCMuGen example ----------------
   generated muons        : 100000
-  muons entering the plate: 99928  (99.928 %)
+  muons entering the plate: 99913  (99.913 %)
   rate into the detector : 325.517 Hz
   live time of this run  : 307.203 s
-  measured hit rate      : 325.283 Hz
+  measured hit rate      : 325.234 Hz
 -------------------------------------------------
 ```
 
 Two things in that output are worth dwelling on, because they are the reason to
 use this generator rather than a spectrum sampler.
 
-**The predicted rate and the measured rate agree to 0.07%.** `rate()` is a Monte
+**The predicted rate and the measured rate agree to 0.09%.** `rate()` is a Monte
 Carlo integral computed before the run; the measured value is Geant4 counting
 muons that actually crossed into the plate. Nothing forces them to agree, and
 that they do is an end-to-end check of the flux normalisation, the surface
@@ -59,9 +59,9 @@ projection and the unit conversions at once. It also means the run has an
 *exposure*: 10⁵ muons here are 307 seconds of real sky, so simulated counts
 convert into a rate.
 
-**99.93% of generated muons reach the plate, not 100%.** Detector-directed
+**99.91% of generated muons reach the plate, not 100%.** Detector-directed
 sampling guarantees the *ray* intersects the detector, not that the muon
-survives to it. The missing 0.07% is decay in flight across 3 m of air, which is
+survives to it. The missing 0.09% is decay in flight across 3 m of air, which is
 the right order for these momenta. If you disable the detector (comment out
 `setDetector`) the run still works and gives the same rate, but generates
 hundreds of times more muons to get there.
