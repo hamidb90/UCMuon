@@ -109,7 +109,8 @@ def write_reference(values: dict[str, float],
         # Carry the "quoted in" annotation across an update; it is curated by
         # hand and has nothing to do with the measured value.
         quoted_in = previous.get(key, (0.0, ""))[1]
-        lines.append(f"{key:<{width}} | {value:<16.6f} | {quoted_in}")
+        row = f"{key:<{width}} | {value:<16.6f} |"
+        lines.append(f"{row} {quoted_in}" if quoted_in else row)
     REFERENCE.write_text("\n".join(lines) + "\n")
 
 
