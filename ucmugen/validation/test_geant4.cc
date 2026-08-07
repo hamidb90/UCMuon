@@ -20,8 +20,7 @@
 // metre, and -Wshadow (which geant4-config turns on) flags every one.
 //
 // Build (Geant4 must be on the path):
-//   c++ -std=c++17 -O2 $(geant4-config --cflags) -I../include \
-//       test_geant4.cc $(geant4-config --libs) -o test_geant4
+//   c++ -std=c++17 -O2 $(geant4-config --cflags) -I../include test_geant4.cc $(geant4-config --libs) -o test_geant4
 
 #define UCMUGEN_WITH_GEANT4
 

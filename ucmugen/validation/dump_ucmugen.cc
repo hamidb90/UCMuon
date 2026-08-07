@@ -6,8 +6,8 @@
 //   c++ -std=c++17 -O2 -I../include dump_ucmugen.cc -o dump_ucmugen
 //
 // Usage (all arguments required, in this order):
-//   dump_ucmugen emin emax spectrum angular theta_max_deg source \
-//                radius_cm half_lx_cm half_ly_cm source_z_cm nmuons seed
+//   dump_ucmugen emin emax spectrum angular theta_max_deg source radius_cm
+//                half_lx_cm half_ly_cm source_z_cm nmuons seed
 //
 // spectrum: 1 CosmoALEPH, 2 PowerLaw, 4 Guan, 5 Frosin, 6 GaisserBugaev,
 //           7 ReynaBugaev, 8 Electron          (3 = PARMA is not supported)

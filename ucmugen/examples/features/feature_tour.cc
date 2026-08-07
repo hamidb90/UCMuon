@@ -13,8 +13,7 @@
 //
 // With the PARMA header generated (see ucmugen/tools/make_parma_header.py):
 //
-//   c++ -std=c++17 -O2 -I../../include -DUCMUGEN_TOUR_PARMA \
-//       feature_tour.cc -o feature_tour
+//   c++ -std=c++17 -O2 -I../../include -DUCMUGEN_TOUR_PARMA feature_tour.cc -o feature_tour
 //
 // Everything is in UCMuGen's units throughout: centimetres, GeV, seconds.
 
