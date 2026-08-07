@@ -1,0 +1,31 @@
+# =============================================================================
+#  UCMuon comprehensive test run — Stage 2 input (UCMuon-MC transport, Engine 1)
+#
+#  Read by  gui/ucmuon_stochastic_driver.py  on standard input.  One bare value
+#  per line, in the order documented in that file's module docstring.
+#
+#  Engine 1 is pure Python, so this stage needs no Fortran compiler and no
+#  external data files.  Seed 42 with 1 worker makes the output bit-reproducible.
+# =============================================================================
+
+test_run/output/muons_surface.dat        # 1  infile
+test_run/output/muons_underground.dat    # 2  outfile
+25.0             # 3  depth_m        [m] vertical overburden
+2.65             # 4  rho            [g/cm^3] Standard Rock
+10.015           # 5  X0_cm          radiation length [cm]
+1                # 6  mat_id         1 = Standard Rock (native PDG tables)
+1                # 7  transport_all  1 = transport every muon
+14               # 8  ncols          informational; reader auto-detects
+0                # 9  n_steps        0 = adaptive
+0.05             # 10 v_cut          catastrophic threshold
+1                # 11 ms_enable      1 = Highland multiple scattering on
+11               # 12 Z_eff          [custom materials only]
+22               # 13 A_eff          [custom materials only]
+136.4            # 14 I_eV           [custom materials only]
+3.475e-6         # 15 b_rad          [custom materials only]
+1                # 16 range_table    1 = PDG-2024
+2                # 17 hard_spectrum  2 = per-process (default)
+42               # 18 seed
+1                # 19 n_workers      1 = serial, for reproducibility
+1                # 20 delta_rays     1 = explicit delta-ray straggling
+

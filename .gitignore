@@ -110,3 +110,6 @@ manuscript/scripts/_hpc_scaling_work/
 manuscript/scripts/_parma_spec
 manuscript/scripts/*.mod
 manuscript/scripts/*.dSYM/
+
+# Test-run scratch output (reference copies live in test_run/expected/)
+test_run/output/

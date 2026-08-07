@@ -1,0 +1,39 @@
+UCMuon comprehensive test run — reference results
+=================================================
+
+Generated 2026-08-07 on Apple Silicon macOS.
+  GNU Fortran (MacPorts gcc14 14.3.0_0+stdlib_flag) 14.3.0
+  Python 3.12.12, NumPy 2.2.6
+  UCMUON_SEED=20260807, OMP_NUM_THREADS=1, transport seed 42, 1 worker.
+
+Configuration
+-------------
+  Stage 1  CosmoALEPH spectrum (mode 1), 10–2500 GeV, disk source R = 50 m,
+           cos^2(theta) up to theta_max = 70 deg, 2000 muons, no detector cut.
+  Stage 2  UCMuon-MC (Engine 1), 25 m of Standard Rock (rho = 2.65 g/cm^3),
+           v_cut = 0.05, Highland MCS on, delta-ray straggling on,
+           PDG-2024 tables, per-process hard spectrum.
+
+Results
+-------
+  surface muons generated : 2000
+  muons transported       : 2000
+  survived                : 574
+  survival fraction       : 28.70 %   (binomial sigma 1.01 pp)
+  mean exit kinetic energy: 13.562 GeV
+
+SHA-256
+-------
+  muons_surface.dat      22bf6a219689ece3d259c81ecf1f7553a001b1d426d73752fd124187f3a64b7c
+  muons_underground.dat  5ceefd0e6c4ecdaefce118276e9a71701c96af75c5ab92ca08c1ae2d1463a78f
+
+Reproducing
+-----------
+  bash test_run/run_test.sh
+
+Both stages are deterministic for a fixed seed, so on this platform the output
+is byte-identical to the files in this directory. run_test.sh nevertheless
+grades numerically (exact muon count, survival fraction within a quarter of its
+binomial sigma, mean exit energy within 0.5%), because a different gfortran or
+libm can legitimately change the last bits of a double without anything being
+wrong.

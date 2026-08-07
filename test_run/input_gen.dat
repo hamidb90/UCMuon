@@ -1,0 +1,32 @@
+# =============================================================================
+#  UCMuon comprehensive test run — Stage 1 input (surface generator)
+#
+#  Read by  bin/ucmuon_gen_omp  on standard input.  Comment and blank lines are
+#  stripped by run_test.sh before the file is piped in; the generator itself
+#  expects one bare value per line, in exactly this order.
+#
+#  Small on purpose: 2000 muons runs in about a second and still exercises the
+#  full sampling path.  Set UCMUON_SEED to make the run reproducible (run_test.sh
+#  sets it to 20260807).
+# =============================================================================
+
+0                # use_defaults      0 = read the parameters below
+10.0             # e_min   [GeV]
+2500.0           # e_max   [GeV]
+1                # spectrum_mode     1 = CosmoALEPH (default model)
+1                # source_mode       1 = circular disk
+1                # source_plane      1 = XY, muons travel in -Z
+0.0              # disk centre U [m]
+0.0              # disk centre V [m]
+50.0             # disk radius  [m]
+0.0              # W fixed      [m]  (surface at z = 0)
+0.0              # tilt angle   [deg]
+0.0              # tilt azimuth [deg]
+2                # angular_mode      2 = cos^2(theta)
+70.0             # theta_max    [deg]
+2000             # nmuons
+0                # use_detector      0 = no detector acceptance cut
+1                # save_all          1 = write every generated muon
+0                # save_phits        0 = no PHITS export
+test_run/output/muons_surface.dat        # surface output file
+
