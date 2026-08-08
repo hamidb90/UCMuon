@@ -50,8 +50,8 @@ authors:
       Louvain-la-Neuve, Belgium
     orcid: "https://orcid.org/0000-0002-4360-0327"
 
-version: "1.1.0"
-date-released: "2026-08-05"
+version: "1.1.1"
+date-released: "2026-08-08"
 
 repository-code: "https://github.com/hamidb90/UCMuon"
 url: "https://github.com/hamidb90/UCMuon"
