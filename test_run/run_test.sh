@@ -27,6 +27,9 @@ REF_DIR="${TEST_DIR}/expected"
 export UCMUON_SEED=20260807
 export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 
+# 1 when stage 1 actually ran; 0 when its output was copied from expected/.
+GEN_RAN=1
+
 rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"
 
 strip() { sed 's/#.*//' "$1" | sed 's/[[:space:]]*$//' | grep -v '^$'; }
@@ -43,6 +46,7 @@ if [[ ! -x bin/ucmuon_gen_omp ]]; then
     echo "      SKIP - bin/ucmuon_gen_omp not built. Run ./setup.sh first."
     echo "      (Stage 2 can still be checked against the committed surface file.)"
     cp "${REF_DIR}/muons_surface.dat" "${OUT_DIR}/" || exit 1
+    GEN_RAN=0
 else
     # The generator ends with a "Press Enter to start" read, hence the blank line.
     { strip "${TEST_DIR}/input_gen.dat"; echo; } \
@@ -76,6 +80,13 @@ echo
 echo "Comparing against ${REF_DIR}/ ..."
 for f in muons_surface.dat muons_underground.dat; do
     [[ -f "${REF_DIR}/${f}" ]] || { echo "  --  ${f}: no reference committed"; continue; }
+    # Stage 1 skipped: this file *is* the reference, copied in, so comparing it
+    # would only compare it with itself. Say so rather than report a pass that
+    # nothing produced.
+    if [[ "$f" == muons_surface.dat && "$GEN_RAN" -eq 0 ]]; then
+        echo "  not checked: ${f} (stage 1 skipped; this is the committed reference)"
+        continue
+    fi
     if diff -q "${OUT_DIR}/${f}" "${REF_DIR}/${f}" > /dev/null 2>&1; then
         echo "  byte-identical: ${f}"
     else

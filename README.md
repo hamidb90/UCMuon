@@ -21,9 +21,9 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v0.9.0)
+## Status & scope (v1.1.1)
 
-This is the first public release. The **core simulation pipeline is validated**
+The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
 included but still under validation and are marked accordingly.
 
@@ -157,6 +157,16 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for the full cluster workflow: MPI 
 
 ---
 
+## Verify the installation
+
+```bash
+bash test_run/run_test.sh
+```
+
+Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) on a seeded 2000-muon configuration in a few seconds and grades the result against the reference output committed in `test_run/expected/`: 574 of 2000 muons survive 25 m of Standard Rock (28.70 %), with a mean exit kinetic energy of 13.562 GeV. Grading is numerical, since a different compiler can move the last bits of a double without anything being wrong; byte identity is reported as well when it holds. The transport stage is pure Python, so without a Fortran compiler the script falls back to the committed surface file and still checks stage 2.
+
+---
+
 ## Platform compatibility
 
 | Feature | Linux | macOS | Windows |
@@ -242,6 +252,8 @@ UCMuon/
 │   ├── ucmuon_bb_driver.py       Engine 3: Bethe-Bloch Python driver
 │   └── gui_*.py                  GUI panel modules (terrain, density, stochastic, …)
 │
+├── ucmugen/                      single-file C++17 generator for Geant4 (UCMuGen.h, examples, validation)
+├── test_run/                     comprehensive test run: inputs, reference output, run_test.sh
 ├── bin/                          compiled binaries (built by make; git-ignored)
 ├── data/                         physics tables (PARMA, MUSIC tables, …)
 ├── docs/                         MUSIC_FILES.md, ENGINE6_USAGE_GUIDE.md
@@ -251,10 +263,7 @@ UCMuon/
 ├── examples/
 │   ├── vesuvius/                 MURAVES-style Vesuvius worked example
 │   └── terrain/                  terrain engine example script
-├── external/                     vendored third-party libraries
-│   └── pumas-master/             PUMAS C library (used by Engine 7 / Makefile)
-│
-└── references/                   literature PDFs (kept private; stripped at public release)
+└── external/                     third-party libraries (PUMAS; fetched by the installers when absent)
 ```
 
 ---

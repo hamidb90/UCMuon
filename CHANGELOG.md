@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.1.1] — 2026-08-08
+## [1.1.1] — 2026-09-20
 
 The version described in the Computer Physics Communications submission.
 
@@ -24,9 +24,19 @@ The version described in the Computer Physics Communications submission.
     sums, and the compiler, Python and NumPy versions they were produced with.
 
 ### Fixed
+- `test_run/run_test.sh` reported `byte-identical: muons_surface.dat` even when
+  stage 1 had been skipped for want of a Fortran compiler, in which case that
+  file was the reference copied in and was only ever compared with itself. It
+  now says the file was not checked, and grades stage 2 as before.
 - The v1.1.0 changelog entry quoted the detector-directed sampling speed-up as
   5800x; the measured figure is 5700x, as reported in `ucmugen/README.md` and
   the paper.
+
+### Changed
+- README: the status heading still said v0.9.0 and "the first public release";
+  the directory tree listed neither `ucmugen/` nor `test_run/`, and, in the
+  public tree, listed a `references/` directory that is not published. A
+  "Verify the installation" section now points at `test_run/run_test.sh`.
 
 ## [1.1.0] — 2026-08-05
 
