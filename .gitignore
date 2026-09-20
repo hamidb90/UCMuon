@@ -50,10 +50,6 @@ src/transport/music/music.f
 src/transport/music/music-crosssections.f
 data/music-*.dat
 
-# -- Benchmark campaign (paper material) -- released with the publication -----
-# Kept in the private development tree; do not re-add before the paper is out.
-benchmark/
-
 # ── GUI session state ─────────────────────────────────────────────────────────
 ucmuon_autosave.json
 
@@ -87,6 +83,11 @@ benchmark/run_realistic_20260614/UCMuon/
 # Re-include its figures despite the global *.png rule above; never track raw data.
 !benchmark/figures/**/*.png
 benchmark/**/*.dat
+
+# ── Manuscript: only the figure-generating scripts are published ─────────────
+# The paper itself stays in the private tree.
+manuscript/*
+!manuscript/scripts/
 
 # ── Scratch working files (not needed to build/run — see misc/README.md) ─────
 misc/

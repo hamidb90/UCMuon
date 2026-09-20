@@ -1,0 +1,3 @@
+Events  : 600000
+Elapsed : 371145.63 s
+Rate    : 1.6 evt/s

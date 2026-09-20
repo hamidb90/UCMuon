@@ -1,0 +1,93 @@
+# UCMuon engine timing, re-measured 2026-07-30. Supersedes the June 2026
+# per-engine timing files for the MONOENERGETIC suite; the realistic suite was
+# re-measured too and needs no change (see the bottom of this file).
+#
+# Monoenergetic benchmark source (6 vertical beams, 5/10/20/50/100/300 GeV,
+# 100k muons each = 6e5 total), Standard Rock rho = 2.65 g/cm^3, Apple Silicon
+# Mac. Single thread: OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1.
+# Inputs are the stdin blocks of benchmark/analysis/run_mono_bench.sh verbatim.
+#
+# Every run reproduced its archived output in benchmark/geant4_muon_rock_v5/
+# BIT-FOR-BIT, so these time the same physics as the committed results and the
+# comparison across engines is on one machine in one session.
+#
+# CONTROL: MUSIC is Fortran and untouched since June. It re-measures at 207 s
+# against its June 204 s total (1.5%), and 52.0 s against 51 s at d=100 m, so
+# the machine is unchanged and the other engines' changes are real.
+#
+# seconds_per_1e5 = seconds_6e5 / 6, the unit used in the paper's tables.
+#
+# NOTE ON PROVENANCE: make_fig10_timing.py reads per-engine totals from
+# benchmark/geant4_muon_rock_v5/<code>/<code>_timing.txt, and that whole tree is
+# gitignored (raw scratch). Those files were updated with the TOTAL rows below,
+# but they are local only, so THIS FILE is the durable record: to regenerate
+# fig10 on another machine, write the TOTAL values back into that layout first.
+engine,depth_m,seconds_6e5,seconds_per_1e5
+UCMuon-MC,1,11.92,1.99
+UCMuon-MC,10,11.45,1.91
+UCMuon-MC,25,12.41,2.07
+UCMuon-MC,50,14.25,2.37
+UCMuon-MC,100,22.17,3.69
+UCMuon-MC,200,29.95,4.99
+UCMuon-MC,TOTAL,102.15,
+BetheBloch,1,7.58,1.26
+BetheBloch,10,6.90,1.15
+BetheBloch,25,6.82,1.14
+BetheBloch,50,7.67,1.28
+BetheBloch,100,8.34,1.39
+BetheBloch,200,8.31,1.39
+BetheBloch,TOTAL,45.62,
+MUSIC,1,6.22,1.04
+MUSIC,10,16.87,2.81
+MUSIC,25,27.55,4.59
+MUSIC,50,37.43,6.24
+MUSIC,100,51.95,8.66
+MUSIC,200,66.99,11.17
+MUSIC,TOTAL,207.01,
+PROPOSAL,1,15.81,2.64
+PROPOSAL,10,121.62,20.27
+PROPOSAL,25,230.28,38.38
+PROPOSAL,50,335.96,55.99
+PROPOSAL,100,476.95,79.49
+PROPOSAL,200,595.94,99.32
+PROPOSAL,TOTAL,1776.56,
+#
+# WHAT MOVED SINCE JUNE, AND WHY
+#
+# mono totals over 6 depths:   June -> 2026-07-30
+#   MUSIC        204 ->  207 s   unchanged (the control)
+#   PROPOSAL    2147 -> 1777 s   -17%, run-to-run variation on a ~30 min run
+#   UCMuon-MC    330 ->  102 s   -69%
+#   BetheBloch   871 ->   46 s   -95%
+#
+# The two Python engines moved because of the July work, and specifically
+# because the monoenergetic source is where it bites:
+#   - UCMuon-MC: DX_TARGET 5 -> 20 g/cm^2. The beams are vertical, so slant =
+#     depth and n_steps = ceil(slant/DX_TARGET) falls by 4x without hitting the
+#     300-step floor or the 20000-step ceiling.
+#   - BetheBloch: the CSDA range cut kills whole beams outright (50% of the
+#     source at 100 m, 67% at 200 m) because every beam is monoenergetic.
+#
+# REALISTIC SUITE: re-measured the same day, no change needed. Totals over the
+# six depths on benchmark/sources/muons_surface_real100.dat (1e5 muons):
+#   code       June CSV -> 2026-07-30
+#   PROPOSAL        195 -> 193 s
+#   UCMuon-MC        53 ->  56 s
+#   MUSIC            28 ->  33 s
+#   BetheBloch       14 ->  15 s
+# All within run-to-run variation, so benchmark/run_realistic_20260614/
+# realistic_timing.csv and fig_timing_realistic are left as they are. The
+# contrast with the mono suite is the point: that source is 100-2500 GeV at up
+# to 85 degrees, so few muons fall below the range cut and the long slant paths
+# clip at the 20000-step ceiling either way.
+#
+# Fraction of the 6e5 mono source removed by the deterministic-bound range cut,
+# computed with the driver's own _det_range. Exact sixths because the source is
+# six equal beams, so whole beams are removed.
+# depth_m,range_cut_percent
+# 1,0.0
+# 10,0.0
+# 25,33.3
+# 50,50.0
+# 100,50.0
+# 200,66.7

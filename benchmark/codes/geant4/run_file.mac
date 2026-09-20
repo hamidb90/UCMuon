@@ -1,0 +1,7 @@
+# ============================================================
+# run_file.mac  — Source mode: FILE
+# Set SOURCE_MODE = SourceMode::FILE in SimConfig.hh
+# ============================================================
+/run/initialize
+/run/setCut 10.0 mm
+/run/beamOn 10000

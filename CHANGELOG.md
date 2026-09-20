@@ -1,5 +1,44 @@
 # Changelog
 
+## [1.1.2] — 2026-09-20
+
+Publishes the benchmark suite and the paper's figure scripts. No code changes:
+every engine, input file and GUI element is byte-for-byte what 1.1.1 shipped.
+
+### Added
+- **`benchmark/`**, the six-code validation campaign that the paper reports:
+  the four UCMuon engines against Geant4 11.2 and PHITS 3.36 on one identical
+  source population (six monoenergetic vertical beams, 5 to 300 GeV, 10^5 muons
+  each, Standard Rock, scored at 1, 10, 25, 50, 100 and 200 m).
+  - `codes/` one subdirectory per transport code, each with the setup and the
+    instructions to run it; `analysis/` the cross-code scripts;
+    `results/` the summary CSVs and the per-engine timing files;
+    `figures/v2_six_code/` the canonical plots;
+    `reports/BENCHMARK_FEEDBACK.md` the reference write-up of the v2 run.
+  - `benchmark/README.md` is the roadmap for reproducing it end to end.
+  - The roughly 8 GB of raw per-event output stays untracked and is regenerated
+    by the per-code steps; what ships is the distilled product.
+- **`manuscript/scripts/`**, one script per figure of the paper, so every figure
+  can be regenerated from the code and the benchmark products. The paper itself
+  stays out of the repository.
+
+### Fixed
+- `benchmark/README.md` numbered the engines wrongly, giving MUSIC and UCMuon-MC
+  both as "Engine 1" and swapping Bethe-Bloch and PROPOSAL. The numbering now
+  matches the suite: 1 UCMuon-MC, 2 MUSIC, 3 Bethe-Bloch, 4 PROPOSAL.
+- `benchmark/README.md` listed the PHITS exit-energy disagreement as an open
+  item to be fixed before submission. It is a reported result, not a defect,
+  and it is in Section 8 of the paper and in `reports/BENCHMARK_FEEDBACK.md`.
+- `reports/COMPARISON_G4_PHITS.md` linked to a superseded four-code write-up
+  that is not published, and gave two commands as absolute paths on the author's
+  machine.
+
+### Note
+Not everything in the development tree is published: the speaker notes and the
+internal planning document are not, and neither is the superseded four-code
+comparison and its figures, because publishing numbers we know to be superseded
+next to the current ones invites exactly the wrong comparison.
+
 ## [1.1.1] — 2026-09-20
 
 The version described in the Computer Physics Communications submission.
