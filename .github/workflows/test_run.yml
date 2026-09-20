@@ -1,0 +1,76 @@
+name: Test run
+
+# The comprehensive test run is the claim a reader checks first, and the one
+# thing that must never quietly stop reproducing. It runs here on every change
+# to the pipeline it exercises, in both of the ways a reader can run it: with
+# the Fortran generator built, and without it, which is the path taken by anyone
+# who has not built the suite and is the one the fallback exists for.
+
+on:
+  push:
+    paths:
+      - 'test_run/**'
+      - 'gui/ucmuon_stochastic_driver.py'
+      - 'src/generator/**'
+      - 'tools/check_consistency.py'
+      - 'Makefile'
+      - '.github/workflows/test_run.yml'
+  pull_request:
+    paths:
+      - 'test_run/**'
+      - 'gui/ucmuon_stochastic_driver.py'
+      - 'src/generator/**'
+      - 'tools/check_consistency.py'
+      - 'Makefile'
+      - '.github/workflows/test_run.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  no-compiler:
+    name: ${{ matrix.os }} / no Fortran compiler
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install --upgrade numpy
+      - name: Nothing is built
+        run: test ! -e bin/ucmuon_gen_omp
+      - name: Run the test
+        run: bash test_run/run_test.sh
+      - name: Stage 1 is reported as skipped, not as a pass
+        run: |
+          bash test_run/run_test.sh | tee out.txt
+          grep -q "not checked: muons_surface.dat" out.txt
+      - name: Consistency checks
+        run: python3 tools/check_consistency.py --fast --public .
+
+  with-generator:
+    name: ubuntu-latest / generator built
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python3 -m pip install --upgrade numpy
+      - name: Build the surface generator
+        run: |
+          gfortran --version
+          make ucmuon_gen_omp
+          test -x bin/ucmuon_gen_omp
+      - name: Run the test
+        run: bash test_run/run_test.sh
+      - name: Both stages ran and were graded
+        run: |
+          bash test_run/run_test.sh | tee out.txt
+          grep -q "RESULT: PASS" out.txt
+          grep -q "wrote test_run/output/muons_surface.dat" out.txt
