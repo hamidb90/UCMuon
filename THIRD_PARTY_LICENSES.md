@@ -33,9 +33,10 @@ JAEA's official `parma_cpp` release. It carries the same terms. `UCMuGen.h`
 itself contains no PARMA code and stays MIT; the two are separate files
 precisely so that including PARMA is an explicit, visible choice. The
 generator changes the packaging, not the physics: it embeds the muon tables,
-restricts two initialisers to muons and makes the eight variables in which
-PARMA memoises its last call `thread_local`, so the header can be called from
-several threads (JAEA's code keeps them in shared statics). The edits are
+restricts two initialisers to muons, and makes the eight variables in which
+PARMA memoises its last call, and one scratch array, `thread_local`, so the
+header can be called from several threads (JAEA's code keeps them in shared
+statics). The edits are
 listed in the script and in the header.
 
 Full conditions: `data/EXPACS/EXPACS_CONDITIONS_FOR_USE.txt`.

@@ -247,10 +247,14 @@ int main() {
   parma::install(site);
 
   // Thread safety. PARMA memoises its last angular-coefficient evaluation in
-  // function statics; with one Generator per Geant4 worker, threads calling
-  // at different energies read each other's half-written cache. The cache is
+  // function statics, and getPowCpp uses a static scratch array; with one
+  // Generator per Geant4 worker, threads calling at different energies (or
+  // for the two charges) read each other's half-written values. Both are
   // thread_local and install() loads the tables, so concurrent evaluation
-  // must give bit-identical results to a single thread.
+  // must give bit-identical results to a single thread. (The scratch array was
+  // found by this test on Linux gcc 13 in CI, 51 of 192 000 wrong; clang keeps
+  // it in registers and passed. ThreadSanitizer reports both races on the old
+  // header and none now.)
   std::printf("\n6. concurrent evaluation (8 threads)\n");
   {
     std::vector<double> ps, cs, ref;

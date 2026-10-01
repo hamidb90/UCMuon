@@ -122,7 +122,8 @@ bit-identical: 20/20 legacy configurations event-for-event equal.
   E cannot reproduce the paper's own Fig. 1 (10³-10⁵× low below a few GeV),
   Ẽ reproduces it at every angle shown.
 - Backward MC surface spectra (none matched their paper).
-- UCMuGen PARMA: memoisation cache `thread_local`, tables loaded in
+- UCMuGen PARMA: memoisation cache and getPowCpp's scratch array `thread_local`
+  (the array was caught by CI on Linux gcc; ThreadSanitizer is clean), tables loaded in
   `install()` (`tools/make_parma_header.py` regenerates the header).
 - Fortran PARMA: kinetic energy; mode 6 reads PARMA's angular factor from a
   serially built table (PARMA's routines are not thread-safe).

@@ -652,7 +652,12 @@ generator resets `ntry = i`. The MPI generator sums the per-rank counts with
   +30% at 2-10 GeV, 60-80° with 8 threads before the table, correct with 1. In
   **UCMuGen** it affects every multithreaded Geant4 run with PARMA (one
   Generator per worker): 190 633 of 192 000 concurrent evaluations differed
-  from single-thread values. The cache is now `thread_local`
+  from single-thread values. A second shared value, getPowCpp's scratch
+  array `B` (written and read on every call, for μ⁺ and μ⁻), was found when CI
+  ran this test with gcc 13 on Linux: 51 of 192 000 evaluations wrong, where
+  clang, which keeps `B` in registers, had passed. ThreadSanitizer reports
+  races in both places on the earlier header and none now. The cache and the
+  scratch array are now `thread_local`
   (`ucmugen/tools/make_parma_header.py`, which regenerates the header
   byte-for-byte from JAEA's source) and `parma::install()` loads the tables.
 - **MPI generator angular modes.** Only 1-4 were accepted; mode 5 fell back to

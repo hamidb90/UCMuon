@@ -6,7 +6,7 @@ Why generate rather than hand-port
 PARMA's muon path is ~800 lines of interpolation over fitted tables. Retyping it
 would be a transcription exercise with no upside and a large downside, so this
 script lifts the routines *verbatim* from JAEA's own `subroutines.cpp` and applies
-exactly four mechanical edits, each of which is easy to audit and is listed in
+exactly five mechanical edits, each of which is easy to audit and is listed in
 the generated header:
 
   1. every `ifstream X(dname, ios::in)` becomes an `istringstream` over a table
@@ -17,11 +17,13 @@ the generated header:
   3. the black-hole-factor initialiser is restricted the same way;
   4. the eight static variables in which getSpecAngCpp memoises its last call
      become `thread_local`, so concurrent callers (Geant4 worker threads) no
-     longer overwrite each other's cache.
+     longer overwrite each other's cache;
+  5. getPowCpp's static scratch array B, which every call writes and then
+     reads, becomes `thread_local` for the same reason.
 
 Edits 2 and 3 are not taken on trust: `validation/test_parma.cc` compares the
 generated header against the stock build over a dense grid and requires exact
-agreement, and checks edit 4 by evaluating from eight threads at once.
+agreement, and checks edits 4 and 5 by evaluating from eight threads at once.
 
 Licence
 -------
@@ -112,7 +114,7 @@ def split_functions(src: str) -> dict[str, str]:
 
 
 def patch(text: str, name: str) -> tuple[str, list[str]]:
-    """Apply the four mechanical edits. Returns the text and what was done."""
+    """Apply the five mechanical edits. Returns the text and what was done."""
     notes = []
 
     # 1. File reads become reads from the embedded tables.
@@ -161,6 +163,21 @@ def patch(text: str, name: str) -> tuple[str, list[str]]:
         if n_total != 8:
             sys.exit(f"getSpecAngCpp: expected 8 cache variables, found {n_total}")
         notes.append("memoisation cache made thread_local (8 variables)")
+
+    # 5. getPowCpp uses a function-static array B as scratch: each call fills
+    #    B[1..2] from the tables for its particle and rigidity, then returns
+    #    B[1] + B[2]*d. intensity() calls it for mu+ (ip = 6) and mu- (ip = 7),
+    #    so two threads read each other's half-written B. Missed in v1.2.0's
+    #    first pass because clang keeps B in registers; gcc 13 on Linux goes
+    #    through memory, and CI measured 51 of 192 000 concurrent evaluations
+    #    wrong. thread_local gives each thread its own; the tables (A) stay
+    #    shared and are loaded once by parma::install().
+    if name == "getPowCpp":
+        text, n = re.subn(r"static double B\[nBdata\+1\];",
+                          "static thread_local double B[nBdata+1];", text)
+        if n != 1:
+            sys.exit("getPowCpp: scratch array B not found; source changed?")
+        notes.append("scratch array B made thread_local")
 
     return text, notes
 

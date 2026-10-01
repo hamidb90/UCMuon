@@ -47,6 +47,7 @@
 //
 //  What was changed from the stock JAEA source, and nothing else:
 //    - getPowCpp: 2 file open(s) -> embedded table lookup
+//    - getPowCpp: scratch array B made thread_local
 //    - getAmuon: 2 file open(s) -> embedded table lookup
 //    - BHfactorCpp: 1 file open(s) -> embedded table lookup
 //    - BHfactorCpp: species loop restricted to muons (ip2=4)
@@ -1833,7 +1834,7 @@ const int nAdata=5; // ! A(1) - A(5) : B = A(1)+A(2)*r+A(3)/(1+exp((r-A(4))/A(5)
 string chatmp;
 static string pname[npart+1] = {"neutro","proton","alphaa","elemag","elemag","elemag","muon--","muon--","ions  ","ions  ","ions  ","ions  ","ions  ","ions  "};
 static double A[npart+1][nBdata+1][nAdata+1];
-static double B[nBdata+1];
+static thread_local double B[nBdata+1];
 static int ifirst = 0;
 
 int i,ia,ib;
