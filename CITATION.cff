@@ -56,8 +56,8 @@ authors:
       Louvain-la-Neuve, Belgium
     orcid: "https://orcid.org/0000-0002-4360-0327"
 
-version: "1.1.2"
-date-released: "2026-09-20"
+version: "1.2.0"
+date-released: "2026-10-01"
 
 repository-code: "https://github.com/hamidb90/UCMuon"
 url: "https://github.com/hamidb90/UCMuon"
@@ -81,38 +81,140 @@ keywords:
 
 references:
   - type: article
-    title: "Muon radiography of volcanoes: A review"
+    title: "Muon simulation codes MUSIC and MUSUN for underground physics"
     authors:
       - family-names: Kudryavtsev
         given-names: V. A.
     journal: Computer Physics Communications
     volume: 180
     start: 339
+    end: 346
     year: 2009
     doi: "10.1016/j.cpc.2008.10.013"
     notes: "MUSIC muon transport code"
 
   - type: article
-    title: "A simple parameterisation of the cosmic-ray muon momentum spectra at the surface as a function of zenith angle"
+    title: "Spectrum and charge ratio of vertical cosmic ray muons up to momenta of 2.5 TeV/c"
+    authors:
+      - family-names: Schmelling
+        given-names: M.
+      - family-names: Hashim
+        given-names: N. O.
+      - family-names: Grupen
+        given-names: C.
+      - name: "The CosmoALEPH Collaboration"
+    journal: Astroparticle Physics
+    volume: 49
+    start: 1
+    end: 5
+    year: 2013
+    doi: "10.1016/j.astropartphys.2013.07.008"
+    notes: "CosmoALEPH spectrum (mode 1) and muon charge ratio"
+
+  - type: article
+    title: "A parametrization of the cosmic-ray muon flux at sea-level"
     authors:
       - family-names: Guan
         given-names: M.
+      - family-names: Chu
+        given-names: M.-C.
+      - family-names: Cao
+        given-names: J.
+      - family-names: Luk
+        given-names: K.-B.
+      - family-names: Yang
+        given-names: C.
     journal: "arXiv preprint"
     year: 2015
     url: "https://arxiv.org/abs/1509.06176"
-    notes: "Guan 2015 spectrum model"
+    notes: "Guan 2015 spectrum (mode 4) and the cos(theta*) Earth-curvature parametrisation"
 
   - type: article
-    title: "Muon flux parametrization for the muon depth-intensity relation"
+    title: "Optimizing sea level muon flux modelling: a 2D fit approach and integration into Geant4 generators"
     authors:
       - family-names: Frosin
         given-names: C.
-    journal: Journal of Physics G
+      - family-names: Bonechi
+        given-names: L.
+      - family-names: Borselli
+        given-names: D.
+      - family-names: Ciulli
+        given-names: V.
+      - family-names: "D'Alessandro"
+        given-names: R.
+      - family-names: Gonzi
+        given-names: S.
+      - family-names: Viliani
+        given-names: L.
+    journal: "Journal of Physics G: Nuclear and Particle Physics"
     volume: 52
-    start: 35002
+    start: "035002"
     year: 2025
-    doi: "10.1088/1361-6471/ada22d"
-    notes: "Frosin 2025 spectrum model"
+    doi: "10.1088/1361-6471/adb6c3"
+    notes: "Frosin 2025 spectrum (mode 5)"
+
+  - type: article
+    title: "A simple parameterization of the cosmic-ray muon momentum spectra at the surface as a function of zenith angle"
+    authors:
+      - family-names: Reyna
+        given-names: D.
+    journal: "arXiv preprint"
+    year: 2006
+    url: "https://arxiv.org/abs/hep-ph/0604145"
+    notes: "Reyna 2006 spectrum (mode 7)"
+
+  - type: article
+    title: "Atmospheric muon flux at sea level, underground, and underwater"
+    authors:
+      - family-names: Bugaev
+        given-names: E. V.
+      - family-names: Misaki
+        given-names: A.
+      - family-names: Naumov
+        given-names: V. A.
+      - family-names: Sinegovskaya
+        given-names: T. S.
+      - family-names: Sinegovsky
+        given-names: S. I.
+      - family-names: Takahashi
+        given-names: N.
+    journal: Physical Review D
+    volume: 58
+    start: "054001"
+    year: 1998
+    doi: "10.1103/PhysRevD.58.054001"
+    notes: "Functional form of the Reyna 2006 fit; reference vertical spectrum"
+
+  - type: article
+    title: "Muon simulations for Super-Kamiokande, KamLAND, and CHOOZ"
+    authors:
+      - family-names: Tang
+        given-names: A.
+      - family-names: Horton-Smith
+        given-names: G.
+      - family-names: Kudryavtsev
+        given-names: V. A.
+      - family-names: Tonazzo
+        given-names: A.
+    journal: Physical Review D
+    volume: 74
+    start: "053007"
+    year: 2006
+    doi: "10.1103/PhysRevD.74.053007"
+    notes: "Modified Gaisser parametrisation (fast flux estimator)"
+
+  - type: article
+    title: "Review of Particle Physics"
+    authors:
+      - name: "Particle Data Group"
+      - family-names: Workman
+        given-names: R. L.
+    journal: "Progress of Theoretical and Experimental Physics"
+    volume: 2022
+    start: 083C01
+    year: 2022
+    doi: "10.1093/ptep/ptac097"
+    notes: "Chapter 30, Cosmic Rays (J. J. Beatty, J. Matthews, S. P. Wakely), Sec. 30.3.1 and Eq. 30.4: sea-level muon reference values and the Gaisser formula"
 
   - type: article
     title: "Muon stopping power and range tables 10 MeV-100 TeV"
@@ -126,21 +228,36 @@ references:
     journal: Atomic Data and Nuclear Data Tables
     volume: 78
     start: 183
+    end: 356
     year: 2001
     doi: "10.1006/adnd.2001.0861"
     notes: "CSDA range tables used in Engines 4, 5, 6"
 
   - type: article
-    title: "PARMA/EXPACS: A revision of PARMA"
+    title: "Analytical model for estimating terrestrial cosmic ray fluxes nearly anytime and anywhere in the world: Extension of PARMA/EXPACS"
     authors:
       - family-names: Sato
         given-names: T.
     journal: PLOS ONE
     volume: 10
     issue: 12
+    start: e0144679
     year: 2015
     doi: "10.1371/journal.pone.0144679"
-    notes: "PARMA/EXPACS cosmic ray spectrum model"
+    notes: "PARMA/EXPACS cosmic ray spectrum model (mode 3)"
+
+  - type: article
+    title: "Analytical model for estimating the zenith angle dependence of terrestrial cosmic ray fluxes"
+    authors:
+      - family-names: Sato
+        given-names: T.
+    journal: PLOS ONE
+    volume: 11
+    issue: 8
+    start: e0160390
+    year: 2016
+    doi: "10.1371/journal.pone.0160390"
+    notes: "PARMA/EXPACS muon zenith-angle dependence (mode 3)"
 
   - type: article
     title: "PROPOSAL: A tool for propagation of charged leptons"
@@ -150,19 +267,21 @@ references:
     journal: Computer Physics Communications
     volume: 184
     start: 2070
+    end: 2090
     year: 2013
     doi: "10.1016/j.cpc.2013.04.001"
     notes: "PROPOSAL transport engine (Engine 3)"
 
   - type: article
-    title: "Multiple Coulomb scattering"
+    title: "Some practical remarks on multiple scattering"
     authors:
       - family-names: Highland
         given-names: V. L.
     journal: Nuclear Instruments and Methods
     volume: 129
     start: 497
-    year: 1979
+    end: 499
+    year: 1975
     doi: "10.1016/0029-554X(75)90743-0"
     notes: "Highland multiple scattering formula"
 
@@ -174,6 +293,7 @@ references:
     journal: Computer Physics Communications
     volume: 79
     start: 100
+    end: 110
     year: 1994
     doi: "10.1016/0010-4655(94)90232-1"
-    notes: "RANLUX RNG"
+    notes: "RANLUX RNG, used by the MUSIC and serial transport engines (the generator uses its own LCG)"

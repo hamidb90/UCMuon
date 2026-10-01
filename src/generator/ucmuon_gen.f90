@@ -123,6 +123,13 @@ program ucmuon_gen
   real(8) :: parma_cdf_ang_plus(NPARMA_ANG)
   real(8) :: parma_cdf_ang_minus(NPARMA_ANG)
 
+  ! Angular mode 6: PARMA's angular factor tabulated on (energy grid) x
+  ! (cos theta), because PARMA's routines keep SAVE'd working state and give
+  ! wrong values when called from several OpenMP threads at once.
+  integer, parameter :: NPARMA_CJ = 201
+  real(8) :: parma_cj(NPARMA_CJ)
+  real(8) :: parma_ang_tab(NPARMA_E, NPARMA_CJ)
+
   !---------------------------------------------------------------------------
   ! Detector geometry
   !---------------------------------------------------------------------------
@@ -179,6 +186,11 @@ program ucmuon_gen
   real(8) :: phi_p, phi_m
   real(8) :: sum_p, sum_m, dE, dcos
   real(8) :: ang_fac                ! angular shape factor (init only)
+
+  ! Angular mode 6 (joint sampling) and the live time
+  real(8) :: nxs, nys, nzs, proj_s, ang_w   ! PRIVATE in the parallel region
+  real(8) :: parma_env = 1.0d0              ! PARMA mode-6 acceptance envelope
+  real(8) :: surf_rate = -1.0d0             ! R [s^-1] through the source surface
   integer :: ibin, k                ! k = inner energy loop index (init only)
   real(4) :: rnd4
 
@@ -390,10 +402,14 @@ program ucmuon_gen
       write(*,*) '   2 = cos^2(theta)'
       write(*,*) '   3 = Uniform cone'
       write(*,*) '   4 = Guan/Frosin self-consistent P(theta|E)'
+      write(*,*) '   5 = cos^3(theta)  Reyna-Bugaev / cosmic electrons'
+      write(*,*) '   6 = Joint J(p,theta) x surface projection  [recommended]'
       read(*,*) angular_mode
-      if (angular_mode < 1 .or. angular_mode > 4) angular_mode = 2
+      ! Modes 5 and 6 were missing here before the 2026-09 audit: mode 5 was
+      ! silently replaced by 2 in MPI runs.
+      if (angular_mode < 1 .or. angular_mode > 6) angular_mode = 2
       theta_max = 0d0
-      if (angular_mode == 2 .or. angular_mode == 3 .or. angular_mode == 4) then
+      if (angular_mode >= 2) then
         write(*,*) ' Max zenith angle [degrees]  (e.g. 85):'
         read(*,*) theta_max_deg
         theta_max = theta_max_deg * PI / 180d0
@@ -491,8 +507,12 @@ program ucmuon_gen
     parma_cdf_minus(1) = 0.0d0
     do j = 2, NPARMA_E
       dE    = parma_E_MeV(j) - parma_E_MeV(j-1)
-      phi_p = getMuonSpec(1, parma_s_W, parma_rc_GV, parma_d_gcm2, parma_E_MeV(j-1))
-      phi_m = getMuonSpec(2, parma_s_W, parma_rc_GV, parma_d_gcm2, parma_E_MeV(j-1))
+      ! parma_E_MeV is TOTAL energy; PARMA's functions take kinetic energy
+      ! (Sato 2008).  Before the 2026-09 audit the total energy was passed.
+      phi_p = getMuonSpec(1, parma_s_W, parma_rc_GV, parma_d_gcm2, &
+                          parma_E_MeV(j-1) - MUON_MASS*1.0d3)
+      phi_m = getMuonSpec(2, parma_s_W, parma_rc_GV, parma_d_gcm2, &
+                          parma_E_MeV(j-1) - MUON_MASS*1.0d3)
       parma_cdf_plus(j)  = parma_cdf_plus(j-1)  + max(0.0d0, phi_p) * dE
       parma_cdf_minus(j) = parma_cdf_minus(j-1) + max(0.0d0, phi_m) * dE
     end do
@@ -538,11 +558,12 @@ program ucmuon_gen
       do k = 1, NPARMA_E - 1
         dE      = parma_E_MeV(k+1) - parma_E_MeV(k)
         phi_p   = max(0.0d0, getMuonSpec(1, parma_s_W, parma_rc_GV, &
-                             parma_d_gcm2, parma_E_MeV(k)))
+                             parma_d_gcm2, parma_E_MeV(k) - MUON_MASS*1.0d3))
         phi_m   = max(0.0d0, getMuonSpec(2, parma_s_W, parma_rc_GV, &
-                             parma_d_gcm2, parma_E_MeV(k)))
+                             parma_d_gcm2, parma_E_MeV(k) - MUON_MASS*1.0d3))
         ang_fac = max(0.0d0, getSpecAngFinal(4, parma_s_W, parma_rc_GV, &
-                             parma_d_gcm2, parma_E_MeV(k), 0.0d0, parma_cos_arr(j-1)))
+                             parma_d_gcm2, parma_E_MeV(k) - MUON_MASS*1.0d3, &
+                             0.0d0, parma_cos_arr(j-1)))
         sum_p   = sum_p + phi_p * ang_fac * dE
         sum_m   = sum_m + phi_m * ang_fac * dE
       end do
@@ -848,7 +869,24 @@ program ucmuon_gen
   !===========================================================================
   if (spectrum_mode_in /= 3) then
     call build_cosmoaleph_cdf(p_min, p_max, spectrum_mode_in)
+    if (angular_mode == 6) call prepare_joint(theta_max)
+    if (angular_mode >= 2) &
+      surf_rate = surface_rate(source_mode, source_plane, radius_cm,      &
+                               half_lx_cm, half_ly_cm, src_tilt_rad,      &
+                               src_tilt_az_rad, theta_max)
+  else
+    ! PARMA is initialised on rank 0 only (its data files are read there), so
+    ! the mode-6 table, envelope and rate are built there and broadcast.
+    if (angular_mode >= 2) then
+      if (my_rank == 0) call parma_prepare_joint()
+      call MPI_Bcast(parma_cj, NPARMA_CJ, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(parma_ang_tab, NPARMA_E*NPARMA_CJ, MPI_DOUBLE_PRECISION, 0, &
+                     MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(parma_env, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+      call MPI_Bcast(surf_rate, 1, MPI_DOUBLE_PRECISION, 0, MPI_COMM_WORLD, ierr)
+    end if
   end if
+  if (my_rank == 0) call report_surface_rate()
 
   !===========================================================================
   ! OPEN OUTPUT FILES  — rank-labelled filenames
@@ -914,7 +952,8 @@ program ucmuon_gen
   !$OMP           hit, hit_i, hit_flag, det_mask,                              &
   !$OMP           t_hit, t_enter, t_exit, i_det,                               &
   !$OMP           rnd, rnd2, rnd4, frac_plus, E_sampled_MeV,                   &
-  !$OMP           cos_sampled, ibin, j, my_ntry, tmp_pos, tmp_dir)
+  !$OMP           cos_sampled, ibin, j, my_ntry, tmp_pos, tmp_dir,             &
+  !$OMP           nxs, nys, nzs, proj_s, ang_w)
 
   do   ! ← infinite loop: each thread generates until i == local_nmuons
 
@@ -925,8 +964,13 @@ program ucmuon_gen
     ! GENERATE ONE MUON
     !==========================================================================
 
+    !--- (A6) PARMA, angular mode 6: joint E-theta with surface projection ----
+    if (spectrum_mode_in == 3 .and. angular_mode == 6) then
+      call parma_generate_joint(x, y, z, emu, cx, cy, cz, muon_charge)
+      call place_joint_position(x, y, z, cx, cy, cz, theta, phi)
+
     !--- (A)  PARMA mode ------------------------------------------------------
-    if (spectrum_mode_in == 3) then
+    else if (spectrum_mode_in == 3) then
 
       call par_ranlux(rnd4);  rnd2 = dble(rnd4)
       if (rnd2 < parma_ratio_plus) then
@@ -1043,6 +1087,14 @@ program ucmuon_gen
           if (phi < 0.0d0) phi = phi + 2.0d0 * PI
         end if
       end if
+
+    !--- (B6) all other spectra, angular mode 6 -------------------------------
+    else if (angular_mode == 6) then
+      call generate_muon_joint(source_mode, source_plane, radius_cm,      &
+                               half_lx_cm, half_ly_cm, source_z_cm,       &
+                               src_tilt_rad, src_tilt_az_rad, theta_max,  &
+                               x, y, z, emu, cx, cy, cz, muon_charge)
+      call place_joint_position(x, y, z, cx, cy, cz, theta, phi)
 
     !--- (B)  CosmoALEPH / Power-law / Guan / Frosin modes -------------------
     else
@@ -1224,6 +1276,7 @@ program ucmuon_gen
     if (ntry_global > 0_8) &
       write(*,'(A,F8.4,A)') '  Acceptance rate:           ', &
                               100d0*dble(i_global)/dble(ntry_global), ' %'
+    call report_live_time(ntry_global)
     write(*,'(A,I8,A,I4,A)') &
       '  Parallelisation:           ', nranks, ' MPI ranks × ', &
       omp_get_max_threads(), ' OMP threads'
@@ -1291,5 +1344,195 @@ contains
       zo  = r_cm * cos(pol) + sz_cm
     end if
   end subroutine sample_position
+
+  !===========================================================================
+  ! report_surface_rate / report_live_time
+  !
+  ! R is the rate of muons crossing the generation surface in the energy and
+  ! zenith windows: the quantity ucmugen::Generator::rate() estimates, computed
+  ! by surface_rate() (or parma_prepare_joint).  With angular mode 6 every
+  ! tried muon is one draw from that flux, so N_tried / R is the live time.
+  ! With modes 1-5 it is the same exposure, but the events are not
+  ! flux-distributed and need per-event weights (the GUI applies them).
+  !===========================================================================
+  subroutine report_surface_rate()
+    if (surf_rate > 0.0d0) then
+      write(*,'(A,ES14.6,A)') '  Surface rate R:  ', surf_rate, ' s^-1'
+      write(*,*) '   (flux through the source surface in the E and theta windows)'
+    else
+      write(*,*) ' Surface rate R:   n/a (no absolute normalisation, vertical or mono beam)'
+    end if
+  end subroutine report_surface_rate
+
+  subroutine report_live_time(n_tried)
+    integer(8), intent(in) :: n_tried
+    if (surf_rate > 0.0d0 .and. n_tried > 0_8) then
+      write(*,'(A,ES14.6,A)') '  Live time:  ', dble(n_tried) / surf_rate, &
+                              ' s   (= Tried / R)'
+      if (angular_mode /= 6) then
+        write(*,*) ' NOTE: angular mode 1-5 is not flux-distributed; rates of'
+        write(*,*) '       selected muons need per-event weights (see the GUI or'
+        write(*,*) '       docs/FLUX_NORMALISATION_AUDIT.md). Mode 6 needs none.'
+      end if
+    end if
+  end subroutine report_live_time
+
+  !===========================================================================
+  ! PARMA with angular mode 6.
+  !
+  ! The intensity of charge q is spec_q(T) * ang(T, cos theta) per sr, with
+  ! T the kinetic energy.  E is proposed from the existing charge-specific
+  ! energy CDF (proportional to spec_q), so the acceptance weight is
+  ! ang(T, cos theta) * max(0, -n.d) over its envelope.  Local-geometry
+  ! parameter g = 0, as in the legacy angular CDF.  ang is read from a table
+  ! built serially: PARMA's routines keep SAVE'd working state and return
+  ! wrong values when called from several threads at once (measured: +30% at
+  ! 2-10 GeV and 60-80 deg with 8 threads, correct with 1).
+  !===========================================================================
+  subroutine parma_prepare_joint()
+    integer :: je, jc
+    integer, parameter :: NC = 200
+    real(8) :: c, tk, a, hc, inner, wp, wm, c_lo
+    real(8) :: spec(NPARMA_E), spec_ang(NPARMA_E)
+    c_lo = cos(theta_max)
+    wp = 1.0d0;  wm = 1.0d0
+    if (parma_charge_mode == 1)  wm = 0.0d0
+    if (parma_charge_mode == -1) wp = 0.0d0
+    do je = 1, NPARMA_E
+      tk = parma_E_MeV(je) - MUON_MASS*1.0d3
+      spec(je) = wp * max(0.0d0, getMuonSpec(1, parma_s_W, parma_rc_GV, parma_d_gcm2, tk)) &
+               + wm * max(0.0d0, getMuonSpec(2, parma_s_W, parma_rc_GV, parma_d_gcm2, tk))
+    end do
+    ! Table for the sampler (serial here; interpolated in the parallel loop)
+    ! and its maximum for the envelope: an interpolated value cannot exceed it.
+    do jc = 1, NPARMA_CJ
+      parma_cj(jc) = c_lo + dble(jc-1) / dble(NPARMA_CJ-1) * (1.0d0 - c_lo)
+      do je = 1, NPARMA_E
+        tk = parma_E_MeV(je) - MUON_MASS*1.0d3
+        parma_ang_tab(je, jc) = max(0.0d0, getSpecAngFinal(4, parma_s_W, &
+                                parma_rc_GV, parma_d_gcm2, tk, 0.0d0, parma_cj(jc)))
+      end do
+    end do
+    parma_env = 1.15d0 * maxval(parma_ang_tab)
+    if (parma_env <= 0.0d0) parma_env = 1.0d0
+    ! Surface rate with PARMA evaluated directly (serial).
+    surf_rate = 0.0d0
+    do jc = 0, NC - 1
+      c  = c_lo + (dble(jc) + 0.5d0) * (1.0d0 - c_lo) / dble(NC)
+      hc = geometry_h(source_mode, source_plane, radius_cm, half_lx_cm, &
+                      half_ly_cm, src_tilt_rad, src_tilt_az_rad, c)
+      inner = 0.0d0
+      do je = 1, NPARMA_E
+        tk = parma_E_MeV(je) - MUON_MASS*1.0d3
+        a  = max(0.0d0, getSpecAngFinal(4, parma_s_W, parma_rc_GV, parma_d_gcm2, &
+                                        tk, 0.0d0, c))
+        spec_ang(je) = spec(je) * a
+        if (je > 1) inner = inner + 0.5d0 * (spec_ang(je) + spec_ang(je-1)) &
+                                  * (parma_E_MeV(je) - parma_E_MeV(je-1))
+      end do
+      surf_rate = surf_rate + inner * hc * (1.0d0 - c_lo) / dble(NC)
+    end do
+  end subroutine parma_prepare_joint
+
+  ! Bilinear interpolation of parma_ang_tab in (log E, cos theta).
+  function parma_ang(e_mev, c) result(a)
+    real(8), intent(in) :: e_mev, c
+    real(8) :: a, u, v, fu, fv
+    integer :: ie, ic
+    u  = log(e_mev / parma_E_MeV(1)) / log(parma_E_MeV(NPARMA_E) / parma_E_MeV(1)) &
+         * dble(NPARMA_E - 1)
+    ie = max(1, min(NPARMA_E - 1, int(u) + 1))
+    fu = max(0.0d0, min(1.0d0, u - dble(ie - 1)))
+    v  = (c - parma_cj(1)) / (parma_cj(NPARMA_CJ) - parma_cj(1)) * dble(NPARMA_CJ - 1)
+    ic = max(1, min(NPARMA_CJ - 1, int(v) + 1))
+    fv = max(0.0d0, min(1.0d0, v - dble(ic - 1)))
+    a = (1.0d0-fu)*(1.0d0-fv)*parma_ang_tab(ie,   ic)   &
+      +        fu *(1.0d0-fv)*parma_ang_tab(ie+1, ic)   &
+      + (1.0d0-fu)*       fv *parma_ang_tab(ie,   ic+1) &
+      +        fu *       fv *parma_ang_tab(ie+1, ic+1)
+  end function parma_ang
+
+  subroutine parma_generate_joint(xo, yo, zo, eo, dxo, dyo, dzo, qo)
+    real(8), intent(out) :: xo, yo, zo, eo, dxo, dyo, dzo
+    integer, intent(out) :: qo
+    real(4) :: r4
+    real(8) :: r, e_mev, c, s, ph, nx, ny, nz, proj, w, cmin
+    cmin = cos(theta_max)
+    do
+      call par_ranlux(r4);  r = dble(r4)
+      qo = merge(1, -1, r < parma_ratio_plus)
+      call par_ranlux(r4);  r = dble(r4)
+      if (qo == 1) then
+        e_mev = parma_invert(parma_cdf_plus, r)
+      else
+        e_mev = parma_invert(parma_cdf_minus, r)
+      end if
+      call sample_position(source_mode, radius_cm, half_lx_cm, half_ly_cm, &
+                           source_z_cm, xo, yo, zo)
+      call source_normal_world(source_mode, source_plane, src_tilt_rad, &
+                               src_tilt_az_rad, xo, yo, zo, source_z_cm, nx, ny, nz)
+      call par_ranlux(r4);  c  = cmin + dble(r4) * (1.0d0 - cmin)
+      call par_ranlux(r4);  ph = 2.0d0 * PI * dble(r4)
+      s   = sqrt(max(0.0d0, 1.0d0 - c*c))
+      dxo = s * cos(ph);  dyo = s * sin(ph);  dzo = -c
+      proj = max(0.0d0, -(nx*dxo + ny*dyo + nz*dzo))
+      w = proj * parma_ang(e_mev, c)       ! table: PARMA is not thread-safe
+      call par_ranlux(r4)
+      if (dble(r4) * parma_env < w) exit
+    end do
+    eo = e_mev * 1.0d-3
+  end subroutine parma_generate_joint
+
+  ! Linear inversion of a PARMA energy CDF, as the legacy path does it.
+  function parma_invert(cdf, r) result(e_mev)
+    real(8), intent(in) :: cdf(NPARMA_E), r
+    real(8) :: e_mev, fr
+    integer :: jb, jj
+    jb = 1
+    do jj = 2, NPARMA_E
+      if (cdf(jj) >= r) then
+        jb = jj - 1;  exit
+      end if
+    end do
+    jb = min(jb, NPARMA_E - 1)
+    fr = 0.0d0
+    if (cdf(jb+1) > cdf(jb)) fr = (r - cdf(jb)) / (cdf(jb+1) - cdf(jb))
+    e_mev = parma_E_MeV(jb) + fr * (parma_E_MeV(jb+1) - parma_E_MeV(jb))
+  end function parma_invert
+
+
+  !===========================================================================
+  ! place_joint_position: centre offset and plane permutation for a mode-6
+  ! muon. Mode 6 returns the position in the canonical source frame and the
+  ! direction in the world frame (the sky does not rotate with the plane), so
+  ! only the position is permuted.
+  !===========================================================================
+  subroutine place_joint_position(xo, yo, zo, dxo, dyo, dzo, tho, pho)
+    real(8), intent(inout) :: xo, yo, zo
+    real(8), intent(in)    :: dxo, dyo, dzo
+    real(8), intent(out)   :: tho, pho
+    real(8) :: t
+    if (source_mode /= 3) then
+      xo = xo + centre_u_cm
+      yo = yo + centre_v_cm
+      if (src_tilt_rad > 1.0d-9) then
+        zo = zo + src_w_cm
+      else
+        zo = src_w_cm
+      end if
+      if (source_plane == 2) then
+        t = yo;  yo = zo;  zo = t
+      else if (source_plane == 3) then
+        t = xo;  xo = zo;  zo = yo;  yo = t
+      end if
+    end if
+    tho = acos(max(-1.0d0, min(1.0d0, -dzo)))
+    if (abs(sin(tho)) < 1.0d-9) then
+      pho = 0.0d0
+    else
+      pho = atan2(dyo, dxo)
+      if (pho < 0.0d0) pho = pho + 2.0d0 * PI
+    end if
+  end subroutine place_joint_position
 
 end program ucmuon_gen

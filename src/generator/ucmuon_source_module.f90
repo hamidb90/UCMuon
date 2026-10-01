@@ -12,12 +12,23 @@
 !   1 = CosmoALEPH:  dN/dp = 10^3.8467 * p^(-3.1952)  [default]
 !   2 = Power-law:   dN/dE ∝ E^(-3.7), truncated to [E_min, E_max]
 !                    (Kudryavtsev/MUSIC convention)
-!   3 = PARMA/EXPACS (handled externally in cosmoaleph_main_omp.f90)
+!   3 = PARMA/EXPACS (handled externally in ucmuon_gen_omp.f90)
 !   4 = Guan et al. (2015), arXiv:1509.06176
 !   5 = Frosin et al. (2025), J. Phys. G 52, 035002
-!   6 = Bugaev/Gaisser (1990): Gaisser pion+kaon formula, no atm. correction
-!   7 = Reyna–Bugaev (2006): log-polynomial p^3*F_vert, arXiv:hep-ph/0604145
+!   6 = Gaisser (1990) pion+kaon formula (Guan Eq. 1) with Guan's cos(theta*);
+!       no Bugaev content despite the historical name. Valid E > 100/cos(theta)
+!   7 = Reyna (2006), arXiv:hep-ph/0604145 Eqs. 1-3:
+!       I(p,theta) = cos^3(theta) * I_V(p cos(theta)), I_V a Bugaev-form log-poly
 !   8 = Cosmic electrons: dN/dE ∝ E^−3.0, sea level, 10 MeV–1 GeV
+!
+! Angular modes (generate_muon / generate_muon_joint):
+!   1-5  legacy: momentum from the VERTICAL spectrum, zenith angle drawn
+!        separately (mode 4: from P(theta|E), right in theta but with the
+!        energy weighted by the vertical rather than the projected spectrum).
+!        No projection through the source surface.  Kept bit-exact.
+!   6    joint: (p, direction, position) drawn from J(p,theta) * max(0,-n.d),
+!        the flux through the source surface, by the same accept-reject as
+!        ucmugen::Generator.  N_tried / surface_rate() is then the live time.
 !=============================================================================
 module ucmuon_source_module
   use rng_parallel          ! <-- OMP change: replaces  external :: RANLUX
@@ -30,8 +41,10 @@ module ucmuon_source_module
   real(8),  parameter :: MUON_MASS = 0.10566d0
   real(8),  parameter :: A_COSMO   = 3.8467d0
   real(8),  parameter :: B_COSMO   = -3.1952d0
-  ! The CosmoALEPH fit 10^A_COSMO * p^B_COSMO is in m^-2 s^-1 sr^-1 (GeV/c)^-1
-  ! (Schmelling 2013).  Convert to cm^-2 so the printed "Integrated flux"
+  ! The CosmoALEPH fit 10^A_COSMO * p^B_COSMO is in m^-2 s^-1 sr^-1 (GeV/c)^-1,
+  ! a power-law fit to the vertical spectrum of Schmelling 2013 (Astropart.
+  ! Phys. 49, 1), Table 1, 112-2239 GeV/c.  It is not valid below ~100 GeV/c
+  ! (x46 the PDG vertical integral above 1 GeV/c).  Convert to cm^-2 so the printed "Integrated flux"
   ! carries the same unit as the Guan/Frosin/Bugaev/Reyna modes — the GUI
   ! rate estimator multiplies it by an area in cm^2.
   real(8),  parameter :: COSMO_M2_TO_CM2 = 1.0d-4
@@ -51,11 +64,14 @@ module ucmuon_source_module
   real(8), parameter :: GUAN_B   = 1.29d0
   real(8), parameter :: FROSIN_A = 3.512d0
   real(8), parameter :: FROSIN_B = 1.388d0
-  ! Mode 6: Bugaev/Gaisser — standard Gaisser formula, no atmospheric correction
+  ! Guan 2015 Eq. 3 with (a,b) = (3.64,1.29); Frosin 2025 Table 4 (3.512,1.388);
+  ! GUAN_DENOM = sqrt(1 + P1^2 + P2 + P4) from Guan Eq. 2.
+  ! Mode 6: Gaisser 1990 (Guan Eq. 1) = Guan Eq. 3 with a = 0, b = 1
   real(8), parameter :: BUGAEV_A = 0.0d0
   real(8), parameter :: BUGAEV_B = 1.0d0
-  ! Mode 7: Reyna–Bugaev (arXiv:hep-ph/0604145, Eq. 6-7)
+  ! Mode 7: Reyna 2006 (arXiv:hep-ph/0604145), Eq. 3 and the Sec. 4 "Best Fit":
   !   I_V(p) = C0 * p^-(C1 + C2*z + C3*z^2 + C4*z^3),  z = log10(p)
+  !   [cm^-2 s^-1 sr^-1 (GeV/c)^-1]; angular extension in reyna_flux (Eqs. 1-2)
   real(8), parameter :: REYNA_C0 =  0.00253d0
   real(8), parameter :: REYNA_C1 =  0.2455d0
   real(8), parameter :: REYNA_C2 =  1.288d0
@@ -71,10 +87,17 @@ module ucmuon_source_module
 
   integer :: spectrum_mode = 1
 
+  ! Angular mode 6 (joint sampling): acceptance envelope for
+  ! J(p,theta)/J(p,0) over the sampled (p, theta) window, set by prepare_joint.
+  real(8) :: joint_env = 1.0d0
+
   public :: PI, MUON_MASS, ELECTRON_MASS
   public :: build_cosmoaleph_cdf
   public :: generate_muon
   public :: is_electron_mode
+  public :: spectrum_intensity
+  public :: prepare_joint, generate_muon_joint, joint_envelope
+  public :: source_normal_world, geometry_h, surface_rate
 
 
 contains
@@ -93,6 +116,7 @@ contains
     spectrum_mode = mode
 
     write(*,*) 'Building spectrum CDF...'
+    if (p_min < p_max) call print_validity_warnings(p_min, p_max, mode)
 
     ! Mono-energetic: all particles at exactly p_min — skip CDF entirely
     if (p_min >= p_max) then
@@ -560,23 +584,381 @@ contains
 
 
   !==========================================================================
-  ! reyna_flux — Reyna–Bugaev (2006) dΦ/dp, arXiv:hep-ph/0604145, Eq. 6-7
-  ! Returns differential flux [cm⁻²s⁻¹sr⁻¹(GeV/c)⁻¹] at momentum p [GeV/c]
-  ! and zenith angle cosine cos_th.
-  ! Formula: Φ = C0·x^-(C1+C2·log₁₀x+C3·log₁₀²x+C4·log₁₀³x),  x = p·cos*
-  ! Integrates to 7.0e-3 cm⁻²s⁻¹sr⁻¹ above 1 GeV at cosθ=1 (PDG value).
+  ! reyna_flux: Reyna (2006) dPhi/dp, arXiv:hep-ph/0604145
+  ! Differential intensity [cm^-2 s^-1 sr^-1 (GeV/c)^-1] at momentum p [GeV/c]
+  ! and zenith-angle cosine cos_th:
+  !   I(p,theta) = cos^3(theta) * I_V(zeta),  zeta = p cos(theta)   (Eqs. 1-2)
+  !   I_V(x) = C0 * x^-(C1 + C2 lg x + C3 lg^2 x + C4 lg^3 x)       (Eq. 3)
+  ! The scaling variable uses the plain cos(theta), as in the paper, not the
+  ! Guan cos*.  The vertical integral above 1 GeV/c is 7.02e-3 cm^-2 s^-1 sr^-1,
+  ! the PDG value.  At cos_th = 1 this is bit-identical to the pre-audit code,
+  ! so the momentum CDF (built at cos_th = 1) is unchanged.
+  ! Validity (Sec. 4): 1 GeV/c < p < 2000 GeV/c / cos(theta).
   !==========================================================================
   function reyna_flux(p_GeV, cos_th) result(phi)
     real(8), intent(in) :: p_GeV, cos_th
-    real(8) :: phi, cs, p_eff, lp, n_exp
-    cs    = guan_cos_star(cos_th)
-    p_eff = p_GeV * cs
-    if (p_eff <= 0.0d0) then; phi = 0.0d0; return; end if
+    real(8) :: phi, p_eff, lp, n_exp
+    phi = 0.0d0
+    if (cos_th <= 0.0d0) return
+    p_eff = p_GeV * cos_th
+    if (p_eff <= 0.0d0) return
     lp    = log10(p_eff)
     n_exp = REYNA_C1 + REYNA_C2*lp + REYNA_C3*lp**2 + REYNA_C4*lp**3
     phi   = REYNA_C0 * p_eff**(-n_exp)
     if (phi < 0.0d0) phi = 0.0d0
+    phi   = cos_th**3 * phi
   end function reyna_flux
+
+
+  !==========================================================================
+  ! spectrum_intensity: differential intensity dN/dp [cm^-2 s^-1 sr^-1
+  ! (GeV/c)^-1] of spectrum `mode` at momentum p [GeV/c] and zenith cosine
+  ! cos_th, the same quantity as ucmugen::flux::intensity in UCMuGen.h.
+  ! Used by the cross-implementation test (tests/flux).  Returns -1 for
+  ! modes with no absolute normalisation (2, 8) or no built-in model (3).
+  ! CosmoALEPH is a vertical-only fit and is returned isotropic, as in
+  ! UCMuGen.
+  !==========================================================================
+  function spectrum_intensity(mode, p_GeV, cos_th) result(phi)
+    integer, intent(in) :: mode
+    real(8), intent(in) :: p_GeV, cos_th
+    real(8) :: phi, E
+    E = sqrt(p_GeV**2 + MUON_MASS**2)
+    select case (mode)
+      case (1)
+        phi = 10d0**A_COSMO * COSMO_M2_TO_CM2 * p_GeV**B_COSMO
+      case (4)
+        phi = guan_flux(E, cos_th, GUAN_A, GUAN_B) * p_GeV / E
+      case (5)
+        phi = guan_flux(E, cos_th, FROSIN_A, FROSIN_B) * p_GeV / E
+      case (6)
+        phi = guan_flux(E, cos_th, BUGAEV_A, BUGAEV_B) * p_GeV / E
+      case (7)
+        phi = reyna_flux(p_GeV, cos_th)
+      case default
+        phi = -1.0d0
+    end select
+  end function spectrum_intensity
+
+
+  !==========================================================================
+  ! print_validity_warnings: flag a spectrum used outside the range its
+  ! source paper fitted, or one with no absolute normalisation.  Same rules
+  ! and 1% tolerance as ucmugen::flux::validity_warnings in UCMuGen.h.
+  !==========================================================================
+  subroutine print_validity_warnings(p_min, p_max, mode)
+    real(8), intent(in) :: p_min, p_max
+    integer, intent(in) :: mode
+    real(8), parameter :: TOL = 0.99d0
+    real(8) :: e_min
+    e_min = sqrt(p_min**2 + MUON_MASS**2)
+    select case (mode)
+      case (1)
+        if (p_min < 100d0*TOL) then
+          write(*,'(A,ES10.3,A)') '  WARNING: CosmoALEPH is a fit to vertical data at 112-2239 GeV/c; p_min =', &
+               p_min, ' GeV/c is below it.'
+          write(*,*) '          The power law overestimates the flux there (x46 the PDG vertical'
+          write(*,*) '          integral above 1 GeV/c). Use Guan (4), Frosin (5) or Reyna (7).'
+        end if
+        if (p_max > 2500d0/TOL) write(*,*) &
+          ' WARNING: CosmoALEPH p_max is above the measured range (2.5 TeV/c).'
+      case (4, 5)
+        if (e_min < 1d0*TOL) write(*,*) &
+          ' WARNING: Guan/Frosin fitted to data above 1 GeV (Frosin 2025 Sec. 3.2); E_min is below.'
+      case (6)
+        if (e_min < 100d0*TOL) then
+          write(*,*) ' WARNING: mode 6 is the plain Gaisser 1990 formula, valid only for'
+          write(*,*) '          E > 100/cos(theta) GeV; below that the flux is overestimated'
+          write(*,*) '          (x12 the PDG vertical integral above 1 GeV).'
+        end if
+      case (7)
+        if (p_min < 1d0*TOL) write(*,*) &
+          ' WARNING: Reyna (2006) is valid for p > 1 GeV/c; p_min is below.'
+        if (p_max > 2000d0/TOL) write(*,*) &
+          ' WARNING: Reyna (2006) is valid for p < 2000 GeV/c / cos(theta); p_max is above.'
+      case (2, 8)
+        write(*,*) ' NOTE: this spectrum has no absolute normalisation; no rate or'
+        write(*,*) '       live time can be derived from it.'
+    end select
+  end subroutine print_validity_warnings
+
+
+  !==========================================================================
+  ! angular_ratio: J(p,theta)/J(p,0), the acceptance weight of mode 6 before
+  ! the projection factor.  Same quantity as ucmugen::Generator::weight().
+  ! Spectra without an angular model (power law, electrons) and CosmoALEPH
+  ! (vertical-only fit) are isotropic, as in UCMuGen.
+  !==========================================================================
+  function angular_ratio(p_GeV, cos_th) result(w)
+    real(8), intent(in) :: p_GeV, cos_th
+    real(8) :: w, num, den
+    w = 0.0d0
+    if (cos_th <= 0.0d0) return
+    den = spectrum_intensity(spectrum_mode, p_GeV, 1.0d0)
+    if (den < 0.0d0) then
+      w = 1.0d0                    ! no built-in intensity: isotropic
+      return
+    end if
+    num = spectrum_intensity(spectrum_mode, p_GeV, cos_th)
+    if (den > 0.0d0) w = num / den
+  end function angular_ratio
+
+
+  !==========================================================================
+  ! prepare_joint: envelope of angular_ratio over p in [p_min, p_max] and
+  ! cos(theta) in [cos(theta_max), 1], scanned on a 128 x 128 grid with a
+  ! 15% margin, exactly as ucmugen::Generator::computeEnvelope.  The ratio
+  ! exceeds 1 towards the horizon at high momentum (sec(theta) enhancement),
+  ! so it has to be measured.  Call after build_cosmoaleph_cdf.
+  !==========================================================================
+  subroutine prepare_joint(theta_max)
+    real(8), intent(in) :: theta_max
+    integer, parameter :: NP = 128, NC = 128
+    real(8), parameter :: MARGIN = 1.15d0
+    real(8) :: c_lo, lr, p, c, w, best
+    integer :: ip, ic
+    c_lo = cos(theta_max)
+    lr = 0.0d0
+    if (p_max_stored > p_min_stored) lr = log(p_max_stored / p_min_stored)
+    best = 0.0d0
+    do ip = 0, NP - 1
+      if (lr > 0.0d0) then
+        p = p_min_stored * exp(dble(ip) / dble(NP - 1) * lr)
+      else
+        p = p_min_stored
+      end if
+      do ic = 0, NC - 1
+        c = c_lo + dble(ic) / dble(NC - 1) * (1.0d0 - c_lo)
+        w = angular_ratio(p, c)
+        if (w > best) best = w
+      end do
+      if (lr == 0.0d0) exit
+    end do
+    if (best > 0.0d0) then
+      joint_env = best * MARGIN
+    else
+      joint_env = 1.0d0
+    end if
+  end subroutine prepare_joint
+
+
+  function joint_envelope() result(e)
+    real(8) :: e
+    e = joint_env
+  end function joint_envelope
+
+
+  !==========================================================================
+  ! source_normal_world: outward unit normal of the generation surface at a
+  ! canonical-frame point, rotated into the world frame.
+  ! Disk/rectangle: the tilted-plane normal (sin a cos f, sin a sin f, cos a),
+  ! i.e. t1 x t2 of the tangents used by sample_position, then mapped by the
+  ! same plane permutation as positions (XZ: y<->z; YZ: (x,y,z)->(z,x,y)).
+  ! Hemisphere: radial from the centre (canonical frame = world frame).
+  !==========================================================================
+  subroutine source_normal_world(source_mode, source_plane, tilt_rad, &
+                                 tilt_az_rad, x, y, z, centre_z, nx, ny, nz)
+    integer, intent(in)  :: source_mode, source_plane
+    real(8), intent(in)  :: tilt_rad, tilt_az_rad, x, y, z, centre_z
+    real(8), intent(out) :: nx, ny, nz
+    real(8) :: t, rr
+    if (source_mode == 3) then
+      rr = sqrt(x*x + y*y + (z-centre_z)**2)
+      if (rr > 0.0d0) then
+        nx = x / rr;  ny = y / rr;  nz = (z - centre_z) / rr
+      else
+        nx = 0.0d0;  ny = 0.0d0;  nz = 1.0d0
+      end if
+      return
+    end if
+    if (tilt_rad > 1.0d-9) then
+      nx = sin(tilt_rad) * cos(tilt_az_rad)
+      ny = sin(tilt_rad) * sin(tilt_az_rad)
+      nz = cos(tilt_rad)
+    else
+      nx = 0.0d0;  ny = 0.0d0;  nz = 1.0d0
+    end if
+    if (source_plane == 2) then
+      t = ny;  ny = nz;  nz = t
+    else if (source_plane == 3) then
+      t = nx;  nx = nz;  nz = ny;  ny = t
+    end if
+  end subroutine source_normal_world
+
+
+  !==========================================================================
+  ! generate_muon_joint: angular mode 6.
+  !
+  ! Draws (p, position, direction) from
+  !     J(p, theta) * max(0, -n.d)
+  ! i.e. the muon flux through the generation surface, by accept-reject:
+  ! p from the vertical momentum CDF (which carries the steep p dependence),
+  ! position uniform on the surface, direction uniform in solid angle within
+  ! theta <= theta_max about the WORLD zenith, accepted with probability
+  ! angular_ratio(p, cos theta) * projection / envelope.  This is the
+  ! sampling of ucmugen::Generator, and it keeps the p-theta coupling that
+  ! modes 1-5 lose.  One accepted muon is one flux-weighted trial, so
+  ! N_tried / surface_rate() is the live time.
+  !
+  ! Returns the position in the canonical source frame (tilt applied, plane
+  ! permutation NOT applied, as sample_position does) and the direction in
+  ! the WORLD frame: the caller must permute the position only.
+  ! RNG draws per proposal: momentum, position (2 disk/rect, 2 hemisphere),
+  ! direction (2), accept (1); then 1 for the charge.
+  !==========================================================================
+  subroutine generate_muon_joint(source_mode, source_plane, radius_cm, &
+                                 half_lx_cm, half_ly_cm, source_z_cm,  &
+                                 tilt_rad, tilt_az_rad, theta_max,     &
+                                 x, y, z, emu, cx, cy, cz, muon_charge)
+    integer, intent(in)  :: source_mode, source_plane
+    real(8), intent(in)  :: radius_cm, half_lx_cm, half_ly_cm, source_z_cm
+    real(8), intent(in)  :: tilt_rad, tilt_az_rad, theta_max
+    real(8), intent(out) :: x, y, z, emu, cx, cy, cz
+    integer, intent(out) :: muon_charge
+    real(4) :: yfl
+    real(8) :: p, r1, r2, lu, lv, tc, rr, ct, st, c, s, ph, cmin
+    real(8) :: nx, ny, nz, proj, w, charge_ratio, pos_frac
+
+    cmin = cos(theta_max)
+    do
+      call par_ranlux(yfl);  p = sample_momentum(dble(yfl))
+
+      call par_ranlux(yfl);  r1 = dble(yfl)
+      call par_ranlux(yfl);  r2 = dble(yfl)
+      if (source_mode == 3) then
+        ph = 2.0d0 * PI * r1
+        ct = r2                                 ! uniform in cos: equal area
+        st = sqrt(max(0.0d0, 1.0d0 - ct*ct))
+        x  = radius_cm * st * cos(ph)
+        y  = radius_cm * st * sin(ph)
+        z  = radius_cm * ct + source_z_cm
+      else
+        if (source_mode == 2) then
+          lu = half_lx_cm * (2.0d0*r1 - 1.0d0)
+          lv = half_ly_cm * (2.0d0*r2 - 1.0d0)
+        else
+          tc = 2.0d0 * PI * r1
+          rr = radius_cm * sqrt(r2)
+          lu = rr * cos(tc)
+          lv = rr * sin(tc)
+        end if
+        if (tilt_rad > 1.0d-9) then
+          x =  lu * cos(tilt_rad)*cos(tilt_az_rad) - lv * sin(tilt_az_rad)
+          y =  lu * cos(tilt_rad)*sin(tilt_az_rad) + lv * cos(tilt_az_rad)
+          z = -lu * sin(tilt_rad)
+        else
+          x = lu;  y = lv;  z = 0.0d0
+        end if
+      end if
+      call source_normal_world(source_mode, source_plane, tilt_rad, &
+                               tilt_az_rad, x, y, z, source_z_cm, nx, ny, nz)
+
+      call par_ranlux(yfl)
+      c  = cmin + dble(yfl) * (1.0d0 - cmin)
+      s  = sqrt(max(0.0d0, 1.0d0 - c*c))
+      call par_ranlux(yfl)
+      ph = 2.0d0 * PI * dble(yfl)
+      cx =  s * cos(ph)
+      cy =  s * sin(ph)
+      cz = -c
+
+      proj = -(nx*cx + ny*cy + nz*cz)
+      if (proj < 0.0d0) proj = 0.0d0
+      w = angular_ratio(p, c) * proj
+
+      call par_ranlux(yfl)
+      if (dble(yfl) * joint_env < w) exit
+    end do
+
+    if (spectrum_mode == 8) then
+      call par_ranlux(yfl)
+      muon_charge = merge(1, -1, dble(yfl) < 0.5d0)
+      emu = sqrt(p*p + ELECTRON_MASS*ELECTRON_MASS)
+    else
+      charge_ratio = charge_ratio_from_p(p)
+      pos_frac = charge_ratio / (1d0 + charge_ratio)
+      call par_ranlux(yfl)
+      muon_charge = merge(1, -1, dble(yfl) < pos_frac)
+      emu = sqrt(p*p + MUON_MASS*MUON_MASS)
+    end if
+  end subroutine generate_muon_joint
+
+
+  !==========================================================================
+  ! geometry_h: H(c) = int_0^2pi dphi int_S max(0, -n.d) dA  [cm^2 sr/dc],
+  ! the surface's projected area integrated over azimuth, for a direction of
+  ! zenith cosine c.  Flat surface with normal n: A * int max(0, a - b cos psi)
+  ! with a = n_z c, b = |n_perp| sin(theta), done analytically.  Hemisphere:
+  ! the illuminated dome projects onto pi R^2 (1 + c)/2 for every azimuth.
+  !==========================================================================
+  function geometry_h(source_mode, source_plane, radius_cm, half_lx_cm, &
+                      half_ly_cm, tilt_rad, tilt_az_rad, c) result(h)
+    integer, intent(in) :: source_mode, source_plane
+    real(8), intent(in) :: radius_cm, half_lx_cm, half_ly_cm
+    real(8), intent(in) :: tilt_rad, tilt_az_rad, c
+    real(8) :: h, area, nx, ny, nz, a, b, psi0
+    if (source_mode == 3) then
+      h = 2.0d0 * PI * PI * radius_cm**2 * (1.0d0 + c) / 2.0d0
+      return
+    end if
+    if (source_mode == 2) then
+      area = 4.0d0 * half_lx_cm * half_ly_cm
+    else
+      area = PI * radius_cm**2
+    end if
+    call source_normal_world(source_mode, source_plane, tilt_rad, &
+                             tilt_az_rad, 0d0, 0d0, 0d0, 0d0, nx, ny, nz)
+    a = nz * c
+    b = sqrt(nx*nx + ny*ny) * sqrt(max(0.0d0, 1.0d0 - c*c))
+    if (b <= abs(a)) then
+      h = area * 2.0d0 * PI * max(a, 0.0d0)
+    else
+      psi0 = acos(a / b)
+      h = area * (2.0d0 * a * (PI - psi0) + 2.0d0 * b * sin(psi0))
+    end if
+  end function geometry_h
+
+
+  !==========================================================================
+  ! surface_rate: R = int dp int dOmega J(p, theta) max(0, -n.d) dA  [s^-1],
+  ! the absolute rate of muons crossing the generation surface in the
+  ! energy and zenith windows: the quantity ucmugen::Generator::rate()
+  ! estimates.  Trapezoid on 400 log-spaced momenta, midpoint on 400
+  ! cos(theta) cells, geometry_h for the surface.  Returns -1 for spectra
+  ! with no absolute normalisation (2, 8), PARMA (computed by the caller)
+  ! and a mono-energetic beam.
+  !==========================================================================
+  function surface_rate(source_mode, source_plane, radius_cm, half_lx_cm, &
+                        half_ly_cm, tilt_rad, tilt_az_rad, theta_max) result(r)
+    integer, intent(in) :: source_mode, source_plane
+    real(8), intent(in) :: radius_cm, half_lx_cm, half_ly_cm
+    real(8), intent(in) :: tilt_rad, tilt_az_rad, theta_max
+    integer, parameter :: NP = 400, NC = 400
+    real(8) :: r, c_lo, c, lr, p, pprev, f, fprev, inner, hc
+    integer :: ip, ic
+    r = -1.0d0
+    if (p_max_stored <= p_min_stored) return
+    if (spectrum_intensity(spectrum_mode, p_min_stored, 1.0d0) < 0.0d0) return
+    c_lo = cos(theta_max)
+    lr = log(p_max_stored / p_min_stored)
+    r = 0.0d0
+    do ic = 0, NC - 1
+      c  = c_lo + (dble(ic) + 0.5d0) * (1.0d0 - c_lo) / dble(NC)
+      hc = geometry_h(source_mode, source_plane, radius_cm, half_lx_cm, &
+                      half_ly_cm, tilt_rad, tilt_az_rad, c)
+      if (hc <= 0.0d0) cycle
+      inner = 0.0d0
+      pprev = p_min_stored
+      fprev = spectrum_intensity(spectrum_mode, pprev, c)
+      do ip = 1, NP - 1
+        p = p_min_stored * exp(lr * dble(ip) / dble(NP - 1))
+        f = spectrum_intensity(spectrum_mode, p, c)
+        inner = inner + 0.5d0 * (f + fprev) * (p - pprev)
+        pprev = p;  fprev = f
+      end do
+      r = r + inner * hc * (1.0d0 - c_lo) / dble(NC)
+    end do
+  end function surface_rate
 
 
   !==========================================================================

@@ -36,11 +36,9 @@ def main():
     th = np.linspace(1e-4, th_max, 600)
     deg = np.degrees(th)
 
-    N_COSN = 6   # representative exponent for the generalised cosⁿθ mode
 
     pdf_cos2 = fm.pdf_cos2_theta(th, th_max)
     pdf_cos3 = fm.pdf_cosn_theta(th, th_max, 3)
-    pdf_cosn = fm.pdf_cosn_theta(th, th_max, N_COSN)
     # sample_guan_angle is called with the muon TOTAL energy
     pdf_g10 = fm.pdf_guan_theta(th, th_max, 10.0 + fm.MUON_MASS)
     pdf_g100 = fm.pdf_guan_theta(th, th_max, 100.0 + fm.MUON_MASS)
@@ -49,9 +47,7 @@ def main():
     ax.plot(deg, pdf_cos2, color="#1565C0", lw=2.0,
             label=r"$\cos^2\theta$ (Modes 1–3, 6)")
     ax.plot(deg, pdf_cos3, color="#7B1FA2", lw=1.7, ls="-",
-            label=r"$\cos^3\theta$ (Mode 7, Reyna)")
-    ax.plot(deg, pdf_cosn, color="#FF8F00", lw=1.7, ls=(0, (5, 1)),
-            label=rf"$\cos^n\theta$ generalised ($n={N_COSN}$)")
+            label=r"$\cos^3\theta$ (paired with Mode 7)")
     ax.plot(deg, pdf_g10, color="#C62828", lw=1.7, ls="--",
             label=r"Guan (2015) CDF, $T = 10$ GeV (Modes 4–5)")
     ax.plot(deg, pdf_g100, color="#2E7D32", lw=1.7, ls="-.",

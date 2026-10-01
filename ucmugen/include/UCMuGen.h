@@ -43,7 +43,7 @@
 #include <vector>
 
 #define UCMUGEN_VERSION_MAJOR 0
-#define UCMUGEN_VERSION_MINOR 1
+#define UCMUGEN_VERSION_MINOR 2
 #define UCMUGEN_VERSION_PATCH 0
 
 namespace ucmugen {
@@ -74,7 +74,8 @@ enum class Spectrum {
   Parma = 3,          // needs UCMuGen_PARMA.h, licensed separately by JAEA
   Guan = 4,
   Frosin = 5,
-  GaisserBugaev = 6,
+  GaisserBugaev = 6,  // plain Gaisser 1990 with Guan's cos*; no Bugaev content,
+                      // the name is kept for API compatibility
   ReynaBugaev = 7,
   Electron = 8,
 };
@@ -183,14 +184,21 @@ class CallbackRng : public Rng {
 // =============================================================================
 namespace flux {
 
-// CosmoALEPH (Schmelling 2013): dN/dp = 10^3.8467 * p^-3.1952, originally in
-// m^-2; the factor 1e-4 puts it in cm^-2 to match the other models.
+// CosmoALEPH: dN/dp = 10^3.8467 * p^-3.1952 in m^-2 s^-1 sr^-1 (GeV/c)^-1, a
+// power-law fit to the vertical spectrum of Schmelling et al. 2013 (Astropart.
+// Phys. 49, 1), Table 1 (bins 112-2239 GeV/c). The fit is not in the paper; it
+// reproduces Table 1 to within 5%. The factor 1e-4 puts it in cm^-2. Below
+// ~100 GeV/c it is an extrapolation and overestimates the flux badly (x46 in
+// the vertical integral above 1 GeV/c), see validity_warnings().
 inline constexpr double kCosmoA = 3.8467;
 inline constexpr double kCosmoB = -3.1952;
 inline constexpr double kCosmoM2ToCm2 = 1.0e-4;
 
-// Guan et al. 2015 (arXiv:1509.06176), and the cos* parametrisation shared
-// with Reyna-Bugaev.
+// Guan et al. 2015 (arXiv:1509.06176): cos* is their Eq. 2 with Table 1, and
+// kDenom = sqrt(1 + P1^2 + P2 + P4). The spectrum is their Eq. 3, with
+// (a, b) = (3.64, 1.29); Frosin et al. 2025 (J. Phys. G 52, 035002) refit the
+// same form, Table 4: (3.512, 1.388). a = 0, b = 1 recovers Gaisser 1990
+// (Guan Eq. 1) with cos* in place of cos(theta).
 inline constexpr double kP1 = 0.102573, kP2 = -0.068287, kP3 = 0.958633;
 inline constexpr double kP4 = 0.0407253, kP5 = 0.817285;
 inline constexpr double kDenom = 0.99144315;
@@ -198,9 +206,11 @@ inline constexpr double kEpi = 115.0, kEk = 850.0;
 inline constexpr double kKaonFrac = 0.054, kPrefactor = 0.14, kIndex = -2.7;
 inline constexpr double kGuanA = 3.64, kGuanB = 1.29;      // Guan
 inline constexpr double kFrosinA = 3.512, kFrosinB = 1.388;  // Frosin 2025
-inline constexpr double kBugaevA = 0.0, kBugaevB = 1.0;    // no atm. correction
+inline constexpr double kBugaevA = 0.0, kBugaevB = 1.0;    // plain Gaisser
 
-// Reyna-Bugaev 2006 (arXiv:hep-ph/0604145), Eq. 6-7.
+// Reyna 2006 (arXiv:hep-ph/0604145), Eq. 3 with the Sec. 4 "Best Fit"
+// coefficients c1..c5, in cm^-2 s^-1 sr^-1 (GeV/c)^-1. The functional form is
+// Bugaev et al. 1998 (Phys. Rev. D 58, 054001), Eq. 3.4.
 inline constexpr double kReynaC0 = 0.00253, kReynaC1 = 0.2455;
 inline constexpr double kReynaC2 = 1.288, kReynaC3 = -0.2555, kReynaC4 = 0.0209;
 
@@ -227,17 +237,37 @@ inline double guan(double E_GeV, double cos_theta, double a, double b) {
   return kPrefactor * std::pow(E_eff, kIndex) * (pion + kaon);
 }
 
-/// Reyna-Bugaev log-polynomial vertical flux.
-inline double reyna(double p_GeV, double cos_theta) {
-  const double p_eff = p_GeV * cos_star(cos_theta);
-  if (p_eff <= 0.0) return 0.0;
-  const double lp = std::log10(p_eff);
+/// Reyna 2006 vertical intensity I_V(p), Eq. 3.
+inline double reyna_vertical(double p_GeV) {
+  if (p_GeV <= 0.0) return 0.0;
+  const double lp = std::log10(p_GeV);
   const double n = kReynaC1 + kReynaC2 * lp + kReynaC3 * lp * lp
                  + kReynaC4 * lp * lp * lp;
-  const double phi = kReynaC0 * std::pow(p_eff, -n);
+  const double phi = kReynaC0 * std::pow(p_GeV, -n);
   return phi > 0.0 ? phi : 0.0;
 }
 
+/// Reyna 2006, Eqs. 1-2: I(p, theta) = cos^3(theta) * I_V(p cos(theta)).
+///
+/// The scaling variable is zeta = p cos(theta) with the plain cos(theta), not
+/// the Guan cos*: that is the form Reyna fitted, to data out to 89 deg. Both
+/// parts matter. Without the cos^3 prefactor the intensity *rises* with zenith
+/// angle wherever I_V is steep, which is how the horizontal-surface rate came
+/// out at 4x the Reyna value before this was fixed. At cos(theta) = 1 the
+/// result is bit-identical to reyna_vertical(), so the vertical momentum CDF,
+/// and with it the legacy driver's stream, is unchanged.
+/// Stated validity (Sec. 4): 1 GeV/c < p < 2000 GeV/c / cos(theta).
+inline double reyna(double p_GeV, double cos_theta) {
+  if (cos_theta <= 0.0) return 0.0;
+  return cos_theta * cos_theta * cos_theta * reyna_vertical(p_GeV * cos_theta);
+}
+
+/// CosmoALEPH is a *vertical* measurement and carries no angular information.
+/// It is returned isotropic, I(p, theta) = I_V(p). Inside the fit's validity
+/// (p >~ 100 GeV/c) that sits within the spread of the angle-dependent models:
+/// Guan and Reyna give I(theta)/I(0) between 0.8 and 2.6 for theta <= 75 deg
+/// at 100-1000 GeV/c. What it cannot do is describe the flux below ~100 GeV/c,
+/// where the intensity falls as roughly cos^2(theta); do not use it there.
 inline double cosmoaleph(double p_GeV) {
   return std::pow(10.0, kCosmoA) * kCosmoM2ToCm2 * std::pow(p_GeV, kCosmoB);
 }
@@ -293,6 +323,91 @@ inline double intensity(Spectrum s, double p_GeV, double cos_theta) {
       throw std::invalid_argument("ucmugen: spectrum has no built-in "
                                   "intensity");
   }
+}
+
+/// Whether a rate or live time computed from this spectrum means anything.
+/// PowerLaw and Electron are sampling shapes with arbitrary normalisation.
+inline bool has_absolute_normalisation(Spectrum s) {
+  return s != Spectrum::PowerLaw && s != Spectrum::Electron;
+}
+
+/// Warnings for a spectrum used outside the range its source fitted, or asked
+/// for a normalisation it does not have. Empty when there is nothing to say.
+/// Momenta in GeV/c. The ranges are the papers' own, each checked in the
+/// variable its paper states it in and with a 1% tolerance, so that the usual
+/// E_min = 1 GeV (p = 0.994 GeV/c) does not trip a 1 GeV/c limit:
+///   CosmoALEPH    Schmelling 2013 Table 1: 112-2239 GeV/c bin centres
+///   Guan, Frosin  Frosin 2025 Sec. 3.2: this form fitted to data at 1 GeV-1 TeV
+///   GaisserBugaev Guan 2015 Sec. 1 / PDG: valid for E > 100/cos(theta) GeV
+///   ReynaBugaev   Reyna 2006 Sec. 4: 1 GeV/c < p < 2000 GeV/c / cos(theta)
+inline std::vector<std::string> validity_warnings(Spectrum s, double p_min,
+                                                  double p_max) {
+  std::vector<std::string> w;
+  char buf[400];
+  constexpr double kTol = 0.99;
+  const double e_min = std::sqrt(p_min * p_min + kMuonMass * kMuonMass);
+  if (!has_absolute_normalisation(s)) {
+    w.emplace_back("this spectrum is a sampling shape with no absolute "
+                   "normalisation; rate() and liveTime() return -1");
+    return w;
+  }
+  switch (s) {
+    case Spectrum::CosmoALEPH:
+      if (p_min < 100.0 * kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "CosmoALEPH is a fit to vertical data at 112-2239 GeV/c "
+            "(Schmelling 2013); p_min = %.3g GeV/c is below that range, where "
+            "the power law overestimates the flux (its vertical integral "
+            "above 1 GeV/c is 46x the PDG value). Use Guan, Frosin or "
+            "ReynaBugaev below ~100 GeV/c.", p_min);
+        w.emplace_back(buf);
+      }
+      if (p_max > 2500.0 / kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "CosmoALEPH: p_max = %.3g GeV/c is above the measured range "
+            "(<= 2.5 TeV/c).", p_max);
+        w.emplace_back(buf);
+      }
+      break;
+    case Spectrum::Guan:
+    case Spectrum::Frosin:
+      if (e_min < 1.0 * kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "Guan/Frosin: E_min = %.3g GeV is below 1 GeV, the lower edge "
+            "of the data this form was fitted to (Frosin 2025 Sec. 3.2).",
+            e_min);
+        w.emplace_back(buf);
+      }
+      break;
+    case Spectrum::GaisserBugaev:
+      if (e_min < 100.0 * kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "GaisserBugaev is the plain Gaisser 1990 formula, valid only for "
+            "E > 100/cos(theta) GeV (Guan 2015 Sec. 1); E_min = %.3g GeV is "
+            "below that and the flux is overestimated (vertical integral above "
+            "1 GeV is 12x the PDG value).", e_min);
+        w.emplace_back(buf);
+      }
+      break;
+    case Spectrum::ReynaBugaev:
+      if (p_min < 1.0 * kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "ReynaBugaev: p_min = %.3g GeV/c is below the 1 GeV/c validity "
+            "limit (Reyna 2006 Sec. 4).", p_min);
+        w.emplace_back(buf);
+      }
+      if (p_max > 2000.0 / kTol) {
+        std::snprintf(buf, sizeof(buf),
+            "ReynaBugaev: p_max = %.3g GeV/c exceeds the 2000 GeV/c / "
+            "cos(theta) validity limit near the vertical (Reyna 2006 Sec. 4).",
+            p_max);
+        w.emplace_back(buf);
+      }
+      break;
+    default:
+      break;
+  }
+  return w;
 }
 
 }  // namespace flux
@@ -1126,6 +1241,9 @@ class Generator {
   Generator& setDirectedSampling(bool on) {
     directed_ = on; dirty_ = true; return *this;
   }
+  /// Validity warnings (see flux::validity_warnings) go to stderr once per
+  /// configuration by default. Turn that off to handle warnings() yourself.
+  Generator& setPrintWarnings(bool on) { print_warnings_ = on; return *this; }
 
   // --- generation ----------------------------------------------------------
   Muon generate() {
@@ -1212,6 +1330,9 @@ class Generator {
     const double r = rate();
     return r > 0.0 ? double(n) / r : -1.0;
   }
+
+  /// Everything flux::validity_warnings has to say about this configuration.
+  std::vector<std::string> warnings() const { prepare(); return warnings_; }
 
   double surfaceArea() const { return surface_ ? surface_->area() : 0.0; }
   double solidAngle() const {
@@ -1367,6 +1488,14 @@ class Generator {
     cdf_.build(p_min, p_max, spectrum_);
     computeEnvelope(p_min, p_max);
     computeOmegaMax();
+    const std::vector<std::string> w =
+        flux::validity_warnings(spectrum_, p_min, p_max);
+    // Printed when the set changes rather than on every rebuild, so that
+    // touching an unrelated setter does not repeat the same message.
+    if (print_warnings_ && w != warnings_)
+      for (const std::string& s : w)
+        std::fprintf(stderr, "ucmugen: warning: %s\n", s.c_str());
+    warnings_ = w;
     dirty_ = false;
   }
 
@@ -1431,6 +1560,7 @@ class Generator {
   std::unique_ptr<Rng> rng_;
   std::int32_t seed_ = 20260729;
   bool directed_ = true;
+  bool print_warnings_ = true;
 
   double e_min_ = 1.0, e_max_ = 1000.0;
   double theta_min_ = 0.0, theta_max_ = kPi / 2.0;
@@ -1440,6 +1570,7 @@ class Generator {
   mutable MomentumCdf cdf_;
   mutable double envelope_ = 1.0;
   mutable double omega_max_ = 1.0;
+  mutable std::vector<std::string> warnings_;
   long long tried_ = 0, accepted_ = 0, envelope_violations_ = 0;
 };
 

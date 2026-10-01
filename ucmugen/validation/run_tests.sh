@@ -61,7 +61,8 @@ done
 # user who has removed it should still get a passing suite for the MIT core.
 echo "=== test_parma"
 if [ -f ../include/UCMuGen_PARMA.h ]; then
-  if $CXX $FLAGS test_parma.cc -o "$OUT/test_parma"; then
+  # -pthread: the suite checks concurrent evaluation (thread_local cache).
+  if $CXX $FLAGS -pthread test_parma.cc -o "$OUT/test_parma"; then
     "$OUT/test_parma" || status=1
   else
     echo "  BUILD FAILED"; status=1

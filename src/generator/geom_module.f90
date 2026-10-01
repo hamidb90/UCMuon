@@ -174,10 +174,15 @@ contains
     end if
 
     !--- Caps ---
+    ! The inflated cylinder spans s in [-margin, h+margin] (the wall test above
+    ! uses that range), so its caps sit there too. For a ray from outside the
+    ! inflated volume the result is the same with caps at 0 and h; it differs
+    ! only for an origin inside the axial margin zone, which caps at 0 and h
+    ! missed (found by tests/geometry/test_ray_intersections.f90).
     if (cyl%caps .and. abs(dpar) > GEOM_EPS) then
 
-      ! Bottom cap (s=0): ocpar + t*dpar = 0
-      tcap = -ocpar / dpar
+      ! Bottom cap (s = -margin): ocpar + t*dpar = -margin
+      tcap = (-cyl%margin - ocpar) / dpar
       if (tcap >= 0d0) then
         sx = ocx + tcap*dx;  sy = ocy + tcap*dy;  sz = ocz + tcap*dz
         sproj = sx*vx + sy*vy + sz*vz
@@ -187,8 +192,8 @@ contains
         end if
       end if
 
-      ! Top cap (s=h): ocpar + t*dpar = h
-      tcap = (h - ocpar) / dpar
+      ! Top cap (s = h + margin): ocpar + t*dpar = h + margin
+      tcap = (h + cyl%margin - ocpar) / dpar
       if (tcap >= 0d0) then
         sx = ocx + tcap*dx;  sy = ocy + tcap*dy;  sz = ocz + tcap*dz
         sproj = sx*vx + sy*vy + sz*vz

@@ -85,14 +85,17 @@ from pathlib import Path
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _import_rasterio():
+    # Raises ImportError rather than sys.exit(): the GUI calls this module as a
+    # library, and a SystemExit (not an Exception) ended the whole GUI script
+    # run, blanking every tab after Terrain on an install without rasterio
+    # (up to v1.2.0). The command-line entry point, main(), exits instead.
     try:
         import rasterio
         import rasterio.transform
         return rasterio
-    except ImportError:
-        print("  ERROR: rasterio not installed.", flush=True)
-        print("  Install with:  pip install rasterio", flush=True)
-        sys.exit(1)
+    except ImportError as exc:
+        raise ImportError("rasterio is not installed; install it with: "
+                          "pip install rasterio") from exc
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -520,7 +523,7 @@ def _load_bmc(script_dir):
 
 def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
                      rho, spectrum_mode=1, mode=1,
-                     E_min_GeV=0.5, E_max_GeV=5000.0,
+                     E_min_GeV=1.0, E_max_GeV=5000.0,
                      n_E=40, script_dir=None, progress_cb=None):
     """
     For every (azimuth, zenith) bin compute the expected muon flux [m⁻² s⁻¹ sr⁻¹]
@@ -530,6 +533,11 @@ def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
     """
     bmc     = _load_bmc(script_dir or Path(__file__).parent)
     n_az, n_ze = overburden.shape
+    # E_min defaults to 1 GeV, the lower end of Guan's and Frosin's fits (it was
+    # 0.5 GeV up to v1.1.2); say so when a spectrum is used outside its range.
+    note = bmc.spectrum_range_warning(spectrum_mode, E_min_GeV)
+    if note:
+        print(f"  WARNING: {note}", flush=True)
     flux_map = np.zeros((n_az, n_ze), dtype=np.float64)
 
     # Open-sky reference per zenith angle: same integrator with X = 0, so
@@ -544,23 +552,28 @@ def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
     total = n_az * n_ze
     done  = 0
 
-    for ia in range(n_az):
-        for iz, ze in enumerate(ze_c):
-            X = overburden[ia, iz]
-            if open_sky_map[ia, iz] or X < 1.0:   # effectively open sky
-                flux_map[ia, iz] = opensky_flux[iz]
-            else:
-                # Exact slant opacity at the exact zenith angle — no
-                # vertical-equivalent depth round trip, no cone average.
-                flux_map[ia, iz] = bmc.directional_flux(
-                    X, np.radians(ze), spectrum_mode,
-                    E_min_GeV=E_min_GeV, E_max_GeV=E_max_GeV,
-                    n_E=n_E, mode=mode,
-                )
-            done += 1
+    with bmc.collect_range_warnings() as beyond_table:
+        for ia in range(n_az):
+            for iz, ze in enumerate(ze_c):
+                X = overburden[ia, iz]
+                if open_sky_map[ia, iz] or X < 1.0:   # effectively open sky
+                    flux_map[ia, iz] = opensky_flux[iz]
+                else:
+                    # Exact slant opacity at the exact zenith angle — no
+                    # vertical-equivalent depth round trip, no cone average.
+                    flux_map[ia, iz] = bmc.directional_flux(
+                        X, np.radians(ze), spectrum_mode,
+                        E_min_GeV=E_min_GeV, E_max_GeV=E_max_GeV,
+                        n_E=n_E, mode=mode,
+                    )
+                done += 1
 
-        if progress_cb and (ia + 1) % max(1, n_az // 10) == 0:
-            progress_cb(done, total)
+            if progress_cb and (ia + 1) % max(1, n_az // 10) == 0:
+                progress_cb(done, total)
+
+    note = bmc.range_summary(beyond_table, total)
+    if note:
+        print(f"  WARNING: {note}", flush=True)
 
     return flux_map, opensky_flux
 
@@ -642,7 +655,15 @@ def write_transmission_map(az_c, ze_c, T_sim, fpath,
 def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
                   fpath, det_lat, det_lon, det_alt_m, rho,
                   spectrum_mode, elapsed):
-    total_rate = float(np.sum(flux_map))
+    # Rate through a horizontal 1 m² detector over the mapped sky:
+    # Σ Φ(az, ze) cos(ze) ΔΩ. Up to v1.1.2 this was np.sum(flux_map), a sum of
+    # m⁻² s⁻¹ sr⁻¹ values over bins with no solid angle, ~100x too high on the
+    # default grid and dependent on the binning.
+    d_az = 2.0 * np.pi / len(az_c)
+    half = 0.5 * np.radians(ze_c[1] - ze_c[0]) if len(ze_c) > 1 else 0.0
+    ze_r = np.radians(ze_c)
+    proj_dom = d_az * 0.5 * (np.sin(ze_r + half) ** 2 - np.sin(ze_r - half) ** 2)
+    total_rate = float(np.sum(flux_map * proj_dom[np.newaxis, :]))
     n_open = int(open_sky_map.sum())
     n_rock = open_sky_map.size - n_open
     ob_rock = overburden[~open_sky_map]
@@ -671,7 +692,8 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
         fh.write(f"# Median overburden   : {ob_med:.0f} g/cm2\n")
         fh.write(f"# Max overburden      : {ob_max:.0f} g/cm2"
                  f"  @ az={az_max_ob:.1f} deg  ze={ze_max_ob:.1f} deg\n")
-        fh.write(f"# Total expected rate : {total_rate:.4e} m-2 s-1\n")
+        fh.write(f"# Rate, horizontal 1 m2, ze < {ze_c[-1] + np.degrees(half):.0f} deg :"
+                 f" {total_rate:.4e} m-2 s-1\n")
         fh.write(f"# Peak flux direction : az={az_max_flux:.1f} deg"
                  f"  ze={ze_max_flux:.1f} deg\n")
 
@@ -682,7 +704,8 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
     print(f"  Median overburden   : {ob_med:.0f} g/cm2", flush=True)
     print(f"  Max overburden      : {ob_max:.0f} g/cm2"
           f"  @ az={az_max_ob:.0f}° ze={ze_max_ob:.0f}°", flush=True)
-    print(f"  Total expected rate : {total_rate:.4e} m-2 s-1", flush=True)
+    print(f"  Rate (horizontal m², ze < {ze_c[-1] + np.degrees(half):.0f}°) :"
+          f" {total_rate:.4e} m-2 s-1", flush=True)
     print(f"  ═════════════════════════════════════", flush=True)
 
 
@@ -731,7 +754,11 @@ def main():
     t0 = time.time()
 
     # 1. Load DEM
-    elev, transform = load_dem(dem_file)
+    try:
+        elev, transform = load_dem(dem_file)
+    except ImportError as exc:
+        print(f"  ERROR: {exc}", flush=True)
+        sys.exit(1)
 
     # 2. Overburden map
     print(f"  Ray tracing overburden map ({n_az} × {n_ze} = {n_az*n_ze} directions)...",

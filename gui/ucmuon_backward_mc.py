@@ -61,7 +61,9 @@ Stdin input:
 Author: Hamid Basiri <hamid.basiri@uclouvain.be>
 """
 
+import contextlib
 import sys
+import warnings
 import numpy as np
 from pathlib import Path
 
@@ -111,6 +113,133 @@ def _range(E_MeV, a_scale=1.0):
     return np.interp(E, _T_FINE, _R_FINE) * a_scale
 
 
+# ─────────────────────────────────────────────────────────────────────────────
+# End of the range table
+#
+# The table stops at 2 TeV, a range of 3616 m w.e. in standard rock. A detector
+# energy whose surface energy would lie beyond it cannot be mapped back and is
+# left out of the integral, so under thick rock the flux is a lower bound, and
+# exactly zero once every detector energy is beyond the table. Up to v1.1.2
+# this was silent. Both integrators now estimate what is left out, by
+# continuing the table with dE/dX = a + bE fitted to its last four points, and
+# raise a RangeTableWarning when that is more than 1 % of the flux or the flux
+# is zero. The estimate only sizes the warning; the flux returned is unchanged.
+# (It puts the cut at ~0.6 % at 1000 m w.e., 6 % at 2000, 37 % at 3000 and 85 %
+# at 3500, θ = 0-60°, Guan.) Detector energies above 2 TeV are outside the
+# table altogether and are left out under any rock; in the open sky they carry
+# 1e-6 of the flux at the vertical and 3e-4 at 85°.
+# ─────────────────────────────────────────────────────────────────────────────
+RANGE_TABLE_E_MAX_GEV  = float(_GROOM_T[-1]) / 1000.0     # 2000 GeV
+RANGE_TABLE_R_MAX_GCM2 = float(_GROOM_R[-1])              # 361 600 g/cm2
+RANGE_WARN_FRACTION    = 0.01
+
+_EXT_B, _EXT_A = np.polyfit(_GROOM_T[-4:], 1.0 / np.gradient(_GROOM_R, _GROOM_T)[-4:], 1)
+
+
+class RangeTableWarning(UserWarning):
+    """Part of a flux was left out because it lies beyond the range table."""
+
+    def __init__(self, note, X_gcm2=0.0, fraction=0.0, zero=False):
+        super().__init__(note)
+        self.X_gcm2, self.fraction, self.zero = X_gcm2, fraction, zero
+
+
+def _beyond_table_contribution(E_det_MeV, X_gcm2, theta_rad, spectrum_mode,
+                               a_scale, b_total, v_cut, mode):
+    """φ_det [m⁻² s⁻¹ sr⁻¹ GeV⁻¹] of a detector energy whose surface energy is
+    beyond the table, with the table continued as dE/dX = a + bE. For the
+    warning only."""
+    R_det = float(_range(E_det_MeV, a_scale))
+    R_surf = R_det + X_gcm2
+    a, b, T0, R0 = _EXT_A, _EXT_B, float(_T_FINE[-1]), float(_R_FINE[-1])
+    E_s = ((a + b * T0) * np.exp(b * (R_surf / a_scale - R0)) - a) / b
+    J = (a + b * E_s) * a_scale / max(float(_dedx(E_det_MeV, a_scale)), 1e-12)
+    Ps = 1.0
+    if mode == 1:
+        v_stop = float(np.clip(1.0 - R_det / R_surf, v_cut, 1.0 - 1e-6))
+        Ps = float(np.exp(-b_total * np.log(1.0 / v_stop) / np.log(1.0 / v_cut) * X_gcm2))
+    return float(_flux_surface(E_s / 1000.0, theta_rad, spectrum_mode)) * J * Ps
+
+
+def range_table_note(X_gcm2, flux, missing):
+    """The warning text, or None when what is left out is below 1 % of the flux."""
+    if missing <= 0.0:
+        return None
+    total = flux + missing
+    frac = missing / total
+    if flux > 0.0 and frac <= RANGE_WARN_FRACTION:
+        return None
+    head = (f"Backward MC: at a slant opacity of {X_gcm2 / 100.0:.0f} m w.e., muons "
+            f"that need a surface energy above {RANGE_TABLE_E_MAX_GEV / 1000.0:g} TeV "
+            f"(the end of the range table) are left out")
+    if flux <= 0.0:
+        return (head + ", so the flux returned is 0, which is not a result: the "
+                "true flux is small but not zero.")
+    return (head + f", about {100.0 * frac:.0f} % of the flux (estimated by "
+            f"continuing the table); the flux returned is a lower bound.")
+
+
+def _warn_off_table(X_gcm2, flux, missing):
+    note = range_table_note(X_gcm2, flux, missing)
+    if note:
+        warnings.warn(RangeTableWarning(note, X_gcm2, missing / (flux + missing),
+                                        flux <= 0.0), stacklevel=3)
+    return note
+
+
+@contextlib.contextmanager
+def collect_range_warnings():
+    """Gather the RangeTableWarnings raised inside the block into a list instead
+    of printing one per call (a flux map makes thousands); summarise them with
+    range_summary(). Other warnings are passed on."""
+    got = []
+    with warnings.catch_warnings(record=True) as rec:
+        warnings.simplefilter("always")
+        yield got
+    for w in rec:
+        # by name: callers load this module with importlib, one copy each
+        if w.category.__name__ == "RangeTableWarning":
+            got.append(w.message)
+        else:
+            warnings.warn_explicit(w.message, w.category, w.filename, w.lineno)
+
+
+def range_summary(got, n_directions):
+    """One line for a map or a scan, from collect_range_warnings(); None if empty."""
+    if not got:
+        return None
+    n_zero = sum(m.zero for m in got)
+    X_min = min(m.X_gcm2 for m in got)
+    worst = max((m.fraction for m in got if not m.zero), default=0.0)
+    return (f"Backward MC: in {len(got)} of {n_directions} directions (slant opacity "
+            f"from {X_min / 100.0:.0f} m w.e.) more than 1 % of the flux needs surface "
+            f"energies above {RANGE_TABLE_E_MAX_GEV / 1000.0:g} TeV, the end of the "
+            f"range table, and is left out: those fluxes are lower bounds"
+            + (f" (up to {100.0 * worst:.0f} % low)" if worst > 0 else "")
+            + (f", and {n_zero} are 0, where the true flux is small but not zero."
+               if n_zero else "."))
+
+
+def spectrum_range_warning(spectrum_mode, E_min_GeV):
+    """A one-line warning when E_min [GeV, kinetic] is below the fitted range of
+    the surface spectrum, or when the spectrum has no absolute normalisation;
+    None otherwise. Same limits as ucmugen::flux::validity_warnings."""
+    if spectrum_mode == 1:
+        p = float(np.sqrt((E_min_GeV + M_MU_GEV) ** 2 - M_MU_GEV ** 2))
+        if p < 99.0:
+            return (f"CosmoALEPH is a fit to vertical data at 112-2239 GeV/c; from "
+                    f"p_min = {p:.3g} GeV/c it extrapolates (x46 in the vertical "
+                    f"integral above 1 GeV/c), and so does the open-sky flux that "
+                    f"every T = Phi_rock / Phi_sky is divided by.")
+    elif spectrum_mode == 2:
+        return ("The E^-3.7 power law has no absolute normalisation: transmissions "
+                "are meaningful, absolute fluxes and rates are not.")
+    elif spectrum_mode in (3, 4):
+        return _ffe.validity_warning("guan_2015" if spectrum_mode == 3 else "frosin_2025",
+                                     E_min_GeV)
+    return None
+
+
 def _backward_energy(E_det_MeV, X_gcm2, a_scale=1.0):
     """
     Backward CSDA mapping: given E_det_MeV at detector, find surface energy E_s
@@ -147,41 +276,43 @@ _MAT_DB = {
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Surface flux models
-# Approximate absolute normalisation from Gaisser & Stanev (PDG 2022)
+#
+# Taken from fast_flux_estimator so that the backward MC, the fast estimator
+# and the generator share one audited implementation of each spectrum (see
+# docs/FLUX_NORMALISATION_AUDIT.md).  Before the 2026-09 audit this module had
+# its own formulas, none of which matched its paper: mode 3 "Guan" was built
+# from Reyna's constants, and the CosmoALEPH normalisation was 27x low at
+# 100 GeV.
 # ─────────────────────────────────────────────────────────────────────────────
+_gui_dir = str(Path(__file__).resolve().parent)
+if _gui_dir not in sys.path:
+    sys.path.insert(0, _gui_dir)
+import fast_flux_estimator as _ffe                      # noqa: E402
+
 
 def _flux_surface(E_GeV, theta_rad, mode):
     """
-    Differential surface flux Φ(E, θ) [muons m⁻² s⁻¹ GeV⁻¹ sr⁻¹].
-    Normalisation is self-consistent across modes for relative comparisons.
+    Differential surface intensity Φ(T, θ) [muons m⁻² s⁻¹ GeV⁻¹ sr⁻¹] at
+    kinetic energy T = E_GeV (the backward CSDA map works in kinetic energy).
+
+    mode 1  CosmoALEPH power-law fit (vertical-only, isotropic as in the
+            generator); valid p ≳ 100 GeV/c
+    mode 2  power law ∝ E^-3.7: a shape with NO absolute normalisation; the
+            95 m⁻²s⁻¹sr⁻¹GeV⁻¹ prefactor is arbitrary and so is any rate or
+            exposure time computed from it
+    mode 3  Guan et al. (2015) Eq. 3          (generator spectrum 4)
+    mode 4  Frosin et al. (2025) Table 4 fit  (generator spectrum 5)
     """
-    cos_t = np.cos(theta_rad)
-    E     = np.asarray(E_GeV, float)
-
+    E = np.asarray(E_GeV, float)
+    theta_deg = float(np.degrees(theta_rad))
     if mode == 1:
-        # CosmoALEPH (Schmelling 2013):  dN/dp ∝ p^{-3.195}
-        # Rough absolute: ~170 m⁻² s⁻¹ sr⁻¹ GeV⁻¹ at 1 GeV vertical
-        return 170.0 * E**(-3.195) * cos_t**2
-
-    elif mode == 2:
-        # Power-law:  dN/dE ∝ E^{-3.7}
-        return 95.0 * E**(-3.7) * cos_t**2
-
-    elif mode == 3:
-        # Guan et al. (2015) arXiv:1509.06176
-        # Full parametrisation with energy-zenith coupling
-        Ec   = 854.0    # critical energy [GeV]
-        A    = 0.00253
-        a    = 0.2455;  b = 1.288;  c = -0.2455;  d = 0.2949
-        flux = (A * E**(-3.7) / (1.0 + E/Ec)**1.55
-                * (1.0 + a * E**b * cos_t**(c * E**d + 1.0)))
-        return np.maximum(flux, 0.0)
-
-    elif mode == 4:
-        # Frosin et al. (2025) J. Phys. G 52, 035002
-        Ec   = 902.0
-        return np.maximum(0.00245 * E**(-3.72) / (1.0 + E/Ec)**1.52 * cos_t**2, 0.0)
-
+        return 1.0e4 * _ffe._cosmoaleph(E, theta_deg)
+    if mode == 2:
+        return 95.0 * E**(-3.7) * np.cos(theta_rad)**2
+    if mode == 3:
+        return 1.0e4 * _ffe._guan_2015(E, theta_deg)
+    if mode == 4:
+        return 1.0e4 * _ffe._frosin_2025(E, theta_deg)
     return np.zeros_like(E)
 
 
@@ -267,6 +398,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
     rate_total = 0.0               # [m⁻² s⁻¹]
 
     dOmega_total = float(dOmega.sum())
+    missing_rate = 0.0             # left out beyond the range table [m⁻² s⁻¹]
 
     for iE, E_det in enumerate(E_det_MeV):
         w_trap = 0.5 if iE in (0, n_E - 1) else 1.0
@@ -280,7 +412,11 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
             # Backward CSDA: what surface energy E_s is required?
             E_s, Jacob = _backward_energy(E_det, X_sl, a_scale)
             if E_s == np.inf or np.isnan(E_s):
-                continue                       # direction unreachable
+                if E_det <= _T_FINE[-1]:       # surface energy beyond the table
+                    missing_rate += _beyond_table_contribution(
+                        E_det, X_sl, th, spectrum_mode, a_scale, b_total, v_cut,
+                        mode) * dO * cos_t * dE_GeV
+                continue
             E_s_GeV = E_s / 1000.0
             if E_s_GeV < E_min_GeV or E_s_GeV > E_max_GeV:
                 continue
@@ -316,6 +452,8 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
             progress_cb(f"E bin {iE+1}/{n_E}  E_det={E_det/1000:.2f} GeV"
                         f"  rate so far {rate_total:.3e} m-2 s-1")
 
+    range_note = _warn_off_table(float(X_slant.max()), rate_total, missing_rate)
+
     return dict(
         E_det_GeV   = E_det_MeV / 1000.0,
         flux_det    = flux_det,
@@ -329,7 +467,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
                            n_E=n_E, n_theta=n_theta,
                            theta_max_deg=theta_max_deg,
                            mode="CSDA+stochastic" if mode == 1 else "CSDA only",
-                           v_cut=v_cut),
+                           v_cut=v_cut, range_note=range_note),
     )
 
 
@@ -366,12 +504,17 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
     dlnE = (np.log(E_max_GeV) - np.log(E_min_GeV)) / max(n_E - 1, 1)
 
     flux = 0.0
+    missing = 0.0                      # left out beyond the range table
     for iE, E_det in enumerate(E_det_MeV):
         w_trap = 0.5 if iE in (0, n_E - 1) else 1.0
         dE_GeV = (E_det / 1000.0) * dlnE * w_trap
         if X_slant_gcm2 > 0.0:
             E_s, Jacob = _backward_energy(E_det, X_slant_gcm2, a_scale)
             if not np.isfinite(E_s):
+                if E_det <= _T_FINE[-1]:   # surface energy beyond the table
+                    missing += _beyond_table_contribution(
+                        E_det, X_slant_gcm2, theta_rad, spectrum_mode, a_scale,
+                        b_total, v_cut, mode) * dE_GeV
                 continue
             Ps = (_P_surv_stochastic(E_s, E_det, X_slant_gcm2,
                                      b_total, v_cut, a_scale)
@@ -381,6 +524,7 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
         phi_s = float(_flux_surface(E_s / 1000.0, theta_rad, spectrum_mode))
         if phi_s > 0.0:
             flux += phi_s * Jacob * Ps * dE_GeV
+    _warn_off_table(X_slant_gcm2, flux, missing)
     return flux
 
 
@@ -397,6 +541,8 @@ def _write_results(res, fpath):
         fh.write(f"# Vertical opacity: {res['X_vert_gcm2']:.1f} g/cm2\n")
         fh.write(f"# Mode: {info['mode']}  spectrum: {info['spectrum_mode']}\n")
         fh.write(f"# Total expected rate: {res['rate_m2_s']:.5e} m-2 s-1\n")
+        if info.get("range_note"):
+            fh.write(f"# WARNING: {info['range_note']}\n")
         fh.write("# Cols: E_det[GeV]  dPhi/dE[m-2 s-1 GeV-1]  E_surf[GeV]"
                  "  P_survival  dPhi_surf/dE[m-2 s-1 GeV-1]\n")
         for i in range(len(res["E_det_GeV"])):
@@ -424,6 +570,8 @@ def _print_summary(res):
     alive_ps = res["P_survival"][res["P_survival"] > 1e-4]
     if len(alive_ps):
         print(f"   Mean P_surv: {float(np.mean(alive_ps)):.4f}", flush=True)
+    if info.get("range_note"):
+        print(f"   WARNING: {info['range_note']}", flush=True)
     print("  ══════════════════════════════════════════════", flush=True)
 
 

@@ -1,5 +1,191 @@
 # Changelog
 
+## [1.2.0] — 2026-10-01
+
+Flux-normalisation audit: every surface spectrum in every code path checked
+against its source paper, and against PDG and published data; then how the
+generator samples momentum and angle, the rate and live-time chain, and the
+detector filter. Full report with equation numbers, measurements and the
+table of what changes: `docs/FLUX_NORMALISATION_AUDIT.md`.
+
+### ⚠ Changes results
+- **Reyna (spectrum 7) in UCMuGen**: horizontal-surface rates ×0.26 (E > 1 GeV)
+  to ×0.08 (E > 100 GeV); the p-θ distribution now hardens with θ.
+- **Fast flux estimator** (GUI default model, **Density tab**, exposure
+  panel): Reyna replaced by Reyna's own formula (for example ×4.1 in flux at
+  60° under 100 m of rock); plain Gaisser ×10; `gaisser_tang` is now the
+  Tang et al. (2006) modified Gaisser formula (it was neither Tang's nor
+  correctly normalised).
+- **Backward MC and the terrain engine**: surface spectra replaced (backward-MC
+  rates ×59 to ×10⁸; terrain transmissions ×1.48 with spectrum 1, ×35-1000
+  with spectrum 3). The shipped Vesuvius T_sim library and MURAVES figures are
+  regenerated; T_sim libraries made elsewhere must be.
+- **Vesuvius T_sim library** (`examples/vesuvius/tsim_library/`): now Guan
+  2015 over 1-2500 GeV; it was CosmoALEPH extrapolated down to 0.5 GeV, far below
+  its ~100 GeV/c fitted range. Transmissions in blocked directions ×300-19 000; the
+  MURAVES guide's own synthetic inversion goes from no usable pixels to
+  ρ̂ = 2.007 for ρ_true = 2.0.
+- **MURAVES example script**: open-sky flux 3-10× low (log-energy sum without
+  the factor E), through-rock flux a cone-integrated rate at half the zenith
+  angle; both now the backward MC's `directional_flux`. Figures and guide
+  regenerated.
+- **Terrain-engine summary** "Total expected rate" (summary file and the GUI
+  live panel) summed per-steradian fluxes with no solid angle, ~100× high and
+  grid-dependent; now the rate through a horizontal m² (Σ Φ cos θ ΔΩ).
+- **GUI rates and live times**: one formula, T = N_tried / R (below). The old
+  Results-tab rate was ×1.25-1.3 high for a plain horizontal source and up to
+  ×8 with the detector filter.
+- **PARMA in multithreaded UCMuGen**: concurrent evaluation was wrong (data
+  race); multithreaded PARMA runs must be redone.
+- **PARMA in the Fortran generator**: kinetic energy now passed to PARMA
+  (≤ 4% change in the sampled spectrum).
+- **MPI generator, angular mode 5**: previously replaced by cos²θ silently.
+
+Legacy generator events (angular modes 1-5, all spectra but PARMA) are
+bit-identical: 20/20 legacy configurations event-for-event equal.
+
+### Added
+- **UCMuGen 0.2.0** (`UCMUGEN_VERSION_*` in `UCMuGen.h`, was 0.1.0): a minor
+  bump because its results change (Reyna, multithreaded PARMA) and its API
+  grows (validity warnings); see `ucmugen/README.md`, "Versions".
+- **Angular mode 6, joint sampling** (`generate_muon_joint`, both generators,
+  PARMA included): draws (p, position, direction) from J(p, θ) × max(0, −n·d),
+  the flux through the source surface, with the sky fixed in the world frame.
+  Recommended, and the GUI default. Validated against `ucmugen::Generator` in
+  six configurations (`tests/flux/test_joint_sampling.py`).
+- **Live time.** The generators print "Surface rate R" (the flux through the
+  source surface in the energy and zenith windows, the quantity UCMuGen's
+  `rate()` computes) and "Live time = Tried / R". `gui/live_time.py` computes
+  the same R and the exact importance weights of legacy-mode events; the GUI
+  Results tab and exposure panel use it. Agrees with UCMuGen within 1% for
+  plane, disk and hemisphere sources, with and without the detector filter
+  (`tests/flux/test_live_time.py`).
+- **Safety-margin guidance**: `gui/mcs_margin.py` (Highland with CSDA energy
+  loss); the GUI warns when a detector margin is below 2σ_r of multiple
+  scattering, and the Helpers calculator suggests one.
+- **Validity guardrails** in all implementations, same limits (CosmoALEPH
+  p ≳ 100 GeV/c; Gaisser E > 100/cos θ GeV; Guan, Frosin E > 1 GeV; Reyna
+  1 < p < 2000/cos θ GeV/c), plus a notice for spectra with no absolute
+  normalisation. UCMuGen: `flux::validity_warnings`,
+  `flux::has_absolute_normalisation`, `Generator::warnings()`,
+  `Generator::setPrintWarnings()`.
+- Fortran `spectrum_intensity`, `surface_rate`, `geometry_h`,
+  `source_normal_world`.
+- Tests: `tests/flux/` (cross-implementation consistency, reference values,
+  joint sampling, live time), `tests/geometry/` (detector intersections
+  against brute force), a concurrency check in `ucmugen/validation/test_parma.cc`.
+  All in CI.
+- `docs/FLUX_NORMALISATION_AUDIT.md`.
+
+### Fixed
+- **GUI, a fresh install showed half the GUI empty.** With no output files yet,
+  the Results tab called `st.stop()`, which ends the whole script: the Terrain,
+  Config and Density tabs rendered empty and nothing was autosaved until the
+  generator had run. The Results tab now only ends itself.
+- **GUI without rasterio (optional, not installed by default).** The Terrain
+  tab's DEM check called the terrain driver, which ran `sys.exit(1)` when
+  rasterio was missing; a SystemExit is not caught by the GUI's error handling,
+  so the script run ended there and every later tab, and the autosave, was
+  lost. The driver now raises ImportError, which the GUI reports; its command
+  line still exits with the same message.
+- **GUI live time tied to its run.** The Results tab used the last generator
+  run's tried count, surface rate and settings whatever file was loaded, and
+  read the spectrum from the selector rather than the run (so a mono-energetic
+  beam, run as spectrum 2 or 8, got a live time for the selected spectrum). A
+  generator run now records its spectrum, start time and output files, a
+  transport run the surface file each underground file came from; Results
+  gives a live time only to a file from that run, and otherwise says why not.
+  The run's live-time inputs are autosaved, so a restart keeps them
+  (`gen_thetamax` was saved but never written; it is `gen_theta_max`).
+- **GUI, Bethe-Bloch materials.** The menu labelled choices 2/3/4 Limestone /
+  Water-Ice / Iron; both drivers run Ice / Water / Concrete. The menu now names
+  what runs.
+- **GUI, safety-margin warning** evaluated the depth at the detector's top
+  face, so a detector reaching the surface (the default cylinder) never warned;
+  it now uses the deepest face.
+- **GUI, source too small.** New warning when a horizontal disk or rectangle
+  source does not reach every straight path into the margin-inflated detector
+  at θ ≤ θ_max. The default 200 m disk with the default 90 m-deep cylinder at
+  85°: hit rate 11 % low (measured; 1 % at 600 m), and it needs R ≥ 1029 m.
+- **GUI, Terrain altitude default** took the Generator's PARMA altitude in km
+  as metres (three places).
+- **GUI, Terrain cross-check legend** said "Guan" whatever spectrum was
+  selected; the panel now also warns below a spectrum's fitted range.
+- **GUI, Config "Reset autosave"** deleted the file, which the same run wrote
+  straight back; it now also resets the session to the defaults.
+- UCMuGen `flux::reyna` and Fortran `reyna_flux`: I(p, θ) = cos³θ · I_V(p cos θ)
+  (Reyna 2006, Eqs. 1-3; was I_V(p cos θ*) with no prefactor). Bit-identical
+  at cos θ = 1, so the momentum CDF and legacy streams are unchanged.
+- `fast_flux_estimator`: Reyna formula; Gaisser prefactor 0.14 (was 1.4e-2);
+  the `bugaev` key is now spectrum 6; `gaisser_tang` implements Tang et al.
+  2006 (PRD 74, 053007) Eqs. 3-10, with Ẽ in the Eq. 7 exponent: the printed
+  E cannot reproduce the paper's own Fig. 1 (10³-10⁵× low below a few GeV),
+  Ẽ reproduces it at every angle shown.
+- Backward MC surface spectra (none matched their paper).
+- UCMuGen PARMA: memoisation cache `thread_local`, tables loaded in
+  `install()` (`tools/make_parma_header.py` regenerates the header).
+- Fortran PARMA: kinetic energy; mode 6 reads PARMA's angular factor from a
+  serially built table (PARMA's routines are not thread-safe).
+- MPI generator accepts angular modes 5 and 6.
+- Detector filter: cylinder caps at −margin and h + margin, consistent with
+  the wall test. Identical for every source outside the inflated detector.
+- GUI: exposure panel passed total energy where kinetic was expected; the
+  tried count was parsed from the first progress line, not the total; spectrum
+  and angular-mode help texts corrected (mode 6 was labelled "Bugaev 1998",
+  Reyna "1-10000 GeV" and "~20%" PDG agreement, Guan "suppresses 50-100×",
+  mode 4 "physically exact").
+- MURAVES guide, Part 2: the terrain-driver recipe was missing the spectrum
+  line and had four stray lines (the driver read spectrum = 360 and wrote
+  files named `1.0` and `2500.0`); corrected and run. Part 2 now points to the
+  shipped library.
+- `examples/vesuvius/make_tsim_library.py` reads the bundled
+  `vesuvius_dem.tif` (it needed `misc/dem_site.tif`, not in the tree); the
+  overburden map is bit-identical, so the library now regenerates from the
+  published tree alone.
+- **GUI Terrain tab, Section 4** ("Integrated muon flux vs elevation") had the
+  MURAVES script's bug: a cone-integrated rate at half the zenith angle,
+  divided by one pixel's solid angle, 10²-10⁶× too high and grid-dependent.
+  Now `directional_flux`.
+- **Backward MC beyond the range table**: `directional_flux` and
+  `backward_mc_flux` raise a `RangeTableWarning` when surface energies above
+  2 TeV are left out, instead of returning a zero silently; the CLI summary,
+  the results file, the backward-MC tab, the terrain map and the MURAVES
+  script report it (`tests/flux/test_backward_mc_range.py`).
+- **Terrain engine E_min**: `compute_flux_map` (and so the CLI) now integrates
+  from 1 GeV, the lower end of Guan's and Frosin's fits, not 0.5 GeV: CLI
+  transmissions rise by up to 17 % near the vertical (under 2 % at 80°). It
+  warns when a spectrum is used below its fitted range, and for the power law,
+  which has no absolute normalisation.
+- `hpc/input_params.dat` is a neutral, valid demo (Guan, angular mode 6, one
+  borehole-like detector, margin 2σ_r of multiple scattering, source radius
+  from the detector's view cone), with each choice explained;
+  `hpc/run_ucmuon_gen.sh` prints the surface rate and live time in its summary.
+- `tests/flux`: pass thresholds set from the statistics (χ² p-value > 10⁻³,
+  4σ): the first thresholds failed a correct build about one run in eight.
+- THIRD_PARTY_LICENSES.md and `make_parma_header.py` list all four mechanical
+  edits in `UCMuGen_PARMA.h`, including `thread_local`.
+- CITATION.cff: titles of MUSIC, Guan, Frosin and PARMA entries, Frosin DOI,
+  Highland year and title; added Reyna, Schmelling (CosmoALEPH), Bugaev,
+  Sato 2016, Tang 2006 and the PDG 2022 cosmic-ray review. PDG values are
+  cited from PDG 2022 Sec. 30.3.1 and Eq. 30.4 (the 2024 edition dropped the
+  section). README references and BibTeX (placeholder DOI) corrected.
+
+### Checked, unchanged
+- Guan and Frosin constants, cos θ\*, the dN/dE → dN/dp Jacobian and the
+  PARMA unit conversion in UCMuGen.
+- CosmoALEPH's constants are exactly a log-log fit to Schmelling et al. 2013
+  Table 1; its isotropic angular law in UCMuGen is kept.
+- "Total tried" under MPI + OpenMP: no lost trials (measured against UCMuGen,
+  −0.5% ± 0.4%).
+
+### Known limitations
+- The backward MC's range table ends at 2 TeV (3616 m w.e.), so under thick
+  rock its flux is a lower bound, and zero once every energy is beyond it (the
+  true value is then below 10⁻⁵ of the open sky). Measured: it removes about 0.6 % of the flux at 1000 m w.e., 6 % at 2000, 37 % at 3000 and 85 % at 3500 (θ = 0-60°, Guan; estimated by extending the table with dE/dX = a + bE fitted to its last points). This now raises a
+  `RangeTableWarning`, and flux maps print one summary line; extending the
+  table is left for a later release.
+- The terrain-driver CLI has no energy-range input (1-5000 GeV).
+
 ## [1.1.2] — 2026-09-20
 
 Publishes the benchmark suite and the paper's figure scripts. No code changes:

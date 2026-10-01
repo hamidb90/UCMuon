@@ -6,7 +6,7 @@ Why generate rather than hand-port
 PARMA's muon path is ~800 lines of interpolation over fitted tables. Retyping it
 would be a transcription exercise with no upside and a large downside, so this
 script lifts the routines *verbatim* from JAEA's own `subroutines.cpp` and applies
-exactly three mechanical edits, each of which is easy to audit and is listed in
+exactly four mechanical edits, each of which is easy to audit and is listed in
 the generated header:
 
   1. every `ifstream X(dname, ios::in)` becomes an `istringstream` over a table
@@ -14,11 +14,14 @@ the generated header:
      has been configured;
   2. the angular initialiser, which loops over all six particle species, is
      restricted to muons, so only the muon tables need embedding;
-  3. the black-hole-factor initialiser is restricted the same way.
+  3. the black-hole-factor initialiser is restricted the same way;
+  4. the eight static variables in which getSpecAngCpp memoises its last call
+     become `thread_local`, so concurrent callers (Geant4 worker threads) no
+     longer overwrite each other's cache.
 
 Edits 2 and 3 are not taken on trust: `validation/test_parma.cc` compares the
 generated header against the stock build over a dense grid and requires exact
-agreement.
+agreement, and checks edit 4 by evaluating from eight threads at once.
 
 Licence
 -------
@@ -109,7 +112,7 @@ def split_functions(src: str) -> dict[str, str]:
 
 
 def patch(text: str, name: str) -> tuple[str, list[str]]:
-    """Apply the three mechanical edits. Returns the text and what was done."""
+    """Apply the four mechanical edits. Returns the text and what was done."""
     notes = []
 
     # 1. File reads become reads from the embedded tables.
@@ -138,6 +141,26 @@ def patch(text: str, name: str) -> tuple[str, list[str]]:
         if n != 1:
             sys.exit("BHfactorCpp: species loop not found; source changed?")
         notes.append("species loop restricted to muons (ip2=4)")
+
+    # 4. getSpecAngCpp memoises its last (particle, s, r, d, e, g) and the
+    #    coefficients it derived in function-static variables. Called from
+    #    several threads (one ucmugen::Generator per Geant4 worker), one thread
+    #    reads the cache while another rewrites it, and the angular factor
+    #    comes out wrong. The same pattern in PARMA's Fortran was measured at
+    #    +30% at 2-10 GeV and 60-80 deg with 8 OpenMP threads. Making the cache
+    #    thread_local gives each thread its own; the read-only tables are
+    #    loaded once, by the warm-up call in parma::install().
+    if name == "getSpecAngCpp":
+        n_total = 0
+        for pat in (r"static double ParaAdep\[", r"static double ratio1,ratio2;",
+                    r"static int ipold", r"static double sold", r"static double rold",
+                    r"static double dold", r"static double eold", r"static double gold"):
+            text, n = re.subn(pat, lambda m: "static thread_local " + m.group(0)[len("static "):],
+                              text)
+            n_total += n
+        if n_total != 8:
+            sys.exit(f"getSpecAngCpp: expected 8 cache variables, found {n_total}")
+        notes.append("memoisation cache made thread_local (8 variables)")
 
     return text, notes
 
@@ -372,6 +395,11 @@ inline void install(const Site& s) {
   // fit alongside a site-aware spectrum, which is inconsistent: at 5 km the
   // fit is high by about 12% at 1 GeV/c.
   charge_ratio_provider() = [s](double p_GeV) { return charge_ratio(s, p_GeV); };
+  // PARMA loads its tables lazily, into function statics, on the first call.
+  // Doing that first call here, on the installing thread, means worker
+  // threads only ever read the tables. (The per-call cache is thread_local.)
+  (void)intensity(s, 10.0, 0.5);
+  (void)charge_ratio(s, 10.0);
 }
 
 /// Remove both providers, so Spectrum::Parma throws again and the charge ratio

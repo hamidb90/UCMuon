@@ -96,18 +96,21 @@ def guan_flux(E_GeV, cos_th, a_par=GUAN_A, b_par=GUAN_B):
 
 
 def reyna_flux(p_GeV, cos_th):
-    """Mode 7 — Reyna–Bugaev (2006) dΦ/dp [cm^-2 s^-1 sr^-1 (GeV/c)^-1].
-    I_V(p) = C0 * p^-(C1 + C2 z + C3 z^2 + C4 z^3), z = log10(p)
-    (hep-ph/0604145 Eq. 6-7); integrates to 7.0e-3 cm^-2 s^-1 sr^-1
-    above 1 GeV at cos(theta) = 1, matching the PDG reference value."""
+    """Mode 7: Reyna (2006) dΦ/dp [cm^-2 s^-1 sr^-1 (GeV/c)^-1],
+    hep-ph/0604145 Eqs. 1-3:  I(p, θ) = cos³θ · I_V(p cosθ),
+    I_V(x) = C0 * x^-(C1 + C2 z + C3 z^2 + C4 z^3), z = log10(x).
+    Integrates to 7.0e-3 cm^-2 s^-1 sr^-1 above 1 GeV/c at cos(theta) = 1,
+    matching the PDG reference value.  Mirrors reyna_flux in
+    src/generator/ucmuon_source_module.f90."""
     p = np.asarray(p_GeV, float)
-    cs = guan_cos_star(cos_th)
-    p_eff = p * cs
     out = np.zeros_like(p)
+    if cos_th <= 0:
+        return out
+    p_eff = p * cos_th
     ok = p_eff > 0
     lp = np.log10(p_eff[ok])
     n_exp = REYNA_C1 + REYNA_C2 * lp + REYNA_C3 * lp**2 + REYNA_C4 * lp**3
-    out[ok] = REYNA_C0 * p_eff[ok] ** (-n_exp)
+    out[ok] = cos_th**3 * REYNA_C0 * p_eff[ok] ** (-n_exp)
     return np.maximum(out, 0.0)
 
 

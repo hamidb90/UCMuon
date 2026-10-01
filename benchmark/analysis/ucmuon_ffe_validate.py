@@ -514,13 +514,13 @@ print(f"""
 
   ┌─────────────────────────────────────────────────────────────────────┐
   │  OPEN-SKY (Reyna–Bugaev, sea level, E>1 GeV, θ=0°)                │
-  │    I(0°) = 5.7×10⁻³ cm⁻²sr⁻¹s⁻¹   (PDG: 7×10⁻³)               │
-  │    Hemisphere ≈ 0.96 cm⁻²min⁻¹      (PDG: ≈1)                    │
+  │    I(0°) = 7.0×10⁻³ cm⁻²sr⁻¹s⁻¹   (PDG: 7×10⁻³)               │
+  │    Hemisphere ≈ 0.71 cm⁻²min⁻¹  (PDG ≈1 incl. sub-GeV)         │
   │                                                                     │
   │  FLAT-SLAB BENCHMARKS (ρ=2.65, θ=0°, Reyna–Bugaev)               │
-  │    L= 20 m  → X=  5 300 g/cm²  E_min= 11 GeV  T≈ 4.3%           │
-  │    L=100 m  → X= 26 500 g/cm²  E_min= 62 GeV  T≈ 0.30%          │
-  │    L=200 m  → X= 53 000 g/cm²  E_min=133 GeV  T≈ 0.080%         │
+  │    L= 20 m  → X=  5 300 g/cm²  E_min= 11 GeV  T≈ 9.7%           │
+  │    L=100 m  → X= 26 500 g/cm²  E_min= 62 GeV  T≈ 0.45%          │
+  │    L=200 m  → X= 53 000 g/cm²  E_min=133 GeV  T≈ 0.094%         │
   │                                                                     │
   │  PATH AT OBLIQUE ANGLES (L=100 m vertical)                         │
   │    θ=30°  path=115 m   X= 30 500 g/cm²  E_min= 72 GeV           │
@@ -528,6 +528,6 @@ print(f"""
   │    θ=80°  path=576 m   X=153 000 g/cm²  E_min≈430 GeV           │
   │                                                                     │
   │  RATE ESTIMATE (A=6 cm²·sr, open sky, E>1 GeV, θ=0°)             │
-  │    R = 5.7×10⁻³ × 6 ≈ 0.034 s⁻¹ = 2.0 min⁻¹ = 2 900 day⁻¹    │
+  │    R = 7.0×10⁻³ × 6 ≈ 0.042 s⁻¹ = 2.5 min⁻¹ = 3 600 day⁻¹    │
   └─────────────────────────────────────────────────────────────────────┘
 """)

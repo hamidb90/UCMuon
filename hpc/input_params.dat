@@ -13,6 +13,12 @@
 #
 #  Run with:
 #    sbatch run_ucmuon_gen.sh input_params.dat
+#
+#  This file is a neutral, valid DEMO: one borehole-style cylinder detector
+#  (r = 50 cm, 2 m long) at 30-32 m depth under a horizontal disk, Guan 2015
+#  spectrum, joint angular sampling (mode 6). Every choice below says why.
+#  Adapt the detector block, the energy floor, the margin and the disk radius
+#  together: they depend on each other through the depth.
 # =============================================================================
 
 # --- [0] Use built-in defaults? ----------------------------------------------
@@ -25,11 +31,11 @@
 # [1/7]  ENERGY RANGE
 # =============================================================================
 
-19.0                          # e_min  [GeV]  — minimum muon energy
-#                               Lower bound of generated spectrum.
-#                               Must be >= 1 GeV (clamped internally).
-#                               For MURAVES/Vesuvius cross-validation: 1.0 GeV
-#                               (Guan 2015 spectrum requires E_min >= 1 GeV).
+17.0                          # e_min  [GeV]  — minimum muon energy (total)
+#                               Demo: ≈ the CSDA threshold for 30 m of standard
+#                               rock (16.9 GeV), so no CPU is spent generating
+#                               muons that stop before the detector. Guan is
+#                               fitted from 1 GeV; use 1.0 for open-sky studies.
 
 1500.0                        # e_max  [GeV]  — maximum muon energy
 #                               Upper bound of generated spectrum.
@@ -45,7 +51,16 @@
 #   4 = Guan et al. (2015)  Modified Gaisser, arXiv:1509.06176
 #   5 = Frosin et al. (2025)  Guan formula with refitted params (a=3.512, b=1.388)
 #                              J. Phys. G 52, 035002
-1                             # spectrum_mode
+#   6 = Gaisser (1990)  plain formula, valid only for E > 100/cos(theta) GeV
+#   7 = Reyna (2006)    cos^3(theta) I_V(p cos(theta)), 1 < p < 2000/cos(theta) GeV/c
+#   8 = Cosmic electrons  E^-3 shape, no absolute normalisation
+#   Validity: CosmoALEPH (1) only above ~100 GeV/c; Guan/Frosin (4, 5) above 1 GeV.
+#   See docs/FLUX_NORMALISATION_AUDIT.md.
+4                             # spectrum_mode
+#                               Demo: Guan 2015, valid from 1 GeV at all zenith
+#                               angles. CosmoALEPH (1) is only valid above
+#                               ~100 GeV/c: at a 19 GeV floor it overestimates
+#                               the flux several-fold.
 
 # --- [2b]  PARMA parameters (only read when spectrum_mode = 3) ---------------
 # (These lines are skipped when spectrum_mode != 3)
@@ -77,10 +92,14 @@
 # --- Disk parameters (source_mode = 1) --------------------------------------
 0.0                           # disk center U  [m]  (0 = centred on origin)
 0.0                           # disk center V  [m]  (0 = centred on origin)
-500.0                         # disk radius    [m]
-#                               Rule of thumb: radius >= detector distance from axis
-#                               + generous margin (no solid-angle bias).
-#                               Vesuvius/MURAVES: ~500 m covers all directions.
+130.0                         # disk radius    [m]
+#                               Must contain every straight ray that reaches the
+#                               inflated detector within theta_max:
+#                               R >= (bottom depth + margin) tan(theta_max)
+#                                    + radius + margin = 34 m x tan 75° + 2.5 m
+#                               = 129 m for this demo. Smaller clips the
+#                               acceptance and biases the rate low; larger only
+#                               costs trials. (Vesuvius/MURAVES: ~500 m.)
 0.0                           # W fixed        [m]  (z = 0 → surface)
 0.0                           # tilt angle from plane normal  [deg]  (0 = flat)
 0.0                           # tilt azimuth                  [deg]  (0 = toward U axis)
@@ -104,11 +123,21 @@
 #   1 = Vertical only         (all muons downward along z)
 #   2 = cos²(θ)               (standard atmospheric muon distribution)
 #   3 = Uniform cone          (flat in solid angle up to θ_max)
-#   4 = Guan/Frosin P(θ|E)    (energy-dependent, self-consistent CDF per muon)
-2                             # angular_mode
+#   4 = Guan/Frosin P(θ|E)    (θ right for a given E, but E weighted by the
+#                               vertical spectrum: −30% above 100 GeV for Guan)
+#   5 = cos³(θ)
+#   6 = Joint J(p,θ) × projection onto the source surface   ← RECOMMENDED
+#       Draws p, direction and position together from the spectrum's own flux
+#       through the surface, for every spectrum (PARMA included). With mode 6
+#       "Live time = Tried / R", printed at the end, needs no event weights.
+#   Modes 1-5 are the legacy samplers, kept bit-exact for reproducing old runs.
+6                             # angular_mode
+#                               Demo: 6, joint sampling. Use 6 for new work.
 
-85.0                          # theta_max  [deg]  — maximum zenith angle
-#                               Applies to modes 2, 3, 4.
+75.0                          # theta_max  [deg]  — maximum zenith angle
+#                               Demo: 75°. Beyond it the slant path to 30 m depth
+#                               exceeds 116 m of rock and the rate is negligible.
+#                               Applies to modes 2-6.
 #                               85° covers near-horizontal muons; 70° is typical
 #                               for deep-underground applications.
 #                               Not read for angular_mode = 1.
@@ -116,7 +145,7 @@
 # =============================================================================
 # [5/7]  NUMBER OF MUONS
 # =============================================================================
-10000000                        # nmuons  — total muons to generate (all ranks combined)
+100000                        # nmuons  — muons to SAVE (detector hits), all ranks combined
 #                               MPI splits this evenly: each rank generates
 #                               floor(nmuons / nranks) muons, rank 0 gets remainder.
 #                               For production: 1e6 to 5e6.
@@ -131,7 +160,7 @@
 #                               selected output file.  The surface file (save_all)
 #                               still contains all generated muons regardless.
 
-2                             # ndet  — number of detector volumes (max 10)
+1                             # ndet  — number of detector volumes (max 10)
 
 # --- Detector 1 --------------------------------------------------------------
 #   Shape: 1=Cylinder (axis A→B + radius)   2=Box/AABB (xmin xmax ymin ymax zmin zmax)
@@ -143,25 +172,34 @@
 #   The axis need not be vertical — tilted detectors are supported.
 
 1                             # det_shape  (1=cylinder)
-3.0                           # safety_margin  [cm]  — expand detector by this amount
-#                               Use 0.0 for exact geometry; a few cm accounts for
-#                               reconstruction smearing / assembly tolerances.
+200.0                         # safety_margin  [cm]  — expand detector by this amount
+#                               The filter keeps muons whose STRAIGHT line hits the
+#                               inflated detector, so the margin must exceed the
+#                               multiple-scattering displacement, which is tens of
+#                               cm after tens of m of rock (e.g. σ_r ≈ 26 cm for
+#                               50 GeV after 40 m of standard rock). A 3 cm margin
+#                               at that depth keeps < 2% of a thin borehole
+#                               detector's hits. GUI → Helpers → MCS margin, or
+#                               gui/mcs_margin.py, suggests a value (2σ_r).
+#                               Demo: 2σ_r of the slowest muons reaching 30 m is
+#                               123 cm vertically and 185 cm at 60°; 200 cm
+#                               covers both.
 
-990.0   0.0   -9000.0        # cyl_A  (x, y, z)  [cm]  — bottom cap centre
-990.0   0.0   -3500.0        # cyl_B  (x, y, z)  [cm]  — top cap centre
-#   → Detector 1 axis: vertical cylinder at (x=990 cm, y=0) from z=-90 m to z=-35 m
+0.0   0.0   -3200.0          # cyl_A  (x, y, z)  [cm]  — bottom cap centre
+0.0   0.0   -3000.0          # cyl_B  (x, y, z)  [cm]  — top cap centre
+#   → Demo detector: vertical cylinder on the disk axis, z = -32 m to -30 m
 
-4.0                           # cyl_radius  [cm]  — cylinder radius
+50.0                          # cyl_radius  [cm]  — cylinder radius
 
-# --- Detector 2 --------------------------------------------------------------
-1                             # det_shape  (1=cylinder)
-3.0                           # safety_margin  [cm]
+# --- Detector 2 (example: set ndet = 2 above and uncomment) -----------------
+# 1                             # det_shape  (1=cylinder)
+# 3.0                           # safety_margin  [cm]
 
-0.0   -1650.0   -9000.0      # cyl_A  (x, y, z)  [cm]  — bottom cap centre
-0.0   -1650.0   -3500.0      # cyl_B  (x, y, z)  [cm]  — top cap centre
+# 0.0   -1650.0   -9000.0      # cyl_A  (x, y, z)  [cm]  — bottom cap centre
+# 0.0   -1650.0   -3500.0      # cyl_B  (x, y, z)  [cm]  — top cap centre
 #   → Detector 2 axis: vertical cylinder at (x=0, y=-1650 cm) from z=-90 m to z=-35 m
 
-4.0                           # cyl_radius  [cm]
+# 4.0                           # cyl_radius  [cm]
 
 # (For a box detector, replace the 5 lines above with:)
 # 2                           # det_shape  (2=box/AABB)

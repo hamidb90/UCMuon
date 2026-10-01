@@ -11,7 +11,7 @@ MIT License · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20826984.svg)
 
 UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, with applications to muography of geological structures, CO₂ storage monitoring, and glacier/bedrock imaging. It can be run interactively through a browser-based GUI on any laptop, or in batch mode on an HPC cluster using MPI-parallelised Fortran executables.
 
-- **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Bugaev/Gaisser 1998, Reyna-Bugaev 2006, cosmic electrons), three source geometries, OpenMP and MPI parallelism
+- **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Gaisser 1990, Reyna 2006, cosmic electrons; see [Surface spectra](#surface-spectra-validity-and-absolute-normalisation)), three source geometries, OpenMP and MPI parallelism
 - **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, PUMAS (backward/forward MC), Backward MC, UCMuon Terrain (DEM ray-tracing)
 - **Streamlit GUI** — interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
 - **HPC workflow** — MPI+OMP Fortran executables, SLURM scripts, automatic PHITS conversion
@@ -21,7 +21,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v1.1.2)
+## Status & scope (v1.2.0)
 
 The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
@@ -360,6 +360,41 @@ A quick check that the installation itself works is `bash test_run/run_test.sh` 
 
 ---
 
+## Surface spectra: validity and absolute normalisation
+
+Every rate and live time is only as good as the spectrum behind it, and each
+spectrum is valid only where its source fitted it. Audited against the papers
+in September 2026; the full report, with equation numbers and numerical checks
+against PDG and published data, is
+[`docs/FLUX_NORMALISATION_AUDIT.md`](docs/FLUX_NORMALISATION_AUDIT.md).
+
+| # | Spectrum | Source | Valid for | Vertical I(p > 1 GeV/c) [m⁻²s⁻¹sr⁻¹] |
+|---|---|---|---|---|
+| 1 | CosmoALEPH | power-law fit to Schmelling et al. 2013, Table 1 (vertical only) | **p ≳ 100 GeV/c** | 3200 (PDG ≈ 70): do not use below 100 GeV/c |
+| 2 | Power law E⁻³·⁷ | sampling shape | n/a | **no absolute normalisation** |
+| 3 | PARMA/EXPACS | Sato 2015/2016 | 0.1 GeV–100 TeV | 63 (sea level, 3 GV) |
+| 4 | Guan 2015 | arXiv:1509.06176, Eqs. 2–3 | E > 1 GeV, all θ | 60 |
+| 5 | Frosin 2025 | J. Phys. G 52, 035002, Table 4 | E > 1 GeV, all θ | 63 |
+| 6 | Gaisser 1990 | PDG 2022 Eq. 30.4, with Guan's cos θ* | **E > 100/cos θ GeV** | 842: do not use below 100 GeV |
+| 7 | Reyna 2006 | hep-ph/0604145, Eqs. 1–3: I = cos³θ · I_V(p cos θ) | 1 < p < 2000/cos θ GeV/c | 70.2 |
+| 8 | Cosmic e± E⁻³ | sampling shape | 10 MeV–1 GeV | **no absolute normalisation** |
+
+The generator, UCMuGen and the Python estimators warn when a spectrum is used
+outside its range or asked for a rate it cannot give. `tests/flux/` checks that
+the three implementations agree and that each spectrum matches the references.
+
+**Rates and live times.** One formula everywhere: live time T = N_tried / R,
+with R the rate of muons crossing the generation surface in the energy and
+zenith windows. The generators print it ("Surface rate R", "Live time"),
+`ucmugen::Generator::rate()` / `liveTime()` compute the same quantity, and the
+GUI uses it, weighting events of the legacy angular modes 1-5 to the true flux.
+**Angular mode 6** (joint J(p,θ) × surface projection) samples the flux itself
+and is recommended; the legacy modes draw momentum from the vertical spectrum
+and the angle separately (mode 4: −30% above 100 GeV, +7% at 15-30 GeV for
+Guan). Detector filter: the safety margin must exceed the multiple-scattering
+displacement (tens of cm at tens of metres of rock); the GUI warns and
+suggests one.
+
 ## Source-plane convention
 
 The generator supports three source planes: **XY** (z = const, depth in Z), **XZ** (y = const, depth in Y), and **YZ** (x = const, depth in X). All transport engines (Fortran and Python) automatically detect the source plane from the input file by finding the coordinate with near-zero variance, then use the correct momentum component for slant path computation.
@@ -591,11 +626,17 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for:
 | Koehne et al. (2013), CPC 184, 2070 | PROPOSAL cross-sections |
 | Alameddine et al. (2024), CPC 302, 109243 | PROPOSAL v7 |
 | Groom, Mokhov & Striganov (2001), ADNDT 78, 183 | dE/dx tables — Engines 1, 5, 6 |
-| Sato (2015), PLOS ONE 10(12) | PARMA/EXPACS spectrum |
-| Guan et al. (2015), arXiv:1509.06176 | Guan 2015 spectrum |
-| Frosin et al. (2025), J. Phys. G 52, 035002 | Frosin 2025 spectrum |
+| Schmelling et al. (2013), Astropart. Phys. 49, 1 | CosmoALEPH spectrum (mode 1) and μ⁺/μ⁻ ratio |
+| Sato (2015), PLOS ONE 10(12), e0144679 | PARMA/EXPACS spectrum (mode 3) |
+| Guan et al. (2015), arXiv:1509.06176 | Guan 2015 spectrum (mode 4) and cos θ* |
+| Frosin et al. (2025), J. Phys. G 52, 035002 | Frosin 2025 spectrum (mode 5) |
+| Gaisser (1990), *Cosmic Rays and Particle Physics* | Gaisser formula (mode 6) |
+| Reyna (2006), arXiv:hep-ph/0604145 | Reyna spectrum (mode 7) |
+| Bugaev et al. (1998), Phys. Rev. D 58, 054001 | functional form of mode 7; reference curve |
+| Tang et al. (2006), Phys. Rev. D 74, 053007 | modified Gaisser model (fast flux estimator) |
+| Particle Data Group (2022), PTEP 2022, 083C01, Sec. 30.3.1 | sea-level muon reference values, Gaisser formula (Eq. 30.4) |
 | Highland (1975), NIM 129, 497 | Multiple Coulomb scattering |
-| Lüscher (1994), CPC 79, 100 | RANLUX RNG |
+| Lüscher (1994), CPC 79, 100 | RANLUX RNG (MUSIC and serial transport engines) |
 | NASA/JPL SRTM (2000) | DEM source for Engine 6 |
 
 ---
@@ -607,11 +648,12 @@ If you use UCMuon, please cite it using the metadata in [`CITATION.cff`](CITATIO
 ```bibtex
 @software{ucmuon2026,
   author    = {Basiri, Hamid},
-  title     = {{UCMuon}: Open-source cosmic muon simulation suite for muography},
+  title     = {{UCMuon}: A simulation suite for cosmic-ray muon generation,
+               transport, and muography},
   year      = {2026},
-  publisher = {UCLouvain Muography Group},
+  publisher = {Zenodo},
   url       = {https://github.com/hamidb90/UCMuon},
-  doi       = {10.5281/zenodo.XXXXXXX}
+  doi       = {10.5281/zenodo.20826984}
 }
 ```
 

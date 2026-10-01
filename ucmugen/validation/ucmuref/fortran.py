@@ -48,7 +48,7 @@ SPECTRUM_NAMES = {
 }
 ANGULAR_NAMES = {
     1: "vertical", 2: "cos2", 3: "uniform-cone", 4: "guan-selfconsistent",
-    5: "cos3",
+    5: "cos3", 6: "joint",
 }
 SURFACE_NAMES = {1: "disk", 2: "rect", 3: "hemisphere"}
 
@@ -100,7 +100,7 @@ class GenConfig:
     hemi_cz_m: float = 0.0
 
     # [4/7] angular distribution
-    angular_mode: int = 2       # 1-5, see ANGULAR_NAMES
+    angular_mode: int = 2       # 1-6, see ANGULAR_NAMES
     theta_max_deg: float = 70.0
 
     # [5/7] statistics
@@ -116,7 +116,7 @@ class GenConfig:
         if self.spectrum not in SPECTRUM_NAMES:
             raise ValueError(f"spectrum must be 1-8, got {self.spectrum}")
         if self.angular_mode not in ANGULAR_NAMES:
-            raise ValueError(f"angular_mode must be 1-5, got {self.angular_mode}")
+            raise ValueError(f"angular_mode must be 1-6, got {self.angular_mode}")
         if self.source_mode not in SURFACE_NAMES:
             raise ValueError(f"source_mode must be 1-3, got {self.source_mode}")
         if self.emax < self.emin:
@@ -194,7 +194,7 @@ class GenConfig:
             L.append(repr(float(self.hemi_cz_m)))
 
         L.append(str(self.angular_mode))    # [4/7] angular distribution
-        if self.angular_mode in (2, 3, 4, 5):
+        if self.angular_mode in (2, 3, 4, 5, 6):
             L.append(repr(float(self.theta_max_deg)))
 
         L.append(str(int(self.nmuons)))     # [5/7] statistics

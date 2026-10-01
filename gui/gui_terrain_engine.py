@@ -1613,8 +1613,10 @@ def render_terrain_tab(script_dir, project_dir,
                           st.session_state.get("parma_lat", 40.821)), 40.821)
             _sg_lon = _sf(st.session_state.get("terrain_lon",
                           st.session_state.get("parma_lon", 14.426)), 14.426)
-            _sg_alt = _sf(st.session_state.get("terrain_alt",
-                          st.session_state.get("parma_alt", 900.0)), 900.0)
+            # terrain_alt is in m; the Generator's parma_alt is in km
+            _sg_alt = (_sf(st.session_state["terrain_alt"], 900.0)
+                       if "terrain_alt" in st.session_state
+                       else _sf(st.session_state.get("parma_alt", 0.9), 0.9) * 1000.0)
             if _GEOM_ENGINE_OK:
                 synth_dem = render_geometry_builder(_sg_lat, _sg_lon, _sg_alt)
             else:
@@ -1694,7 +1696,7 @@ def render_terrain_tab(script_dir, project_dir,
         det_cell_id = None
         det_lat = _sf(st.session_state.get("parma_lat",  40.832), 40.832)
         det_lon = _sf(st.session_state.get("parma_lon",  14.412), 14.412)
-        det_alt = _sf(st.session_state.get("parma_alt",  784.0),  784.0)
+        det_alt = _sf(st.session_state.get("parma_alt",  0.784),  0.784) * 1000.0   # km -> m
         underground = False
 
         if _is_csg_mode:
@@ -1749,9 +1751,12 @@ def render_terrain_tab(script_dir, project_dir,
                 _sf(st.session_state.get("parma_lon", 4.615), 4.615),
                 0.0001, format="%.6f", key="terrain_lon",
             )
+            # The Generator's PARMA altitude is in km; this field is in m
+            # (up to v1.2.0 the km value was taken as metres).
+            _parma_alt_km = st.session_state.get("parma_alt")
             det_alt = _gp3.number_input(
                 "Altitude [m a.s.l.]", -500.0, 9000.0,
-                _sf(st.session_state.get("parma_alt", 90.0), 90.0),
+                _sf(_parma_alt_km, 0.09) * 1000.0 if _parma_alt_km is not None else 90.0,
                 1.0, key="terrain_alt",
             )
 
@@ -2499,6 +2504,13 @@ def render_terrain_tab(script_dir, project_dir,
                     st.session_state["terrain_result_underground"] = underground
                     st.session_state["terrain_result_det_cell"]  = det_cell_id  # None for DEM
                     st.session_state["ug_file"] = t_outfile
+                    # Remember the surface file it came from, so Results gives
+                    # it the live time of that generator run (ucmuon_gui.py
+                    # _file_from_last_run).
+                    if t_infile:
+                        _srcs = dict(st.session_state.get("ug_sources") or {})
+                        _srcs[str(Path(t_outfile).resolve())] = str(Path(t_infile).resolve())
+                        st.session_state["ug_sources"] = _srcs
                     # Also expose to Tab 3 results
                     st.session_state["music_nmuons_transported"] = n_total_t
                     st.session_state["music_nmuons_survived"]    = n_surv
@@ -3308,7 +3320,7 @@ def render_terrain_tab(script_dir, project_dir,
                     # ── 4 — Integrated muon flux vs elevation (backward MC) ────────────────
                     st.markdown("#### 4 — Integrated muon flux vs elevation at selected azimuth")
                     st.caption(
-                        "Backward MC (Guan et al. 2015 CSDA + stochastic correction) run for each "
+                        "Backward MC (CSDA + stochastic correction; Guan et al. 2015 by default) run for each "
                         "elevation bin at the selected azimuth, for both terrain-blocked and "
                         "open-sky directions."
                     )
@@ -3322,49 +3334,49 @@ def render_terrain_tab(script_dir, project_dir,
                         )
                         _emin_comp = st.number_input("E_min [GeV]", 0.1, 100.0, 1.0, 0.1, key="comp_emin")
                         _emax_comp = st.number_input("E_max [GeV]", 10.0, 5000.0, 1000.0, 10.0, key="comp_emax")
+                        _spec_name_comp = {1: "CosmoALEPH", 2: "power law", 3: "Guan 2015",
+                                           4: "Frosin 2025"}[_spec_mode_comp]
+                        _spec_note_comp = _bmc.spectrum_range_warning(_spec_mode_comp, _emin_comp)
+                        if _spec_note_comp:
+                            st.warning("⚠️  " + _spec_note_comp)
 
                         if st.button("▶  Compute flux vs elevation (backward MC)", key="comp_flux_btn",
                                      width='stretch', type="primary"):
                             _flux_terrain  = np.full(len(ze_c), np.nan)
                             _flux_opensky  = np.full(len(ze_c), np.nan)
                             _prog_comp = st.progress(0.0, text="⏳  Running backward MC per elevation bin…")
-                            for _iz_c, _ze_c_v in enumerate(ze_c):
-                                _el_v = 90.0 - _ze_c_v
-                                if _el_v <= 0:
-                                    continue
-                                # Open-sky flux: depth→0 (thin air layer)
-                                try:
-                                    _res_sky = _bmc.backward_mc_flux(
-                                        depth_m=0.01, rho=1.0, mat_id=1,
-                                        spectrum_mode=_spec_mode_comp,
-                                        E_min_GeV=_emin_comp, E_max_GeV=_emax_comp,
-                                        theta_max_deg=_ze_c_v, n_E=40, n_theta=1,
-                                        mode=1,
-                                    )
-                                    _dze  = ze_c[1] - ze_c[0] if len(ze_c) > 1 else 5.0
-                                    _daz  = 360.0 / len(az_c)
-                                    _dO   = np.radians(_daz) * np.radians(_dze) * np.cos(np.radians(_ze_c_v))
-                                    _flux_opensky[_iz_c] = _res_sky["rate_m2_s"] / max(_dO, 1e-6)
-                                except Exception:
-                                    pass
-                                # Terrain flux: use slant overburden for this bin
-                                if not _sky_slice[_iz_c] and ob_map[_az_slice_idx, _iz_c] > 1.0:
-                                    _ob_sl = float(ob_map[_az_slice_idx, _iz_c])
-                                    _depth = _ob_sl / (_rho_comp * 100.0) * np.cos(np.radians(_ze_c_v))
-                                    _depth = max(_depth, 0.1)
+                            with _bmc.collect_range_warnings() as _beyond:
+                                for _iz_c, _ze_c_v in enumerate(ze_c):
+                                    _el_v = 90.0 - _ze_c_v
+                                    if _el_v <= 0:
+                                        continue
+                                    # Directional flux [m⁻² s⁻¹ sr⁻¹] at this zenith angle,
+                                    # open sky (X = 0) and through the slant overburden.
+                                    # Up to v1.1.2 this called backward_mc_flux with
+                                    # n_theta = 1 (a rate over the cone 0..ze, at ze/2)
+                                    # and divided by one pixel's solid angle: 10²-10⁶x
+                                    # too high, and dependent on the grid.
                                     try:
-                                        _res_ter = _bmc.backward_mc_flux(
-                                            depth_m=_depth, rho=_rho_comp, mat_id=1,
-                                            spectrum_mode=_spec_mode_comp,
+                                        _flux_opensky[_iz_c] = _bmc.directional_flux(
+                                            0.0, np.radians(_ze_c_v), _spec_mode_comp,
                                             E_min_GeV=_emin_comp, E_max_GeV=_emax_comp,
-                                            theta_max_deg=_ze_c_v, n_E=40, n_theta=1,
-                                            mode=1,
-                                        )
-                                        _flux_terrain[_iz_c] = _res_ter["rate_m2_s"] / max(_dO, 1e-6)
+                                            n_E=40, mode=1)
                                     except Exception:
                                         pass
-                                _prog_comp.progress((_iz_c + 1) / len(ze_c),
-                                                    text=f"⏳  el = {_el_v:.1f}°  ({_iz_c+1}/{len(ze_c)})")
+                                    if not _sky_slice[_iz_c] and ob_map[_az_slice_idx, _iz_c] > 1.0:
+                                        try:
+                                            _flux_terrain[_iz_c] = _bmc.directional_flux(
+                                                float(ob_map[_az_slice_idx, _iz_c]),
+                                                np.radians(_ze_c_v), _spec_mode_comp,
+                                                E_min_GeV=_emin_comp, E_max_GeV=_emax_comp,
+                                                n_E=40, mode=1)
+                                        except Exception:
+                                            pass
+                                    _prog_comp.progress((_iz_c + 1) / len(ze_c),
+                                                        text=f"⏳  el = {_el_v:.1f}°  ({_iz_c+1}/{len(ze_c)})")
+                            _range_note = _bmc.range_summary(_beyond, len(ze_c))
+                            if _range_note:
+                                st.warning("⚠️  " + _range_note)
                             st.session_state["comp_flux_terrain"] = _flux_terrain
                             st.session_state["comp_flux_opensky"] = _flux_opensky
                             st.session_state["comp_flux_el"]      = _el_c
@@ -3381,7 +3393,7 @@ def render_terrain_tab(script_dir, project_dir,
                                 _fig_flux.add_trace(go.Scatter(
                                     x=_el_ax[_ok_sky], y=_fo[_ok_sky],
                                     mode="lines+markers",
-                                    name=f"UCMuon open-sky (Guan, E={_emin_comp:.1f}–{_emax_comp:.0f} GeV)",
+                                    name=f"UCMuon open-sky ({_spec_name_comp}, E={_emin_comp:.1f}–{_emax_comp:.0f} GeV)",
                                     line=dict(color="#ffd700", width=2, dash="dash"),
                                     marker=dict(size=6, symbol="circle", color="#ffd700"),
                                 ))

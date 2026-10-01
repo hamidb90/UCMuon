@@ -175,7 +175,7 @@ echo "============================================================"
 OUTFILE="logs/ucmuon_gen_${SLURM_JOB_ID}.out"
 if grep -q "UCMuon_gen  COMPLETE" "$OUTFILE" 2>/dev/null; then
     echo "  Status: COMPLETED NORMALLY"
-    grep -E "Total saved|Total tried|Acceptance rate|Parallelisation" "$OUTFILE" | tail -6
+    grep -E "Total saved|Total tried|Acceptance rate|Surface rate|Live time|Parallelisation" "$OUTFILE" | tail -8
 else
     echo "  Status: DID NOT COMPLETE"
     grep "Saved .* / tried" "$OUTFILE" | tail -$((NRANKS * 2))

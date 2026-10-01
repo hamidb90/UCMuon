@@ -38,6 +38,8 @@
 #include <cmath>
 #include <cstdio>
 #include <memory>
+#include <thread>
+#include <vector>
 
 using namespace ucmugen;
 
@@ -243,6 +245,44 @@ int main() {
   expect_true("uninstall restores the built-in charge ratio",
               charge_ratio(Spectrum::Parma, 10.0) == sea);
   parma::install(site);
+
+  // Thread safety. PARMA memoises its last angular-coefficient evaluation in
+  // function statics; with one Generator per Geant4 worker, threads calling
+  // at different energies read each other's half-written cache. The cache is
+  // thread_local and install() loads the tables, so concurrent evaluation
+  // must give bit-identical results to a single thread.
+  std::printf("\n6. concurrent evaluation (8 threads)\n");
+  {
+    std::vector<double> ps, cs, ref;
+    for (int i = 0; i < 40; ++i)
+      for (int j = 0; j < 12; ++j) {
+        ps.push_back(std::pow(10.0, -0.3 + 3.3 * i / 39.0));
+        cs.push_back(0.05 + 0.95 * j / 11.0);
+      }
+    for (size_t k = 0; k < ps.size(); ++k)
+      ref.push_back(flux::intensity(Spectrum::Parma, ps[k], cs[k]));
+    constexpr int kThreads = 8, kRepeat = 50;
+    std::vector<long> bad(kThreads, 0);
+    std::vector<std::thread> pool;
+    for (int t = 0; t < kThreads; ++t)
+      pool.emplace_back([&, t] {
+        // Each thread walks the grid in its own order, so neighbouring calls
+        // on different threads are at different energies.
+        for (int r = 0; r < kRepeat; ++r)
+          for (size_t k = 0; k < ps.size(); ++k) {
+            const size_t q = (k * (2 * t + 1) + r) % ps.size();
+            if (flux::intensity(Spectrum::Parma, ps[q], cs[q]) != ref[q]) ++bad[t];
+          }
+      });
+    for (auto& th : pool) th.join();
+    long nbad = 0;
+    for (long b : bad) nbad += b;
+    char detail[96];
+    std::snprintf(detail, sizeof(detail), "%ld of %ld evaluations differ", nbad,
+                  long(kThreads) * kRepeat * long(ps.size()));
+    expect_true("8 threads reproduce the single-thread intensities exactly",
+                nbad == 0, detail);
+  }
 
   std::printf("\n%s (%d failure%s)\n",
               g_failures ? "FAILURES PRESENT" : "ALL PASSED", g_failures,

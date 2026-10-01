@@ -6,12 +6,15 @@ MIT License 2026
 Provides fast analytical estimates for muon flux, transmission, exposure time,
 and minimum detectable energy through rock overburdens.
 
-Five sea-level flux models are implemented:
-  "reyna_bugaev"  — Reyna (2006) / Bugaev et al. (1998) [recommended]
-  "bugaev"        — Bugaev et al. (1998) / Gaisser (1990)
-  "gaisser_tang"  — Gaisser & Tang (1984) / PDG 2022 §30
-  "guan_2015"     — Guan et al. (2015) arXiv:1509.06176 — correct cosθ* (Earth curvature)
-  "frosin_2025"   — Frosin et al. (2025) J. Phys. G 52, 035002 — re-fitted on 304 datasets
+Five sea-level flux models are implemented (the keys are historical; see
+docs/FLUX_NORMALISATION_AUDIT.md for the audit against the source papers):
+  "reyna_bugaev"  Reyna (2006) Eqs. 1-3, = generator spectrum 7 [recommended]
+  "bugaev"        Gaisser (1990) formula (PDG 2022 Eq. 30.4) with Guan's cosθ*,
+                    = generator spectrum 6.  Not Bugaev (1998).  Valid E > 100/cosθ
+                    GeV only
+  "gaisser_tang"  Tang et al. (2006) modified Gaisser formula, PRD 74, 053007
+  "guan_2015"     Guan et al. (2015) arXiv:1509.06176 Eq. 3, = spectrum 4
+  "frosin_2025"   Frosin et al. (2025) J. Phys. G 52, 035002, = spectrum 5
 
 All five models are azimuth-symmetric at sea level.  Azimuth dependence
 requires the PARMA interface (spectrum mode ③ in the generator tab).
@@ -99,62 +102,117 @@ def _T_of_R(R_gcm2: float | np.ndarray) -> float | np.ndarray:
 #  All return differential flux dΦ/dT [cm⁻²s⁻¹sr⁻¹GeV⁻¹] at (T [GeV], θ [deg])
 # ---------------------------------------------------------------------------
 
+# Reyna (2006), arXiv:hep-ph/0604145: Eq. 3 with the Sec. 4 "Best Fit"
+# coefficients, I_V in cm^-2 s^-1 sr^-1 (GeV/c)^-1.  Same constants as
+# REYNA_C0..C4 in src/generator/ucmuon_source_module.f90 and UCMuGen.h.
+_REYNA_C = (0.00253, 0.2455, 1.288, -0.2555, 0.0209)
+
+
 def _reyna_bugaev(T_GeV: np.ndarray, theta_deg: float) -> np.ndarray:
     """
-    Reyna (2006) / Bugaev (1998) vertical muon spectrum.
-    Reyna Eq. 3: log₁₀(p³ × I_vert) = c₀x³+c₁x²+c₂x+c₃  (x = log₁₀(p))
-    I_vert = 10^polynomial / p³ × 100   [cm⁻²s⁻¹sr⁻¹(GeV/c)⁻¹]
+    Reyna (2006) differential intensity, arXiv:hep-ph/0604145:
 
-    Derivation of the ×100 factor:
-      Reyna fitted coefficients with I_vert in 10⁻² m⁻²sr⁻¹s⁻¹(GeV/c)⁻¹.
-      ×10⁻² (implicit) × ×10⁴ (m²→cm²) = ×100.
-    Validation: integrated above 1 GeV → ~6.2×10⁻³ cm⁻²sr⁻¹s⁻¹
-                PDG reference: ~7×10⁻³ cm⁻²sr⁻¹s⁻¹ (12% agreement) ✓
+        I(p, θ) = cos³θ · I_V(ζ),   ζ = p cosθ                    (Eqs. 1-2)
+        I_V(x)  = c1 · x^-(c2 + c3 y + c4 y² + c5 y³),  y = log10 x   (Eq. 3)
+
+    with (c1..c5) = (0.00253, 0.2455, 1.288, -0.2555, 0.0209) in
+    cm⁻²s⁻¹sr⁻¹(GeV/c)⁻¹, the same function as generator spectrum 7.
+    Vertical integral above 1 GeV/c: 7.02e-3 cm⁻²s⁻¹sr⁻¹ (PDG: ≈7e-3).
+    Validity (Sec. 4): 1 GeV/c < p < 2000 GeV/c / cosθ.
+
+    Returns dΦ/dT [cm⁻²s⁻¹sr⁻¹GeV⁻¹], i.e. dΦ/dp · dp/dT with dp/dT = E/p.
     """
     cos_th = math.cos(math.radians(theta_deg))
-    p = np.maximum(np.sqrt((T_GeV + M_MU_GEV)**2 - M_MU_GEV**2), 0.5)  # [GeV/c]
-    log10_p = np.log10(p)
-    c0, c1, c2, c3 = 0.00253, -0.2455, 1.288, -4.25
-    log10_p3I = c0*log10_p**3 + c1*log10_p**2 + c2*log10_p + c3
-    # I_vert [cm⁻²s⁻¹sr⁻¹(GeV/c)⁻¹]
-    phi_vert = 10.0**log10_p3I / (p**3) * 100.0
-    # Angular dependence: cos²θ* approximation (Reyna Eq. 4)
-    cos_th_star = np.sqrt((cos_th**2 + 0.102**2) / (1.0 + 0.102**2))
-    phi_p = phi_vert * cos_th_star**1.85
-    # Convert dΦ/dp → dΦ/dT via Jacobian dp/dT = E/p (T=E−m → dT=dE, dp/dE=E/p)
-    E = T_GeV + M_MU_GEV
-    return phi_p * (E / p)   # [cm⁻²s⁻¹sr⁻¹GeV⁻¹]
+    T = np.asarray(T_GeV, dtype=float)
+    if cos_th <= 0.0:
+        return np.zeros_like(T)
+    E = T + M_MU_GEV
+    p = np.sqrt(np.maximum(E**2 - M_MU_GEV**2, 0.0))          # [GeV/c]
+    zeta = np.maximum(p * cos_th, 1e-300)
+    y = np.log10(zeta)
+    c1, c2, c3, c4, c5 = _REYNA_C
+    phi_p = cos_th**3 * c1 * zeta**-(c2 + c3*y + c4*y**2 + c5*y**3)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(p > 0.0, phi_p * E / p, 0.0)
 
 
 def _bugaev(T_GeV: np.ndarray, theta_deg: float) -> np.ndarray:
     """
-    Bugaev et al. (1998) / Gaisser parametrisation.
-    dΦ/dE [cm⁻²s⁻¹sr⁻¹GeV⁻¹]
+    Gaisser (1990) pion+kaon formula (PDG 2022, Cosmic Rays, Eq. 30.4; Guan
+    2015 Eq. 1):
+
+        dΦ/dE = 0.14 E^-2.7 [1/(1 + 1.1 E cosθ*/115) + 0.054/(1 + 1.1 E cosθ*/850)]
+
+    in cm⁻²s⁻¹sr⁻¹GeV⁻¹, with Guan's cosθ* (Eq. 2) for θ, i.e. Guan Eq. 3 with
+    a = 0, b = 1 and the same function as generator spectrum 6.  The key is
+    historical: this is not the Bugaev et al. (1998) fit.
+    Valid only for E > 100/cosθ GeV (muon decay and energy loss neglected);
+    below that it overestimates the flux (x12 the PDG vertical integral above
+    1 GeV).  The prefactor was 1.4e-2 before the 2026-09 audit, 10x too low.
     """
-    cos_th = math.cos(math.radians(theta_deg))
-    E = T_GeV + M_MU_GEV
-    # Gaisser approximation with pion and kaon terms
-    # Gaisser (1990) Eq. 15.3; A in cm⁻²s⁻¹sr⁻¹GeV⁻¹
-    A = 1.4e-2
-    phi = (A * E**(-2.7) *
-           (1.0 / (1.0 + 1.1*E*cos_th/115.0) +
-            0.054 / (1.0 + 1.1*E*cos_th/850.0)))
-    return phi
+    return _guan_frosin(T_GeV, theta_deg, a=0.0, b=1.0)
 
 
 def _gaisser_tang(T_GeV: np.ndarray, theta_deg: float) -> np.ndarray:
     """
-    Gaisser & Tang (1984) / PDG 2022 §30.3 Eq. 30.6
-    dΦ/dE [cm⁻²s⁻¹sr⁻¹GeV⁻¹]
+    Tang et al. (2006), Phys. Rev. D 74, 053007, Sec. II.B: the modified
+    Gaisser parametrisation, dΦ/dE [cm⁻²s⁻¹sr⁻¹GeV⁻¹],
+
+        dN/dE dΩ = A · 0.14 E^-2.70 [1/(1 + 1.1 Ẽ cosθ*/115)
+                                     + 0.054/(1 + 1.1 Ẽ cosθ*/850) + r_c]   (Eq. 3)
+
+    with cosθ* from Eq. 10 (Guan's parametrisation, same P1..P5), in three
+    segments of the surface energy E:
+      E > 100/cosθ*          A = 1, Ẽ = E, r_c = 0 (plain Gaisser)
+      1/cosθ* < E ≤ 100/cosθ*
+                             r_c = 1e-4                                      (Eq. 4)
+                             Ẽ = E + Δ, Δ = 2.06e-3 (950/cosθ* − 90) GeV    (Eqs. 5-6)
+                             A = 1.1 (90 √(cosθ + 0.001) / 1030)^(4.5/(Ẽ cosθ*))
+                             (plain cosθ inside the root)                   (Eq. 7)
+      E ≤ 1/cosθ*            E → (3E + 7 secθ*)/10, then as above           (Eq. 9)
+    Fitted to the world data set; the paper reports agreement within 40% in
+    the worst case (E < 10 GeV, θ > 85°).
+
+    Eq. 7 as printed has E, not Ẽ, in the exponent. Evaluated that way the
+    formula falls orders of magnitude below the paper's own fitted curves in
+    Fig. 1 (θ = 0° at 1 GeV: 2.7e-6 against ≈2e-3 for E^2.7 dN/dE dΩ;
+    θ = 60° at 1 GeV: 1.6e-8 against ≈4e-4) and gives a vertical intensity of
+    22 m⁻²s⁻¹sr⁻¹ above 1 GeV/c (PDG: ≈70). With Ẽ in the exponent it
+    reproduces Fig. 1 at every angle shown (3.0e-3 and 3.8e-4 at those two
+    points) and gives 60 m⁻²s⁻¹sr⁻¹. The printed E is taken to be a typo for
+    Ẽ; see docs/FLUX_NORMALISATION_AUDIT.md. Before the 2026-09 audit this key
+    held the Gaisser formula times an unexplained (1 + 0.054E/800) with a
+    prefactor 10x low.
     """
     cos_th = math.cos(math.radians(theta_deg))
-    E = T_GeV + M_MU_GEV
-    A = 1.4e-2
-    phi = (A * E**(-2.7) *
-           (1.0 / (1.0 + 1.1*E*cos_th/115.0) +
-            0.054 / (1.0 + 1.1*E*cos_th/850.0)) *
-           (1.0 + 0.054*E/800.0))
-    return phi
+    cs = _guan_cos_star(cos_th)
+    E0 = np.asarray(T_GeV, dtype=float) + M_MU_GEV
+    E = np.where(E0 <= 1.0 / cs, (3.0 * E0 + 7.0 / cs) / 10.0, E0)       # Eq. 9
+    high = E0 > 100.0 / cs
+    delta = 2.06e-3 * (950.0 / cs - 90.0)                                  # Eq. 5
+    E_t = np.where(high, E, E + delta)                                     # Eq. 6
+    r_c = np.where(high, 0.0, 1.0e-4)                                      # Eq. 4
+    A = np.where(high, 1.0,
+                 1.1 * (90.0 * math.sqrt(max(cos_th, 0.0) + 0.001) / 1030.0)
+                 ** (4.5 / (E_t * cs)))                 # Eq. 7, Ẽ: see above
+    phi = A * 0.14 * E ** (-2.70) * (1.0 / (1.0 + 1.1 * E_t * cs / 115.0)
+                                     + 0.054 / (1.0 + 1.1 * E_t * cs / 850.0)
+                                     + r_c)                                # Eq. 3
+    return np.where(np.isfinite(phi) & (phi > 0.0), phi, 0.0)
+
+
+# CosmoALEPH: power-law fit 10^3.8467 p^-3.1952 [m^-2 s^-1 sr^-1 (GeV/c)^-1] to
+# the vertical spectrum of Schmelling et al. (2013), Table 1, 112-2239 GeV/c.
+# Vertical-only, returned isotropic as in the generator and UCMuGen.  Not
+# valid below ~100 GeV/c.  Not offered in MODEL_LABELS (the GUI dropdowns);
+# used by the backward MC for its spectrum 1.
+def _cosmoaleph(T_GeV: np.ndarray, theta_deg: float) -> np.ndarray:
+    """CosmoALEPH dΦ/dT [cm⁻²s⁻¹sr⁻¹GeV⁻¹]; isotropic, valid p ≳ 100 GeV/c."""
+    E = np.asarray(T_GeV, dtype=float) + M_MU_GEV
+    p = np.sqrt(np.maximum(E**2 - M_MU_GEV**2, 0.0))
+    with np.errstate(divide="ignore", invalid="ignore"):
+        return np.where(p > 0.0,
+                        10.0**3.8467 * 1.0e-4 * p**-3.1952 * E / p, 0.0)
 
 
 # ---------------------------------------------------------------------------
@@ -166,11 +224,11 @@ _GUAN_P2    = -0.068287
 _GUAN_P3    =  0.958633
 _GUAN_P4    =  0.0407253
 _GUAN_P5    =  0.817285
-_GUAN_DENOM =  0.99144315   # = sqrt(1 + P1² + P2 + P4) normalisation factor
+_GUAN_DENOM =  0.99144315   # = sqrt(1 + P1² + P2 + P4), Guan Eq. 2
 _GUAN_EPI   =  115.0        # [GeV]  effective pion critical energy
 _GUAN_EK    =  850.0        # [GeV]  effective kaon critical energy
 _GUAN_KF    =    0.054      # kaon / (pion + kaon) fraction
-_GUAN_PRE   =    0.14       # normalisation [cm⁻²s⁻¹sr⁻¹GeV^{1.7}] — matches Fortran GUAN_PRE
+_GUAN_PRE   =    0.14       # [cm⁻²s⁻¹sr⁻¹GeV⁻¹ at 1 GeV], Guan Eq. 1/3, = Fortran GUAN_PRE
 _GUAN_IDX   =   -2.7        # Gaisser spectral index
 
 
@@ -249,9 +307,9 @@ _MODELS = {
 
 # Human-readable labels (used in the GUI dropdown)
 MODEL_LABELS: dict[str, str] = {
-    "reyna_bugaev": "Reyna–Bugaev (2006) ← recommended",
-    "bugaev":       "Bugaev (1998) / Gaisser",
-    "gaisser_tang": "Gaisser–Tang (1984)",
+    "reyna_bugaev": "Reyna (2006) ← recommended",
+    "bugaev":       "Gaisser (1990), cosθ*  [E > 100/cosθ GeV only]",
+    "gaisser_tang": "Tang et al. (2006) modified Gaisser",
     "guan_2015":    "Guan et al. (2015)  [a=3.64, b=1.29]",
     "frosin_2025":  "Frosin et al. (2025) [a=3.512, b=1.388]",
 }
@@ -268,6 +326,33 @@ def _altitude_correction(altitude_m: float) -> float:
     Based on exponential atmosphere model: φ(h) ≈ φ₀ · exp(h / 8500).
     """
     return math.exp(altitude_m / 8500.0)
+
+
+def validity_warning(model: str, T_min_GeV: float, theta_deg: float = 0.0) -> str | None:
+    """
+    A one-line warning when `model` is evaluated below the energy its source
+    fitted, or None.  Same limits as ucmugen::flux::validity_warnings:
+    Reyna p > 1 GeV/c (Reyna 2006 Sec. 4); Guan/Frosin E > 1 GeV (Frosin 2025
+    Sec. 3.2); plain Gaisser E > 100/cosθ GeV (PDG 2022 Eq. 30.4, Guan 2015
+    Sec. 1); Tang et al. (2006) fitted 0.1 GeV-10 TeV, 0-87° (their Fig. 1),
+    up to 40% off at E < 10 GeV and θ > 85°.  1% tolerance, so E_min = 1 GeV
+    does not trip a 1 GeV/c limit.
+    """
+    E = T_min_GeV + M_MU_GEV
+    p = math.sqrt(max(E * E - M_MU_GEV**2, 0.0))
+    c = max(math.cos(math.radians(theta_deg)), 1e-3)
+    if model == "reyna_bugaev" and p < 0.99:
+        return f"Reyna (2006) is fitted for p > 1 GeV/c; p_min = {p:.3g} GeV/c."
+    if model in ("guan_2015", "frosin_2025") and E < 0.99:
+        return f"Guan/Frosin are fitted to data above 1 GeV; E_min = {E:.3g} GeV."
+    if model == "gaisser_tang" and theta_deg > 85.0 and E < 10.0:
+        return ("Tang et al. (2006) report up to 40% disagreement with data at "
+                "E < 10 GeV and θ > 85° (Sec. II.B).")
+    if model == "bugaev" and E < 0.99 * 100.0 / c:
+        return (f"The Gaisser (1990) formula is valid only for E > 100/cosθ = "
+                f"{100.0 / c:.0f} GeV; at E_min = {E:.3g} GeV it overestimates "
+                f"the flux (x12 the PDG vertical integral above 1 GeV).")
+    return None
 
 
 # ---------------------------------------------------------------------------
@@ -308,7 +393,8 @@ def integrated_flux(
     theta_deg : float
         Zenith angle [°].
     model : str
-        Flux model: "reyna_bugaev" (recommended), "bugaev", "gaisser_tang".
+        Flux model: "reyna_bugaev" (recommended), "guan_2015", "frosin_2025",
+        "gaisser_tang" (Tang et al. 2006), "bugaev" (plain Gaisser, E > 100/cosθ).
     altitude_m : float
         Altitude above sea level [m] for flux correction.
 

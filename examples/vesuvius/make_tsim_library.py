@@ -3,19 +3,11 @@
 #
 # Run from the repo root:   python3 examples/vesuvius/make_tsim_library.py
 #
-# ── DEM dependency ────────────────────────────────────────────────────────────
-# This script needs a Vesuvius DEM at  misc/dem_site.tif  (a GeoTIFF covering the
-# summit region around the MURAVES detector at 40.8271 N, 14.4006 E). GeoTIFFs are
-# gitignored (see .gitignore: *.tif), so the file is NOT shipped in the repo — the
-# tsim_library/ output it produces IS shipped, so you only need the DEM to
-# *regenerate* the library, not to use it.
-#
-# To obtain the DEM (see README §"Get a DEM file" for full options):
-#   • GUI:  Tab 2 → UCMuon Terrain → Section 1 → "Auto-download" (no account), OR
-#   • CLI:  pip install elevation && \
-#           eio clip -o misc/dem_site.tif --bounds 14.30 40.75 14.50 40.90
-#           (bounds = LON_W LAT_S LON_E LAT_N around Vesuvius), OR
-#   • OpenTopography SRTM GL1 30 m → export GeoTIFF → save as misc/dem_site.tif
+# ── DEM ──────────────────────────────────────────────────────────────────────
+# Uses the DEM bundled with the example, examples/vesuvius/vesuvius_dem.tif
+# (SRTM GL1 30 m, see DEM_SOURCE.md). Up to v1.1.2 it read misc/dem_site.tif, a
+# larger tile that is not in the repository; both give a bit-identical overburden
+# map for this detector (checked 2026-09-30), so the switch changes no output.
 # ──────────────────────────────────────────────────────────────────────────────
 import sys, time, numpy as np
 sys.path.insert(0, 'gui')
@@ -26,7 +18,7 @@ RHO_REF = 2.65
 RHOS = [1.5, 2.0, 2.5, 2.65, 3.0]
 OUT = 'examples/vesuvius/tsim_library'
 
-DEM_PATH = 'misc/dem_site.tif'           # gitignored; see header note to obtain it
+DEM_PATH = 'examples/vesuvius/vesuvius_dem.tif'   # bundled; see DEM_SOURCE.md
 elev, transform = td.load_dem(DEM_PATH)
 t0 = time.time()
 az_c, ze_c, ob_ref, sky = td.compute_overburden_map(
@@ -39,8 +31,15 @@ prev_T = None
 for rho in RHOS:
     t1 = time.time()
     ob = ob_ref * (rho / RHO_REF)        # uniform-density scaling, no re-trace
+    # Backward-MC spectrum 3 = Guan 2015, from 1 GeV (its fitted range) to
+    # 2500 GeV, as ucmuon_vesuvius_muraves.py uses. The library up to v1.1.2
+    # used spectrum 1 (CosmoALEPH) with the open-sky integral from 0.5 GeV:
+    # CosmoALEPH is a fit above ~100 GeV/c and overestimates the flux 46x in
+    # the integral above 1 GeV/c, so Phi_sky, and every T = Phi_rock/Phi_sky,
+    # rested on that extrapolation (docs/FLUX_NORMALISATION_AUDIT.md).
     fmap, osky = td.compute_flux_map(az_c, ze_c, ob, sky, rho,
-                                     spectrum_mode=1, mode=1, n_E=40,
+                                     spectrum_mode=3, mode=1, n_E=40,
+                                     E_min_GeV=1.0, E_max_GeV=2500.0,
                                      script_dir='gui')
     T = td.compute_transmission_map(fmap, osky)
     # validation

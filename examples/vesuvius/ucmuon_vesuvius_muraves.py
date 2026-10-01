@@ -166,33 +166,31 @@ def cone_overburden(az_c: np.ndarray, ze_c: np.ndarray,
 
 def _opensky_flux(ze_c: np.ndarray, spec_mode: int,
                   E_min: float, E_max: float, n_E: int) -> np.ndarray:
-    """Integrated open-sky flux [m⁻² s⁻¹ sr⁻¹] for each zenith angle."""
-    E_grid = np.logspace(np.log10(E_min), np.log10(E_max), n_E)
-    dln_E  = (np.log(E_max) - np.log(E_min)) / n_E
-    result = np.zeros(len(ze_c))
-    for iz, ze in enumerate(ze_c):
-        result[iz] = float(np.sum(
-            _bmc._flux_surface(E_grid, np.radians(ze), spec_mode)
-        )) * dln_E
-    return result
+    """Integrated open-sky flux [m⁻² s⁻¹ sr⁻¹] for each zenith angle.
+
+    The backward-MC directional flux at zero opacity: the same integral as
+    _rock_flux, so T_sim = Φ_rock / Φ_sky is consistent by construction (as in
+    ucmuon_terrain_driver.compute_flux_map). Up to v1.1.2 this summed the
+    spectrum over a log-energy grid without the factor E (∫f dE = ∫E f dlnE),
+    which put the open-sky curve 3-10x low.
+    """
+    return np.array([_bmc.directional_flux(0.0, np.radians(ze), spec_mode,
+                                           E_min_GeV=E_min, E_max_GeV=E_max,
+                                           n_E=n_E, mode=1)
+                     for ze in ze_c])
 
 
-def _rock_flux(depth_m: float, rho: float, ze: float,
+def _rock_flux(X: float, ze: float,
                spec_mode: int, E_min: float, E_max: float, n_E: int) -> float:
-    """Flux after traversing depth_m of rock at zenith ze."""
-    res = _bmc.backward_mc_flux(
-        depth_m       = depth_m,
-        rho           = rho,
-        mat_id        = 1,
-        spectrum_mode = spec_mode,
-        E_min_GeV     = E_min,
-        E_max_GeV     = E_max,
-        theta_max_deg = ze,
-        n_E           = n_E,
-        n_theta       = 1,
-        mode          = 1,
-    )
-    return float(res["rate_m2_s"])
+    """Flux [m⁻² s⁻¹ sr⁻¹] after a slant opacity X [g/cm²] at zenith ze [deg].
+
+    Up to v1.1.2 this called backward_mc_flux with n_theta = 1, a rate
+    [m⁻² s⁻¹] integrated over the cone 0..ze, evaluated at ze/2 and through
+    X/(cos ze · cos ze/2) instead of X.
+    """
+    return float(_bmc.directional_flux(X, np.radians(ze), spec_mode,
+                                       E_min_GeV=E_min, E_max_GeV=E_max,
+                                       n_E=n_E, mode=1))
 
 
 def flux_maps(az_c: np.ndarray, ze_c: np.ndarray, overburden: np.ndarray,
@@ -212,20 +210,21 @@ def flux_maps(az_c: np.ndarray, ze_c: np.ndarray, overburden: np.ndarray,
     done  = 0
     report_every = max(1, n_az // 10)
 
-    for ia in range(n_az):
-        for iz, ze in enumerate(ze_c):
-            X = overburden[ia, iz]
-            if X < 1.0:
-                flux[ia, iz] = sky[iz]
-            else:
-                cos_ze  = max(np.cos(np.radians(ze)), 0.02)
-                depth_m = max(X / (rho * 100.0 * cos_ze), 1.0)
-                flux[ia, iz] = _rock_flux(depth_m, rho, ze,
-                                          spec_mode, E_min, E_max, n_E)
-            done += 1
+    with _bmc.collect_range_warnings() as beyond_table:
+        for ia in range(n_az):
+            for iz, ze in enumerate(ze_c):
+                X = overburden[ia, iz]
+                if X < 1.0:
+                    flux[ia, iz] = sky[iz]
+                else:
+                    flux[ia, iz] = _rock_flux(X, ze, spec_mode, E_min, E_max, n_E)
+                done += 1
 
-        if (ia + 1) % report_every == 0:
-            print(f"  Flux: {done}/{total} ({100*done/total:.0f}%)", flush=True)
+            if (ia + 1) % report_every == 0:
+                print(f"  Flux: {done}/{total} ({100*done/total:.0f}%)", flush=True)
+    note = _bmc.range_summary(beyond_table, total)
+    if note:
+        print(f"  WARNING: {note}", flush=True)
 
     T_sim = _drv.compute_transmission_map(flux, sky)
     return flux, T_sim
@@ -242,14 +241,16 @@ def flux_slice_at_azimuth(ob_slice: np.ndarray, ze_c: np.ndarray,
     Returns flux array (n_ze,).
     """
     result = np.zeros(len(ze_c))
-    for iz, ze in enumerate(ze_c):
-        X = ob_slice[iz]
-        if X < 1.0:
-            result[iz] = sky[iz]
-        else:
-            cos_ze  = max(np.cos(np.radians(ze)), 0.02)
-            depth_m = max(X / (rho * 100.0 * cos_ze), 1.0)
-            result[iz] = _rock_flux(depth_m, rho, ze, spec_mode, E_min, E_max, n_E)
+    with _bmc.collect_range_warnings() as beyond_table:
+        for iz, ze in enumerate(ze_c):
+            X = ob_slice[iz]
+            if X < 1.0:
+                result[iz] = sky[iz]
+            else:
+                result[iz] = _rock_flux(X, ze, spec_mode, E_min, E_max, n_E)
+    note = _bmc.range_summary(beyond_table, len(ze_c))
+    if note:
+        print(f"    WARNING (ρ = {rho} g/cm³): {note}", flush=True)
     return result
 
 

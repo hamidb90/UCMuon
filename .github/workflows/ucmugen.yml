@@ -7,18 +7,32 @@ name: UCMuGen
 # Not covered here, deliberately:
 #   - test_geant4 needs a Geant4 installation (a multi-GB build). run_tests.sh
 #     skips it rather than failing, and it is run locally before releases.
-#   - the PARMA spectrum is licensed separately by JAEA and is not in the tree.
+#   - PARMA's reference build: UCMuGen_PARMA.h is in the tree (JAEA licence,
+#     non-commercial) and test_parma runs here, but its comparison against
+#     JAEA's stock parma_cpp build needs that release, which is not.
 
 on:
   push:
     paths:
       - 'ucmugen/**'
       - 'src/generator/**'
+      - 'gui/fast_flux_estimator.py'
+      - 'gui/ucmuon_backward_mc.py'
+      - 'gui/ucmuon_terrain_driver.py'
+      - 'tests/flux/**'
+      - 'tests/geometry/**'
+      - 'gui/live_time.py'
       - '.github/workflows/ucmugen.yml'
   pull_request:
     paths:
       - 'ucmugen/**'
       - 'src/generator/**'
+      - 'gui/fast_flux_estimator.py'
+      - 'gui/ucmuon_backward_mc.py'
+      - 'gui/ucmuon_terrain_driver.py'
+      - 'tests/flux/**'
+      - 'tests/geometry/**'
+      - 'gui/live_time.py'
       - '.github/workflows/ucmugen.yml'
   workflow_dispatch:
 
@@ -111,3 +125,44 @@ jobs:
       - name: Exact event comparison
         working-directory: ucmugen/validation
         run: python3 compare_legacy.py --n 20000
+
+  # The same spectrum is implemented three times (Fortran, UCMuGen, Python).
+  # They drifted apart once, by up to x10, and nothing noticed; this job is
+  # what notices. The second script checks each spectrum against PDG and
+  # published data with the tolerances stated in its header.
+  flux:
+    name: flux consistency and references
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install gfortran and numpy
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y gfortran
+          python3 -m pip install --upgrade pip numpy
+
+      - name: C++ / Fortran / Python agree
+        run: python3 tests/flux/test_flux_consistency.py
+
+      - name: Spectra against PDG and data
+        run: python3 tests/flux/test_flux_reference.py
+
+      - name: Backward MC warns at the end of its range table
+        run: python3 tests/flux/test_backward_mc_range.py
+
+      - name: Detector-filter ray intersections
+        run: bash tests/geometry/run.sh
+
+      - name: Build the Fortran generator
+        run: make ucmuon_gen_omp
+
+      - name: Angular mode 6 samples J(p,theta), legacy mode 4 does not
+        run: python3 tests/flux/test_joint_sampling.py --quick
+
+      - name: GUI live time agrees with UCMuGen
+        run: python3 tests/flux/test_live_time.py --quick

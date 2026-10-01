@@ -143,20 +143,35 @@ the cone. Above that elevation the ray exits the cone entirely.
 Integrated muon flux vs elevation angle at the summit azimuth (105°) for four
 rock densities plus open sky.
 
-- **Green dashed** (open sky): flat ~10⁻³ m⁻² s⁻¹ sr⁻¹, reference level
-- **Coloured curves** (ρ = 1.0, 2.0, 2.65, 3.0 g/cm³): all drop 4–5 orders of
-  magnitude through the cone edge at el ≈ 14–17°
-- **Density separation**: the four density curves peel apart at el ≈ 13–17°.
-  Lower density (cyan, ρ=1.0) survives to slightly lower elevations; higher
-  density (blue, ρ=3.0) is cut off higher. This is the density-sensitive zone
-  used for inversion.
-- **Below el ≈ 12°**: all curves converge to ~10⁻⁸ — the overburden exceeds
-  the muon range for any density in this range.
-- **Above el ≈ 18°**: all curves rejoin the open-sky reference — the ray has
+- **Green dashed** (open sky): the Guan 2015 integral above 1 GeV, rising from
+  1.1 m⁻² s⁻¹ sr⁻¹ at el = 5.5° to 5.6 at the summit elevation and 27 at
+  el = 40°, roughly as cos²θ. At the zenith it is 58 (Guan's exact integral is
+  60, the 50-point energy grid is 4 % low and cancels in T_sim); PDG quotes
+  ≈ 70, with recent measurements 10–15 % lower.
+- **Coloured curves** (ρ = 1.0, 2.0, 2.65, 3.0 g/cm³): one elevation bin below
+  the summit (el = 15.5°) the flux has already dropped 10–75×, to 0.54
+  (ρ = 1.0) and 0.097 (ρ = 2.65) m⁻² s⁻¹ sr⁻¹.
+- **Density separation**: the curves stay apart all the way down the cone. At
+  el = 10.5° they are 2.7 × 10⁻², 3.5 × 10⁻³, 1.2 × 10⁻³ and 5.8 × 10⁻⁴ for
+  ρ = 1.0, 2.0, 2.65, 3.0: this is the density-sensitive zone used for
+  inversion.
+- **Near the cone base** the flux vanishes for the denser rock: below
+  el ≈ 7° at ρ = 2.65 and el ≈ 9° at ρ = 3.0. That is where the opacity passes
+  3616 m w.e., the end of the backward MC's range table (2 TeV); the true flux
+  there is not zero but is below 10⁻⁵ of the open sky. The same limit makes the
+  flux a lower bound under thick rock short of that: about 6 % low at
+  2000 m w.e. and 37 % at 3000 m w.e. The script prints a warning for it.
+- **Above el ≈ 17°**: all curves rejoin the open-sky reference — the ray has
   exited the cone completely.
 
-The sharp transition (less than 5° wide) is characteristic of the compact cone
-geometry. A real DEM would show a broader, more gradual transition.
+The sharp upper edge is characteristic of the compact cone geometry. A real
+DEM would show a broader, more gradual transition.
+
+Up to v1.1.2 this figure showed the open sky flat at ~10⁻³ and the rock curves
+dropping to ~10⁻⁸: the script summed the spectrum over a log-energy grid
+without the factor E, and computed the rock flux as a rate over a whole cone of
+directions at half the zenith angle. Both now use the backward MC's
+`directional_flux`, as the terrain engine does.
 
 ---
 
@@ -165,7 +180,10 @@ geometry. A real DEM would show a broader, more gradual transition.
 ![flux_maps](figs/fig_vesuvius_flux_maps.png)
 
 **Left** (free-sky flux): smooth, azimuth-independent gradient — flux decreases
-only with increasing zenith angle (lower elevation = higher zenith = lower flux).
+only with increasing zenith angle (lower elevation = higher zenith = lower flux),
+from 58 m⁻² s⁻¹ sr⁻¹ at the zenith to about 1 near the horizon. On this linear
+scale the whole band below el ≈ 20° is pale, so the cone shadow on the right is
+faint; Fig 4 shows it clearly.
 
 **Right** (through-rock flux, ρ = 2.65 g/cm³): identical to the left panel
 everywhere except at the cone location (az ≈ 90–130°, el ≈ 8–18°) where the
@@ -189,7 +207,8 @@ the YlGn colormap runs white (low) → green (high).
 footprint is clearly triangular at az ≈ 88–128°, el ≈ 7–18°, with the apex
 at the summit (white star).
 
-The transmission drops to < 0.001 (< 0.1%) inside the cone at ρ = 2.65 g/cm³.
+Inside the cone at ρ = 2.65 g/cm³ the median transmission is 7 × 10⁻⁴: 57 % of
+the blocked directions are below 0.001, and the rim reaches 0.16.
 This map is the forward model input for density inversion: running at multiple
 densities and comparing against measured T_data reveals the internal density
 structure of the volcano.
@@ -199,35 +218,47 @@ structure of the volcano.
 ## Part 2 — Density analysis (T_sim library + inversion)
 
 To invert for density you need one `terrain_transmission.dat` file per bulk
-density. Use the terrain driver CLI to write them:
+density. A library for the MURAVES detector ships in `tsim_library/`
+(ρ = 1.5, 2.0, 2.5, 2.65, 3.0 g/cm³; Guan 2015, 1–2500 GeV, real DEM), written
+by `make_tsim_library.py` from the bundled `vesuvius_dem.tif`. Its deepest
+directions are lower bounds: at ρ = 2.65, 721 of the 966 directions through
+rock need surface energies beyond the backward MC's range table (2 TeV) for
+more than 1 % of their flux, and 387 read exactly 0. None of the pixels the
+inversion below uses is cut by more than 1 %.
+
+To write your own with the terrain driver CLI (stdin, one value per line: DEM,
+latitude, longitude, altitude, density, spectrum, n_az, n_ze, ze_max, step,
+transport mode, then the overburden, flux, summary and transmission paths):
 
 ```bash
 mkdir -p output/vesuvius_tsim
 
 for rho in 1.5 2.0 2.65 3.0; do
     python gui/ucmuon_terrain_driver.py <<EOF
-vesuvius_dem.tif
+examples/vesuvius/vesuvius_dem.tif
 40.8271
 14.4006
 608.0
 ${rho}
+3
 360
 85
 85.0
 25.0
-1000
-4
-1.0
-2500.0
+1
 output/vesuvius_tsim/overburden_${rho}.dat
 output/vesuvius_tsim/flux_${rho}.dat
+output/vesuvius_tsim/summary_${rho}.dat
 output/vesuvius_tsim/tsim_${rho}.dat
 EOF
     echo "Done: rho=${rho}"
 done
 ```
 
-Each run takes ~3 seconds (same as the simulation above).
+Spectrum 3 is Guan 2015. The CLI integrates the spectrum over 1–5000 GeV (1 GeV
+is the lower end of Guan's fit); `make_tsim_library.py` uses 1–2500 GeV, which
+gives the same T_sim within 1 %. Each run ray-traces the DEM, which
+takes minutes at this resolution.
 
 ### Inversion — GUI
 
@@ -235,10 +266,10 @@ Each run takes ~3 seconds (same as the simulation above).
 2. Open **🔬 Density** tab
 3. Paste the four file paths into the T_sim Library box:
    ```
-   output/vesuvius_tsim/tsim_1.5.dat
-   output/vesuvius_tsim/tsim_2.0.dat
-   output/vesuvius_tsim/tsim_2.65.dat
-   output/vesuvius_tsim/tsim_3.0.dat
+   examples/vesuvius/tsim_library/terrain_transmission_1.50.dat
+   examples/vesuvius/tsim_library/terrain_transmission_2.00.dat
+   examples/vesuvius/tsim_library/terrain_transmission_2.65.dat
+   examples/vesuvius/tsim_library/terrain_transmission_3.00.dat
    ```
 4. Click **Load Library**
 5. Section 2 → **Generate synthetic**: True density = `2.0`, N events = `100000`
@@ -254,12 +285,8 @@ from ucmuon_density_analysis import (
     generate_synthetic_tdata, write_density_map,
 )
 
-tsim_lib = build_tsim_library([
-    "output/vesuvius_tsim/tsim_1.5.dat",
-    "output/vesuvius_tsim/tsim_2.0.dat",
-    "output/vesuvius_tsim/tsim_2.65.dat",
-    "output/vesuvius_tsim/tsim_3.0.dat",
-])
+L = "examples/vesuvius/tsim_library/terrain_transmission"
+tsim_lib = build_tsim_library([f"{L}_{r}.dat" for r in ("1.50", "2.00", "2.65", "3.00")])
 
 # Synthetic test: true density = 2.0 g/cm³, 100k events
 T_data, sigma_T = generate_synthetic_tdata(tsim_lib, true_rho=2.0, n_events=100_000)
@@ -267,7 +294,7 @@ T_data, sigma_T = generate_synthetic_tdata(tsim_lib, true_rho=2.0, n_events=100_
 rho_map, sigma_rho, status = invert_density_map(T_data, tsim_lib, sigma_T)
 D_map = compute_double_ratio(T_data, tsim_lib[2.65])
 
-az_c, el_c, _, meta = load_transmission_map("output/vesuvius_tsim/tsim_2.65.dat")
+az_c, el_c, _, meta = load_transmission_map(f"{L}_2.65.dat")
 write_density_map(az_c, el_c, rho_map, sigma_rho, status,
                   "output/vesuvius_density.dat", meta)
 ```
@@ -277,12 +304,18 @@ write_density_map(az_c, el_c, rho_map, sigma_rho, status,
 | Region | Status | Why |
 |---|---|---|
 | Most directions (el > 20°, no cone) | 1 — open sky | T_sim ≈ 1 for all densities |
-| Cone interior (el < 12°) | 4 — low sensitivity | T_sim ≈ 0 for all densities; rock too thick |
-| Cone edge (el ≈ 13–18°) | 0 — OK | Density-sensitive zone; T_sim varies with ρ |
+| Deep inside the mountain (585 pixels, el 5.5–14.5°, median 8.5°) | 4 — low sensitivity | too few muons for 10⁵ events |
+| Thinner rock (381 pixels, el 5.5–16.5°, median 10.5°) | 0 — OK | Density-sensitive zone; T_sim varies with ρ |
 
-For the synthetic test (ρ_true = 2.0, N = 10⁵):
-- Recovered density in OK pixels: **ρ̂ ≈ 1.98 ± 0.04 g/cm³**
-- Double ratio D ≈ 1.6 (correctly D > 1 since ρ_true < ρ_ref = 2.65)
+For the synthetic test with the shipped library (ρ_true = 2.0, N = 10⁵; the
+synthetic data are seeded, so these numbers reproduce exactly):
+- Recovered density in the 381 OK pixels: **ρ̂ = 2.007 g/cm³**, pixel-to-pixel
+  scatter 0.027 g/cm³
+- Double ratio D = 1.81 (median; D > 1 since ρ_true < ρ_ref = 2.65)
+
+Up to v1.1.2 the shipped library gave no OK pixels in this test: its open-sky
+reference integrated CosmoALEPH, a fit above ~100 GeV/c, from 0.5 GeV, which
+put every T_sim 10²–10⁴ too low (`docs/FLUX_NORMALISATION_AUDIT.md`).
 
 ---
 

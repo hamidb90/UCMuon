@@ -13,7 +13,7 @@ spectrum_rate.powerlaw        | -1.000000        |
 spectrum_rate.guan            | 323.401136       | examples/features/README.md (section 1)
 spectrum_rate.frosin          | 332.773868       |
 spectrum_rate.gaisser_bugaev  | 6173.252214      |
-spectrum_rate.reyna_bugaev    | 657.107496       |
+spectrum_rate.reyna_bugaev    | 380.432058       |
 spectrum_rate.electron        | -1.000000        |
 surface_area.plane_flat       | 360000.000000    |
 surface_rate.plane_flat       | 323.401136       |

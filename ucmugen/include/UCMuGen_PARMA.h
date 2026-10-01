@@ -53,6 +53,7 @@
 //    - getGneutCpp: 1 file open(s) -> embedded table lookup
 //    - getSpecAngCpp: 2 file open(s) -> embedded table lookup
 //    - getSpecAngCpp: species loop restricted to muons (ip1=4)
+//    - getSpecAngCpp: memoisation cache made thread_local (8 variables)
 //    - getHPcpp: 2 file open(s) -> embedded table lookup
 //    - getrcpp: 1 file open(s) -> embedded table lookup
 //    - getdcpp: 1 file open(s) -> embedded table lookup
@@ -2262,8 +2263,8 @@ static double ParaEdep[mpeach+1][maxfit+1][ncor+1][nsur+1][npart+1]; // paramete
 static double ParaEint[maxfit+1][ncor+1][nsur+1][npart+1]; // parameter for expressing energy-integrated energy dependence
 static double depth[nsur+1]; // depth (g/cm2) for parameters
 static double cor[ncor+1];  // Rc (GV) for parameters
-static double ParaAdep[maxfit+1][ifour+1]; // parameter for expressing angular distribution, 1-4 is for each depth & Rc condition
-static double ratio1,ratio2; // ratio must be saved
+static thread_local double ParaAdep[maxfit+1][ifour+1]; // parameter for expressing angular distribution, 1-4 is for each depth & Rc condition
+static thread_local double ratio1,ratio2; // ratio must be saved
 static double emin[npart+1] = {  0.0,  1.0e-7,   1.0e0,   1.0e0,   1.0e1,  1.0e-1,  1.0e-2};
 static double emax[npart+1] = {  0.0,  1.0e4,    1.0e4,   1.0e4,   1.0e5,   1.0e4,   1.0e4};
 static double phimin = 1.0e-3;
@@ -2271,12 +2272,12 @@ static double phimin = 1.0e-3;
 static string pname[npart+1] = {"      ","neutro","proton","he---4","muon--","elepos","photon"};
 
 static int ifirst = 0;
-static int ipold = 0;
-static double sold = 0;
-static double rold = 0;
-static double dold = 0;
-static double eold = 0;
-static double gold = 0;
+static thread_local int ipold = 0;
+static thread_local double sold = 0;
+static thread_local double rold = 0;
+static thread_local double dold = 0;
+static thread_local double eold = 0;
+static thread_local double gold = 0;
 
 double dimtmp[100]; // temporary used dimension
 
@@ -2769,6 +2770,11 @@ inline void install(const Site& s) {
   // fit alongside a site-aware spectrum, which is inconsistent: at 5 km the
   // fit is high by about 12% at 1 GeV/c.
   charge_ratio_provider() = [s](double p_GeV) { return charge_ratio(s, p_GeV); };
+  // PARMA loads its tables lazily, into function statics, on the first call.
+  // Doing that first call here, on the installing thread, means worker
+  // threads only ever read the tables. (The per-call cache is thread_local.)
+  (void)intensity(s, 10.0, 0.5);
+  (void)charge_ratio(s, 10.0);
 }
 
 /// Remove both providers, so Spectrum::Parma throws again and the charge ratio

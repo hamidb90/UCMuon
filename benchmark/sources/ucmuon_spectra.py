@@ -181,23 +181,21 @@ def mode6_gaisser(p, cos_th=1.0):
 
 
 def mode7_reyna(p, cos_th=1.0):
-    """Mode 7: Reyna 2006 vertical fit, with the Guan cos(theta*) substitution
-    used by the generator (reyna_flux in the Fortran).  At cos_th=1 this is
-    exactly Reyna Eq. 6-7: I_V(p) = c1 * p^-(c2 + c3*z + c4*z^2 + c5*z^3),
-    z = log10(p).  Already per (GeV/c)."""
-    p = np.asarray(p, dtype=float)
-    c1, c2, c3, c4, c5 = REYNA_C
-    p_eff = p * guan_cos_star(cos_th)
-    z = np.log10(np.maximum(p_eff, 1e-300))
-    n = c2 + c3 * z + c4 * z**2 + c5 * z**3
-    return np.where(p_eff > 0, c1 * p_eff**-n, 0.0)
+    """Mode 7: Reyna 2006 as the generator implements it (reyna_flux in the
+    Fortran), Eqs. 1-3: I(p, theta) = cos^3(theta) * I_V(p cos(theta)), with
+    I_V(p) = c1 * p^-(c2 + c3*z + c4*z^2 + c5*z^3), z = log10(p).  Identical
+    to reyna_angular below; kept under this name for the plotting scripts.
+    Already per (GeV/c)."""
+    return reyna_angular(p, np.arccos(np.clip(cos_th, -1.0, 1.0)))
 
 
 def reyna_angular(p, theta_rad):
     """Reyna's full angular prescription, Eq. 2 of the paper:
     I(p, theta) = cos^3(theta) * I_V(p * cos(theta)).
-    This is what UCMuon reproduces by sampling cos^3 zenith angles
-    (angular mode 5) together with spectrum mode 7."""
+    The Fortran generator does NOT reproduce this jointly: it samples p from
+    I_V(p) and theta independently (e.g. cos^3, angular mode 5), which loses
+    the hardening of the spectrum with zenith angle.  UCMuGen's Generator
+    samples this joint density exactly."""
     c = np.cos(theta_rad)
     c1, c2, c3, c4, c5 = REYNA_C
     zeta = np.maximum(np.asarray(p, dtype=float) * c, 1e-300)

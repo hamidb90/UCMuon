@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.1.2"          # app version — keep in sync with CITATION.cff
+__version__ = "1.2.0"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -98,7 +98,9 @@ from fast_flux_estimator import (
     integrated_flux, flux_vs_depth, exposure_time,
     emin_from_opacity, RHO_STANDARD_ROCK,
     differential_flux, angular_profile, MODEL_LABELS as _FFE_MODEL_LABELS,
+    validity_warning as _ffe_validity_warning,
 )
+import live_time as _LT
 
 AUTOSAVE_FILE = "ucmuon_autosave.json"
 
@@ -155,7 +157,11 @@ def save_settings():
         # ── Run-result keys (set manually after a run) ────────────────────────
         "gen_radius", "gen_source_mode", "gen_source_z_m", "gen_plane_lx",
         "gen_plane_ly", "gen_nmuons_done", "gen_use_detector", "gen_emin",
-        "gen_emax", "gen_angular_mode", "gen_thetamax",
+        "gen_emax", "gen_angular_mode", "gen_theta_max",
+        # the run's live-time inputs (Results tab), so a restart keeps them
+        "gen_ntry", "gen_surface_rate", "gen_spectrum_run", "gen_run_started",
+        "gen_run_files", "ug_sources", "gen_use_dasrem", "gen_source_plane",
+        "gen_disk_tilt", "gen_disk_tilt_az",
         "surface_file", "selected_file", "ug_file",
     ]
     data = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
@@ -271,6 +277,8 @@ def _maybe_warn_autosave():
             icon="⚠️"
         )
 _maybe_warn_autosave()
+if st.session_state.pop("_autosave_reset_done", False):
+    st.success("Autosave deleted: settings are back to their defaults.", icon="🗑️")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -998,7 +1006,7 @@ def build_ucmuon_input(cfg):
         L.append(str(cfg.get("hemi_radius", 200.0)))
         L.append(str(cfg.get("hemi_cz_m",   0.0)))
     L.append(str(cfg["angular_mode"]))
-    if cfg["angular_mode"] in [2, 3, 4, 5]:
+    if cfg["angular_mode"] in [2, 3, 4, 5, 6]:
         L.append(str(cfg["theta_max"]))
     L.append(str(cfg["nmuons"]))
     L.append("1" if cfg["use_detector"] else "0")
@@ -1562,14 +1570,13 @@ def _store_gen_params():
             except ValueError:
                 pass
             break
-    # Parse total tried from final summary — generator prints "Tried: N"
-    ntry_val = None
-    for line in lines:
-        m = re.search(r'Tried[:\s]+([0-9]+)', line, re.IGNORECASE)
-        if m:
-            try: ntry_val = int(m.group(1))
-            except ValueError: pass
-            break
+    # Tried count and surface rate from the final summary. (The earlier
+    # regex took the first line matching "tried N", i.e. an early progress
+    # line, not the total.)
+    _parsed  = _LT.parse_generator_output(lines)
+    ntry_val = _parsed["tried"]
+    if _parsed["surface_rate"] is not None:
+        st.session_state["gen_surface_rate"] = _parsed["surface_rate"]
 
     if phi is not None:
         st.session_state["gen_integrated_flux"] = phi
@@ -2480,6 +2487,105 @@ def compute_detector_solid_angle(detectors, origin_cm=(0.0, 0.0, 0.0),
     return solid_angle_sr, cos2_acceptance, solid_angle_msr, frac_hemisphere
 
 
+def _source_reach(det, theta_max_deg, src_z_m, source_mode, source_plane, disk_tilt,
+                  disk_cx_m, disk_cy_m, disk_r_m, u1_m, u2_m, v1_m, v2_m):
+    """For a horizontal disk or rectangle source (not tilted), whether every
+    straight path at zenith <= theta_max into the margin-inflated detector
+    starts on the source. Returns None when it does (or the check does not
+    apply), else (needed, have, unit_text): the radius, or the half-widths,
+    the source needs. A muon reaching a point at depth d below the source at
+    zenith θ starts d·tan θ away horizontally, so the deepest points decide."""
+    if source_plane != 1 or source_mode not in (1, 2) or abs(disk_tilt) > 1e-9:
+        return None
+    t = math.tan(math.radians(min(float(theta_max_deg), 89.9)))
+    z_src, m = float(src_z_m) * 100.0, float(det["margin"])
+    if det["shape"] == 1:
+        rr = float(det["r"]) + m
+        pts = [(det["ax"], det["ay"], min(det["az"], det["bz"]) - m),
+               (det["bx"], det["by"], min(det["az"], det["bz"]) - m),
+               (det["ax"], det["ay"], det["az"]), (det["bx"], det["by"], det["bz"])]
+        pts = [(x, y, z, rr) for x, y, z in pts]
+    else:
+        xs = (det["xmin"] - m, det["xmax"] + m)
+        ys = (det["ymin"] - m, det["ymax"] + m)
+        z0 = min(det["zmin"], det["zmax"]) - m
+        pts = [(x, y, z0, 0.0) for x in xs for y in ys]
+    pts = [(x, y, z, r) for x, y, z, r in pts if z < z_src]
+    if not pts:
+        return None
+    if source_mode == 1:
+        need = max(math.hypot(x - disk_cx_m * 100.0, y - disk_cy_m * 100.0) + r
+                   + (z_src - z) * t for x, y, z, r in pts) / 100.0
+        return None if need <= disk_r_m * 1.0001 else (need, disk_r_m, "radius")
+    lo_u = min(x - r - (z_src - z) * t for x, y, z, r in pts) / 100.0
+    hi_u = max(x + r + (z_src - z) * t for x, y, z, r in pts) / 100.0
+    lo_v = min(y - r - (z_src - z) * t for x, y, z, r in pts) / 100.0
+    hi_v = max(y + r + (z_src - z) * t for x, y, z, r in pts) / 100.0
+    if lo_u >= u1_m - 1e-6 and hi_u <= u2_m + 1e-6 and lo_v >= v1_m - 1e-6 and hi_v <= v2_m + 1e-6:
+        return None
+    return ((lo_u, hi_u, lo_v, hi_v), (u1_m, u2_m, v1_m, v2_m), "extent")
+
+
+def _warn_source_reach(det, theta_max_deg, **src):
+    """Warn when the source cannot emit every muon that reaches the detector
+    within theta_max: those muons are never generated, so the rate and live
+    time come out low. (Up to v1.2.0 nothing warned. Measured: the default
+    200 m disk gives an 11 % low hit rate into a 90 m-deep cylinder at
+    θ_max = 85° with Guan, against 1 % low at 600 m.)"""
+    res = _source_reach(det, theta_max_deg, **src)
+    if res is None:
+        return
+    need, have, kind = res
+    if kind == "radius":
+        st.warning(
+            f"⚠️ The source disk (R = {have:.0f} m) does not reach every path into this "
+            f"detector at θ ≤ {theta_max_deg:.0f}°: muons hitting its deepest part start "
+            f"up to {need:.0f} m from the disk centre. They are never generated, so the "
+            f"rate and live time come out low. Use R ≥ {math.ceil(need):.0f} m, or lower θ_max.")
+    else:
+        lo_u, hi_u, lo_v, hi_v = need
+        st.warning(
+            f"⚠️ The source rectangle does not reach every path into this detector at "
+            f"θ ≤ {theta_max_deg:.0f}°, so the rate and live time come out low. It needs "
+            f"x from {lo_u:.0f} to {hi_u:.0f} m and y from {lo_v:.0f} to {hi_v:.0f} m "
+            f"(it has {have[0]:.0f} to {have[1]:.0f} and {have[2]:.0f} to {have[3]:.0f} m), "
+            f"or a lower θ_max.")
+
+
+def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
+    """Warn when a detector's safety margin is below 2 sigma_r of multiple
+    scattering (gui/mcs_margin.py). The filter only keeps muons whose straight
+    line crosses the inflated detector, so a small margin loses hits and biases
+    rates and live times low."""
+    import mcs_margin as _mm
+    # Deepest face: the muons that scatter most are those reaching the bottom.
+    # (Up to v1.2.0 this took the top face, so a detector reaching the surface,
+    # such as the default cylinder from 0 to 90 m, never warned.)
+    z_bottom = (min(det["az"], det["bz"]) if det["shape"] == 1
+                else min(det["zmin"], det["zmax"]))
+    depth_m = (float(src_z_m) * 100.0 - float(z_bottom)) / 100.0
+    if depth_m <= 0.0:
+        return
+    rho = float(st.session_state.get("music_rho", 2.65) or 2.65)
+    rec = _mm.suggested_margin(depth_m, rho, float(e_min), 0.0)
+    sig = rec["sigma_r_cm"]
+    if not sig:
+        return
+    m = float(det["margin"])
+    if m < rec["margin_cm"]:
+        keep = _mm.retained_fraction(m, sig)
+        rec_th = _mm.suggested_margin(depth_m, rho, float(e_min), float(theta_max_deg))
+        th_txt = (f" At θ = {theta_max_deg:.0f}° it is {rec_th['sigma_r_cm']:.0f} cm."
+                  if rec_th["sigma_r_cm"] else "")
+        st.warning(
+            f"⚠️ Safety margin {m:.0f} cm is below 2σ_r = {rec['margin_cm']:.0f} cm of "
+            f"multiple scattering (vertical, {depth_m:.0f} m of rock at ρ = {rho:.2f}, "
+            f"muons of {rec['e_eval_gev']:.0f} GeV).{th_txt} The filter drops muons whose "
+            f"straight line misses the inflated detector, so a point-like detector keeps "
+            f"only ≈{100*keep:.0f} % of its hits and rates and live times come out low. "
+            f"Use a margin ≥ {rec['margin_cm']:.0f} cm (🧰 Helpers → 🎯 MCS margin).")
+
+
 def _render_mcs_margin_helper(detectors=None):
     """Standalone Highland MCS displacement / safety-margin calculator."""
     try:
@@ -2489,9 +2595,11 @@ def _render_mcs_margin_helper(detectors=None):
         return
 
     st.caption(
-        "Lateral displacement of a muon after multiple Coulomb scattering in Standard Rock "
-        "(ρ = 2.65 g/cm³, X₀ = 26.7 g/cm², Highland formula). Use the **suggested margin** "
-        "for the detector *Safety margin* field."
+        "Lateral displacement of a muon after multiple Coulomb scattering (Highland, "
+        "integrated with CSDA energy loss; X₀ = 26.54 g/cm², ρ from the Transport tab or "
+        "2.65 g/cm³). The detector filter keeps only muons whose straight line crosses the "
+        "detector inflated by the margin, so the margin must exceed this scatter or hits "
+        "are lost. Use the **suggested margin** for the detector *Safety margin* field."
     )
 
     # Pre-fill from the first detector, if one is defined
@@ -2525,12 +2633,19 @@ def _render_mcs_margin_helper(detectors=None):
     _E_thr   = _groom(_slant_m * 100.0 * 2.65)   # min KE to traverse the slant path
     _E_eff   = max(_e_min, _E_thr)               # slowest muon that actually arrives
 
-    _sig1 = _sr(_E_eff, _zen, _depth * 100.0)    # 1σ radial displacement [cm]
+    # 1σ radial displacement [cm], Highland with CSDA energy loss along the
+    # path (gui/mcs_margin.py); the constant-momentum _sr underestimates it
+    # for muons that arrive with little energy left.
+    import mcs_margin as _mm
+    _rho_h = float(st.session_state.get("music_rho", 2.65) or 2.65)
+    _E_eff = max(_E_eff + 0.10566, _mm.arriving_energy_floor(_slant_m * 100.0, _rho_h))
+    _sig1 = _mm.sigma_r_cm(_E_eff, _slant_m * 100.0, _rho_h) or _sr(_E_eff, _zen, _depth * 100.0)
     _hm1, _hm2, _hm3 = st.columns(3)
     _hm1.metric("1σ displacement",  f"{_sig1:.1f} cm",
                 help=f"σ_r at E = {_E_eff:.0f} GeV over the {_slant_m:.0f} m slant path.")
-    _hm2.metric("Suggested margin", f"{1.5 * _sig1:.1f} cm",
-                help="1.5 × σ_r — same convention as the source-size optimiser.")
+    _hm2.metric("Suggested margin", f"{2.0 * _sig1:.1f} cm",
+                help="2 × σ_r: a point-like detector keeps ≈98 % of its hits "
+                     "(1.5σ_r keeps 89 %, 3σ_r 99.99 %).")
     _hm3.metric("3σ displacement",  f"{3.0 * _sig1:.1f} cm",
                 help="99.7 % coverage — compare with your detector size.")
 
@@ -2554,47 +2669,127 @@ def _render_mcs_margin_helper(detectors=None):
 
 
 
-def _compute_flux(nhits):
+def _lt_source():
+    """The generation surface of the last run, for gui/live_time.py."""
+    ss = st.session_state
+    sm = int(ss.get("gen_source_mode", 1) or 1)
+    r_m = float(ss.get("gen_radius", 0.0) or 0.0)
+    return _LT.Source(
+        mode=sm, plane=int(ss.get("gen_source_plane", 1) or 1),
+        radius_cm=r_m * 100.0,
+        half_lx_cm=float(ss.get("gen_plane_lx", 0.0) or 0.0) * 100.0,
+        half_ly_cm=float(ss.get("gen_plane_ly", 0.0) or 0.0) * 100.0,
+        tilt_deg=float(ss.get("gen_disk_tilt", 0.0) or 0.0) if sm in (1, 2) else 0.0,
+        tilt_az_deg=float(ss.get("gen_disk_tilt_az", 0.0) or 0.0) if sm in (1, 2) else 0.0,
+        centre_z_cm=float(ss.get("gen_source_z_m", 0.0) or 0.0) * 100.0 if sm == 3 else 0.0)
+
+
+def _norm_path(path):
+    try:
+        return str(Path(path).resolve())
+    except Exception:
+        return str(path)
+
+
+def _record_ug_source(ug_path, infile):
+    """Remember which surface file an underground file was transported from,
+    so the Results tab can give it the live time of the run that made it."""
+    if not ug_path or not infile:
+        return
+    m = dict(st.session_state.get("ug_sources") or {})
+    m[_norm_path(ug_path)] = _norm_path(infile)
+    st.session_state["ug_sources"] = m
+
+
+def _file_from_last_run(path):
+    """True when `path` was written by the generator run whose tried count and
+    surface rate are in session state, directly or by transporting one of its
+    files, and not before that run started."""
+    files = set(st.session_state.get("gen_run_files") or [])
+    if not files or not path:
+        return False
+    p = _norm_path(path)
+    src = p if p in files else (st.session_state.get("ug_sources") or {}).get(p)
+    if src not in files:
+        return False
+    t0 = st.session_state.get("gen_run_started")
+    try:
+        return t0 is None or Path(p).stat().st_mtime >= float(t0) - 1.0
+    except OSError:
+        return False
+
+
+def _compute_flux(df, is_underground=False, path=None):
     """
-    Returns (rate_per_s, None, valid).
-    Uses cos²θ-weighted MC acceptance if detector geometry is available,
-    otherwise falls back to analytical cone formula.
+    Rate of the loaded rows and the live time of the run it came from.
+
+    Returns (rate_per_s, live_time_s, valid, note, sigma_per_s).
+
+    live time T = N_tried / R, with R the rate of muons crossing the source
+    surface in the energy and zenith windows: the "Surface rate R" the
+    generator prints, the same estimator as ucmugen::Generator::rate()
+    (gui/live_time.py recomputes it if the run did not print it). With angular
+    mode 6 every row is a draw from that flux and the rows' rate is n / T; the
+    legacy modes 1-5 are not flux-distributed, so each row carries an
+    importance weight and the rate is sum(w) / T. For an underground file only
+    the surviving muons (alive = 1) are counted.
     """
-    phi   = st.session_state.get("gen_integrated_flux", None)
-    r_m   = st.session_state.get("gen_radius",          None)
-    n_gen = st.session_state.get("gen_nmuons_done",     None)
+    ss = st.session_state
+    if ss.get("gen_use_dasrem"):
+        return None, None, False, "guaranteed-hit runs carry no live time", None
+    # The tried count, surface rate and settings below belong to the last
+    # generator run; a file from any other run would get its live time
+    # silently (up to v1.2.0 they were used whatever file was loaded).
+    if path is not None and not _file_from_last_run(path):
+        return (None, None, False,
+                "this file is not from the last generator run, whose tried count "
+                "and surface rate are the only ones known: load that run's file, "
+                "or rerun the generator for this one", None)
+    # The spectrum the run used, recorded at Run (not the selector's current
+    # value, and 2 or 8 for a mono-energetic beam).
+    spec   = int(ss.get("gen_spectrum_run", ss.get("gen_spectrum_mode", 0)) or 0)
+    amode  = int(ss.get("gen_angular_mode", 0) or 0)
+    emin   = float(ss.get("gen_emin", 0.0) or 0.0)
+    emax   = float(ss.get("gen_emax", 0.0) or 0.0)
+    thmax  = float(ss.get("gen_theta_max", 0.0) or 0.0)
+    ntry   = ss.get("gen_ntry")
+    src    = _lt_source()
+    rate_s = ss.get("gen_surface_rate")
+    if rate_s is None:
+        rate_s = _LT.surface_rate(spec, emin, emax, thmax, src)
+    if not rate_s or not ntry:
+        why = ("no absolute normalisation for this spectrum" if spec in (2, 8)
+               else "run the generator to get the tried count and surface rate")
+        return None, None, False, why, None
+    T = _LT.live_time(int(ntry), float(rate_s))
 
-    if any(v is None for v in [phi, r_m, n_gen]) or n_gen == 0:
-        return None, None, False
-
-    rm         = st.session_state.get("gen_radius", None)
-    if rm is None:
-        return None, None, False
-    r_cm       = float(rm) * 100.0
-    src_mode   = st.session_state.get("gen_source_mode", 1)
-    if src_mode == 2:
-        lx_cm  = float(st.session_state.get("gen_plane_lx", 0)) * 100.0
-        ly_cm  = float(st.session_state.get("gen_plane_ly", 0)) * 100.0
-        A_disk = 4.0 * lx_cm * ly_cm
-    elif src_mode == 3:
-        A_disk = 2.0 * np.pi * r_cm**2   # hemisphere surface area = 2πR²
+    rows = df[df["alive"] == 1] if (is_underground and "alive" in df.columns) else df
+    if amode == 6:
+        w = np.ones(len(rows))
+        note = "angular mode 6: rows are flux-distributed, rate = n / T"
     else:
-        A_disk = np.pi * r_cm**2
-    # Prefer MC acceptance if detector is defined
-    det_list = st.session_state.get("gen_detectors", []) \
-               if st.session_state.get("gen_use_detector", False) else []
-
-    if det_list:
-        _, cos2_acceptance, _, _ = compute_detector_solid_angle(det_list)
-        Omega = cos2_acceptance if cos2_acceptance > 0 else 1e-12
-    else:
-        # Analytical fallback: full cone up to theta_max
-        th_max = np.radians(float(st.session_state.get("gen_theta_max", 85.0)))
-        Omega  = 2 * np.pi / 3.0 * (1 - np.cos(th_max) ** 3)
-
-    weight     = phi * A_disk * Omega / float(n_gen)
-    rate_per_s = nhits * weight
-    return rate_per_s, None, True
+        try:
+            if "Es" in rows.columns:          # underground file: surface kinematics
+                E = rows["Es"].to_numpy(float)
+                p = np.sqrt(np.maximum(E ** 2 - 0.10566 ** 2, 0.0))
+                th, ph = rows["theta_s"].to_numpy(float), rows["phi_s"].to_numpy(float)
+                d = np.stack([np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), -np.cos(th)], axis=1)
+                x = rows[["xs", "ys", "zs"]].to_numpy(float)
+            else:
+                p = rows["p"].to_numpy(float)
+                d = rows[["px", "py", "pz"]].to_numpy(float) / np.maximum(p, 1e-30)[:, None]
+                x = rows[["x", "y", "z"]].to_numpy(float)
+            w = _LT.event_weights(spec, amode, emin, emax, thmax, src, p, d, x, float(rate_s))
+        except (KeyError, ValueError) as _e:
+            w = None
+        if w is None:
+            return (None, T, False,
+                    "legacy angular mode with no per-event weight (vertical beam or PARMA): "
+                    "use angular mode 6 for rates", None)
+        note = f"angular mode {amode}: rows weighted to the true flux, rate = Σw / T"
+    rate = float(np.sum(w)) / T
+    sigma = float(np.sqrt(np.sum(w ** 2))) / T
+    return rate, T, True, note, sigma
 
 
 
@@ -2664,46 +2859,53 @@ with tab_gen:
                 1: "① CosmoALEPH   p⁻³·¹⁹⁵²           ~100–2500 GeV  (thick targets)",
                 2: "② Power-law    E⁻³·⁷               legacy MUSIC cross-check",
                 3: "③ PARMA/EXPACS                     0.1 GeV–100 TeV  (location & date-aware)",
-                4: "④ Guan (2015)  a=3.64, b=1.29      > 10 GeV surface / any depth underground",
-                5: "⑤ Frosin (2025) a=3.512, b=1.388   > 10 GeV surface / any depth underground",
-                6: "⑥ Bugaev (1998) piecewise poly      1–1000 GeV",
-                7: "⑦ Reyna–Bugaev (2006) cos³θ        1–10000 GeV  (best surface estimate)",
+                4: "④ Guan (2015)  a=3.64, b=1.29      > 1 GeV, all zenith angles",
+                5: "⑤ Frosin (2025) a=3.512, b=1.388   > 1 GeV, all zenith angles",
+                6: "⑥ Gaisser (1990) pion+kaon          > 100/cosθ GeV only",
+                7: "⑦ Reyna (2006) cos³θ·I_V(p cosθ)   1–2000 GeV/c  (best surface estimate)",
                 8: "⑧ Cosmic electrons  E⁻³·⁰           10 MeV–1 GeV  (surface/shallow)",
             }[x],
             help=(
-                "**① CosmoALEPH  —  ~100–2500 GeV/c:**  "
+                "**① CosmoALEPH, ~100–2500 GeV/c:**  "
                 "Power-law fit dN/dp ∝ p⁻³·¹⁹⁵² anchored to the sea-level vertical "
                 "muon spectrum measured by CosmoALEPH with the ALEPH detector at LEP "
                 "(Schmelling et al. 2013). Reproduces the measurement to ~5% over "
                 "112–2239 GeV/c; being a pure power law it overestimates the flux "
-                "at low momenta (×2.5 at 10 GeV/c). Use for thick targets where the "
+                "at low momenta (×3.4 at 10 GeV/c vs the vertical data in Reyna 2006 Fig. 3; "
+                "×46 in the vertical integral above 1 GeV/c). Use for thick targets where the "
                 "detected flux is dominated by muons above ~50 GeV.\n\n"
-                "**② Power-law  —  legacy MUSIC cross-check:**  "
+                "**② Power-law, legacy MUSIC cross-check:**  "
                 "Simple dN/dE ∝ E⁻³·⁷. A sampling shape, not an absolute flux model — "
                 "provided for cross-checks with legacy MUSIC simulations and for "
                 "underground studies where the spectrum above the transport threshold "
                 "is approximately power-law.\n\n"
-                "**③ PARMA/EXPACS  —  0.1 GeV–100 TeV:**  "
+                "**③ PARMA/EXPACS, 0.1 GeV–100 TeV:**  "
                 "Full location- and date-aware spectrum with geomagnetic rigidity cutoff and "
                 "correct μ⁺/μ⁻ ratio. Requires the PHITS PARMA data directory.\n\n"
-                "**④ Guan (2015)  —  > 10 GeV surface, any depth underground:**  "
-                "Modified Gaisser (arXiv:1509.06176) with E_eff = E + 3.64/cos^1.29(θ*) "
-                "accounting for atmospheric energy loss. "
-                "Use for underground detector acceptance. "
-                "At the surface with E < 10 GeV the atmospheric correction suppresses "
-                "the flux unrealistically — use Reyna-Bugaev for surface rate estimation.\n\n"
-                "**⑤ Frosin (2025)  —  > 10 GeV surface, any depth underground:**  "
-                "Same Guan formula re-fitted on 304 sea-level datasets "
-                "(J.Phys.G 52, 035002). Same atmospheric-loss limitation at low energies.\n\n"
-                "**⑥ Bugaev (1998)  —  1–1000 GeV:**  "
-                "Gaisser (1990) pion+kaon formula with Bugaev normalisation. "
-                "Pair with cos²θ angular mode. Best range 1–1000 GeV.\n\n"
-                "**⑦ Reyna–Bugaev (2006)  —  1–10000 GeV:**  "
-                "Log-polynomial fit to p³·I_vert validated against PDG surface intensity "
-                "(I_V > 1 GeV ≈ 70 m⁻²sr⁻¹s⁻¹, ~20% agreement). "
-                "Best model for surface flux and measurement-time estimates. "
-                "Pair with cos³θ angular mode.\n\n"
-                "**⑧ Cosmic electrons  —  10 MeV–1 GeV:**  "
+                "**④ Guan (2015), > 1 GeV, all zenith angles:**  "
+                "Modified Gaisser formula (arXiv:1509.06176, Eq. 3) with "
+                "E → E·(1 + 3.64 GeV/(E cos^1.29 θ*)) and the Earth-curvature cos θ* "
+                "of their Eq. 2. Vertical intensity above 1 GeV/c: 60 m⁻²s⁻¹sr⁻¹ "
+                "(PDG ≈ 70). Pair with angular mode ④, which samples θ from the same "
+                "formula.\n\n"
+                "**⑤ Frosin (2025), > 1 GeV, all zenith angles:**  "
+                "Guan's formula re-fitted to ~300 flux points from seven sea-level "
+                "datasets at 1 GeV–1 TeV, 0–90° (J. Phys. G 52, 035002, Table 4).\n\n"
+                "**⑥ Gaisser (1990), E > 100/cosθ GeV only:**  "
+                "The plain Gaisser pion+kaon formula (Guan Eq. 1, with Guan's cos θ*), "
+                "i.e. ④ without the low-energy correction. It neglects muon decay and "
+                "energy loss, so below ~100 GeV it overestimates the flux badly "
+                "(vertical integral above 1 GeV: 12× the PDG value). A high-energy "
+                "baseline and code cross-check, not a surface-rate model.\n\n"
+                "**⑦ Reyna (2006), 1–2000 GeV/c:**  "
+                "I(p,θ) = cos³θ · I_V(p cosθ) with a Bugaev-form log-polynomial I_V "
+                "(hep-ph/0604145, Eqs. 1–3). Vertical intensity above 1 GeV/c: "
+                "70.2 m⁻²s⁻¹sr⁻¹, the PDG value. Best model for surface flux and "
+                "measurement-time estimates. The generator samples p and θ "
+                "independently, so the hardening of the spectrum with zenith angle "
+                "is not reproduced; angular mode ⑤ cos³θ approximates the zenith "
+                "distribution through a horizontal surface at low energy.\n\n"
+                "**⑧ Cosmic electrons, 10 MeV–1 GeV:**  "
                 "Primary atmospheric e⁺/e⁻ with dN/dE ∝ E⁻³·⁰. "
                 "Generates electrons (PDG 11/−11) with equal e⁺/e⁻ ratio. "
                 "Electrons are stopped by <1 m of rock — only relevant for surface "
@@ -2715,19 +2917,19 @@ with tab_gen:
         # reference line shown below the energy inputs — includes range guide
         _spec_refs = {
             1: ("📚 CosmoALEPH fit, Schmelling et al. (2013)  dN/dp ∝ p⁻³·¹⁹⁵²  "
-                "| valid range: **~100–2500 GeV/c**  (overestimates ×2.5 at 10 GeV/c)"),
+                "| valid range: **~100–2500 GeV/c**  (overestimates ×3.4 at 10 GeV/c)"),
             2: ("📚 Power-law  dN/dE ∝ E⁻³·⁷  "
                 "| sampling shape for legacy MUSIC cross-checks — not an absolute flux model"),
             3: ("📚 Sato et al., PARMA/EXPACS  "
                 "| valid range: **0.1 GeV–100 TeV**  (geomagnetic + solar modulation)"),
             4: ("📚 Guan et al. (2015), arXiv:1509.06176  a=3.64, b=1.29  "
-                "| valid range: **> 10 GeV** surface  /  any depth underground"),
+                "| valid range: **> 1 GeV**, all zenith angles"),
             5: ("📚 Frosin et al. (2025), J.Phys.G 52, 035002  a=3.512, b=1.388  "
-                "| valid range: **> 10 GeV** surface  /  any depth underground"),
-            6: ("📚 Bugaev et al. (1998) / Gaisser (1990)  pion+kaon terms  "
-                "| valid range: **1–1000 GeV**  — pair with angular mode ② cos²θ"),
-            7: ("📚 Reyna (2006) / Bugaev (1998)  log-polynomial in p  "
-                "| valid range: **1–10000 GeV**  — pair with angular mode ⑤ cos³θ"),
+                "| valid range: **> 1 GeV** (fitted 1 GeV–1 TeV)"),
+            6: ("📚 Gaisser (1990) pion+kaon formula, Guan cos θ*  "
+                "| valid range: **E > 100/cosθ GeV** only"),
+            7: ("📚 Reyna (2006), hep-ph/0604145  I = cos³θ·I_V(p cosθ)  "
+                "| valid range: **1–2000 GeV/c**; angular mode ⑤ cos³θ"),
             8: ("⚡ Cosmic electrons  dN/dE ∝ E⁻³·⁰  "
                 "| valid range: **10 MeV–1 GeV**  — generates e⁺/e⁻, not muons  "
                 "— pair with angular mode ⑤ cos³θ"),
@@ -2764,11 +2966,13 @@ with tab_gen:
                        "[🧰 Helpers & calculators](#helpers)")
         # Out-of-range warnings per model
         _erange_warns = {
-            1: (e_min < 100.0 or e_max > 2500,  "CosmoALEPH fit reproduces the measurement only in ~100–2500 GeV/c; below that it overestimates the flux (×2.5 at 10 GeV/c) — for shallow targets prefer ④ Guan, ⑤ Frosin or ⑦ Reyna–Bugaev."),
-            2: (e_min < 100.0,                   "Power-law E⁻³·⁷ is a sampling shape, not an absolute flux model — below ~100 GeV the real spectrum is much flatter."),
-            4: (e_min < 10.0,                    "Guan (2015) suppresses surface flux by up to 50× below 10 GeV due to the atmospheric energy-loss correction."),
-            5: (e_min < 10.0,                    "Frosin (2025) has the same atmospheric correction as Guan — surface flux unreliable below 10 GeV."),
-            8: (e_max > 1.0,                     "Cosmic electrons are stopped by <1 m of rock above ~1 GeV. E max above 1 GeV is not physically meaningful for surface detectors."),
+            1: (e_min < 100.0 or e_max > 2500,  "CosmoALEPH fit reproduces the measurement only in ~100–2500 GeV/c; below that it overestimates the flux (×3.4 at 10 GeV/c, ×46 in the integral above 1 GeV/c); for shallow targets prefer ④ Guan, ⑤ Frosin or ⑦ Reyna–Bugaev."),
+            2: (True,                            "Power-law E⁻³·⁷ is a sampling shape with no absolute normalisation: no rate or live time can be derived from it" + (", and below ~100 GeV the real spectrum is much flatter." if e_min < 100.0 else ".")),
+            4: (e_min < 0.99,                    "Guan (2015) is fitted to data above 1 GeV (Frosin 2025 Sec. 3.2); below that it is an extrapolation."),
+            5: (e_min < 0.99,                    "Frosin (2025) is fitted to data at 1 GeV–1 TeV; below 1 GeV it is an extrapolation."),
+            6: (e_min < 99.0,                    "⑥ is the plain Gaisser (1990) formula, valid only for E > 100/cosθ GeV. Below that it overestimates the flux (vertical integral above 1 GeV: 12× the PDG value). Use ④, ⑤ or ⑦ for rates and live times."),
+            7: (e_min < 1.0 or e_max > 2000.0,   "Reyna (2006) is valid for 1 GeV/c < p < 2000 GeV/c / cosθ; outside that the fit is extrapolated."),
+            8: (True,                            "Cosmic electrons: a sampling shape with no absolute normalisation, so no rate or live time can be derived from it" + (". E max above 1 GeV is not physically meaningful for surface detectors (electrons are stopped by <1 m of rock)." if e_max > 1.0 else ".")),
         }
         if not mono_beam and spectrum_mode in _erange_warns:
             _warn_cond, _warn_msg = _erange_warns[spectrum_mode]
@@ -2836,59 +3040,69 @@ with tab_gen:
         # ── Angular distribution ──────────────────────────────────────────────
         st.markdown("#### Angular distribution")
         _is_parma = (not mono_beam) and st.session_state.get("gen_spectrum_mode", 1) == 3
-        st.session_state.setdefault("angularmode", 2)
+        st.session_state.setdefault("angularmode", 6)
         angular_mode = st.selectbox(
             "Mode",
-            [1, 2, 3, 4, 5],
+            [6, 1, 2, 3, 4, 5],
             format_func=lambda x: {
+                6: "⑥ Joint J(p,θ) × surface projection  (recommended)",
                 1: "① Vertical only  (θ = 0)",
-                2: ("② PARMA angular distribution  (recommended)"
+                2: ("② PARMA energy-averaged angular distribution  (legacy)"
                     if _is_parma else
-                    "② cos²θ  — realistic (recommended)"),
+                    "② cos²θ  (legacy)"),
                 3: "③ Uniform cone",
-                4: "④ Guan/Frosin  P(θ|E) — self-consistent",
-                5: "⑤ cos³θ  — Reyna–Bugaev",
+                4: "④ Guan/Frosin  P(θ|E)  (legacy)",
+                5: "⑤ cos³θ  (legacy)",
             }[x],
             help=(
-                "**①** Pencil beam, θ=0. Quick geometry/acceptance checks.\n\n"
-                "**② (non-PARMA spectra)** Φ ∝ cos²θ — standard empirical sea-level distribution.\n\n"
-                "**② (PARMA spectrum)** Energy-averaged PARMA zenith angle distribution: "
-                "P(cosθ) ∝ ∫ Φ(E)·F_ang(E,cosθ) dE. "
-                "Accounts for location, altitude, and geomagnetic rigidity (Sato 2016).\n\n"
-                "**③** Uniform in solid angle within [0°, θ_max]. Acceptance mapping.\n\n"
-                "**④** Samples θ from P(θ|E) ∝ F(E,θ)·cosθ using the exact energy sampled. "
-                "Physically exact for spectrum modes ④ and ⑤ — Guan/Frosin couple E and θ.\n\n"
-                "**⑤** cos³θ analytical. Inverse CDF: cosθ=(1−u·(1−cos⁴θ_max))^(1/4). "
-                "Designed for Reyna–Bugaev (spectrum ⑦)."
+                "**⑥ (recommended)** Draws momentum, direction and position together "
+                "from the spectrum's own J(p,θ) times the projection onto the source "
+                "surface, i.e. the true flux through it, as UCMuGen does. The spectrum "
+                "hardens with zenith angle as it should, the sky stays fixed for tilted "
+                "and vertical sources, and the live time is exactly N_tried / R. Works "
+                "with every spectrum, PARMA included.\n\n"
+                "**①** Pencil beam, θ=0. Quick geometry checks; no live time.\n\n"
+                "**②–⑤ (legacy)** Momentum from the vertical spectrum and θ from a fixed "
+                "law, with no surface projection: ② cos²θ (PARMA: its energy-averaged "
+                "zenith distribution), ③ uniform, ④ P(θ|E) from Guan/Frosin (right in θ "
+                "for a given E, but E weighted by the vertical spectrum: +7% at "
+                "15-30 GeV, −30% above 100 GeV for Guan), ⑤ cos³θ. Kept bit-exact for "
+                "reproducing earlier runs; the GUI weights their events to the true "
+                "flux when computing rates."
             ),
             key="angularmode",
         )
         theta_max = 85.0
-        if angular_mode in [2, 3, 4, 5]:
+        if angular_mode in [2, 3, 4, 5, 6]:
             theta_max = st.slider("Max zenith angle θ_max [°]", 10.0, 89.0, 85.0, 1.0, key="thetamax")
             st.caption("💡 Recommended θ_max for your detector → "
                        "[🧰 Helpers & calculators](#helpers)")
         if _is_parma and angular_mode == 2:
             st.info(
-                "**PARMA mode:** option ② samples from the physics-based PARMA zenith "
-                "angle distribution (energy-averaged, Sato 2016), not cos²θ. "
-                "This is the physically consistent choice for PARMA/EXPACS."
+                "**PARMA mode:** option ② samples from PARMA's energy-averaged zenith "
+                "distribution, independently of energy. ⑥ samples PARMA's full "
+                "J(E,θ) with the surface projection."
             )
         if _is_parma and angular_mode in [4, 5]:
             st.warning(
                 "⚠️ With PARMA spectrum, modes ④ and ⑤ are not defined. "
-                "Select ② for PARMA's own angular distribution, ① for vertical, or ③ for uniform cone."
+                "Select ⑥ (recommended), ② for PARMA's energy-averaged distribution, "
+                "① for vertical, or ③ for uniform cone."
             )
         _spec_now = 0 if mono_beam else st.session_state.get("gen_spectrum_mode", 1)
         if angular_mode == 4 and _spec_now not in [0, 4, 5]:
             if not _is_parma:
                 st.warning("⚠️ Mode ④ is only physically meaningful with spectrum modes ④ or ⑤.")
         if angular_mode == 5 and _spec_now not in [0, 7, 8]:
-            st.warning("⚠️ Mode ⑤ (cos³θ) is designed for spectrum ⑦ (Reyna–Bugaev) or ⑧ (cosmic electrons).")
-        if _spec_now == 6 and angular_mode not in [1, 2]:
-            st.info("ℹ️ Bugaev/Gaisser (⑥) uses a fixed vertical spectrum — pair with angular mode ② cos²θ for best consistency.")
-        if _spec_now == 7 and angular_mode != 5:
-            st.info("ℹ️ Reyna–Bugaev (⑦) is calibrated with cos³θ angular distribution — select angular mode ⑤.")
+            st.caption("ℹ️ Mode ⑤ samples cos³θ per steradian, independently of energy.")
+        if angular_mode in (2, 3, 4, 5) and not use_dasrem:
+            st.caption("ℹ️ Legacy angular mode: p and θ are sampled independently. "
+                       "⑥ samples the joint J(p,θ); rates from legacy runs are weighted.")
+        if use_dasrem and angular_mode == 6:
+            st.warning(
+                "⚠️  Angular mode ⑥ is **not available in guaranteed-hit mode**: "
+                "a uniform cone would be used instead."
+            )
         if use_dasrem and angular_mode == 4:
             st.warning(
                 "⚠️  Angular mode ④ P(θ|E) is **not available in guaranteed-hit mode** — "
@@ -3223,6 +3437,15 @@ with tab_gen:
                                 d["ymax"] = st.number_input("Ymax [cm]", value=100.0, key=f"yx{i}")
                                 d["zmax"] = st.number_input("Zmax [cm]", value=0.0,   key=f"zx{i}")
                         detectors.append(d)
+                        _warn_margin(d, e_min, theta_max, locals().get("src_w_m", 0.0))
+                        _warn_source_reach(
+                            d, theta_max, src_z_m=locals().get("src_w_m", 0.0),
+                            source_mode=source_mode, source_plane=locals().get("source_plane", 1),
+                            disk_tilt=locals().get("disk_tilt", 0.0),
+                            disk_cx_m=locals().get("disk_cx", 0.0), disk_cy_m=locals().get("disk_cy", 0.0),
+                            disk_r_m=locals().get("disk_r", 0.0),
+                            u1_m=locals().get("src_u1_m", 0.0), u2_m=locals().get("src_u2_m", 0.0),
+                            v1_m=locals().get("src_v1_m", 0.0), v2_m=locals().get("src_v2_m", 0.0))
 
 
         if not use_detector:
@@ -3342,11 +3565,14 @@ with tab_gen:
         # line (PARMA, DAS-REM, power-law) must not silently reuse a stale
         # value from an earlier spectrum in the rate estimate.
         st.session_state.pop("gen_integrated_flux", None)
+        st.session_state.pop("gen_surface_rate", None)
         st.session_state["gen_use_dasrem"]    = use_dasrem
         st.session_state["gen_save_all"]      = save_all
         st.session_state["gen_output_all"]    = output_all
         st.session_state["gen_ntry"]          = None
         st.session_state["gen_theta_max"]     = theta_max
+        st.session_state["gen_spectrum_run"]  = spectrum_mode
+        st.session_state["gen_run_started"]   = time.time()
 
         # Shared session-state update (same for both modes)
         st.session_state.update({
@@ -3369,6 +3595,8 @@ with tab_gen:
             st.session_state["selected_file"] = output_sel
             if not save_all:
                 st.session_state["surface_file"] = output_sel
+        st.session_state["gen_run_files"] = [
+            _norm_path(f) for f, on in ((output_all, write_surface), (output_sel, use_detector)) if on]
 
         if use_dasrem:
             # ── DAS-REM mode: pure Python generator ──────────────────────────
@@ -3586,22 +3814,20 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 format_func=lambda k: _FFE_MODEL_LABELS[k],
                 key="mtime_ffe_model",
                 help="**Reyna-Bugaev** (recommended): matches PDG sea-level intensity "
-                     "(I_V > 1 GeV ≈ 70 m⁻²sr⁻¹s⁻¹) to within ~20%.\n\n"
-                     "**Guan/Frosin**: include an atmospheric energy-loss correction "
-                     "(E_eff = E + 3.64 GeV) designed for underground acceptance — "
-                     "they under-estimate the surface rate by 50–100× below 20 GeV."
+                     "(I_V > 1 GeV/c = 70.2 vs PDG ≈ 70 m⁻²sr⁻¹s⁻¹).\n\n"
+                     "**Guan/Frosin**: fitted to data at 1 GeV–1 TeV and all zenith "
+                     "angles; vertical intensity above 1 GeV/c 60–63 m⁻²s⁻¹sr⁻¹ "
+                     "(PDG ≈ 70, Reyna 70.2). **Tang et al. (2006)**: modified Gaisser, "
+                     "60 m⁻²s⁻¹sr⁻¹. **Gaisser (1990)** (Bugaev key) is valid only above "
+                     "100/cosθ GeV and overestimates below that."
             )
 
         with _mtime_c2:
             st.markdown("")  # vertical alignment spacer
-            if _ffe_model in ("guan_2015", "frosin_2025") and e_min < 20.0:
-                _gf_supp = int(((e_min + 0.106 + 3.64) / (e_min + 0.106)) ** 2.7)
-                st.warning(
-                    f"⚠️  {_FFE_MODEL_LABELS[_ffe_model].split('[')[0].strip()}: "
-                    f"surface rate suppressed ~{_gf_supp}× at E_min = {e_min:.1f} GeV. "
-                    f"Use Reyna-Bugaev for surface estimates.",
-                    icon="⚠️"
-                )
+            # e_min is a total energy; the estimator's argument is kinetic.
+            _vw = _ffe_validity_warning(_ffe_model, max(e_min - 0.10566, 0.0))
+            if _vw:
+                st.warning(f"⚠️  {_vw}", icon="⚠️")
 
         # ── Source area — computed from the geometry the user already set ──────
         if source_mode == 1:
@@ -3652,20 +3878,33 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             try:
                 _trapz  = getattr(np, "trapezoid", None) or np.trapz
                 _Egrid  = np.geomspace(_emin_flux, _emax_flux, 500)
-                I_vert  = float(_trapz(differential_flux(_Egrid, theta_deg=0.0, model=_ffe_model), _Egrid))
+                # _Egrid is total energy (the generator's convention);
+                # differential_flux takes kinetic energy. dT = dE, so only the
+                # argument shifts. (Passing E as T raised a 1 GeV threshold by
+                # m_mu, 4% in flux at 1 GeV, before the 2026-09 audit.)
+                I_vert  = float(_trapz(differential_flux(_Egrid - 0.10566, theta_deg=0.0, model=_ffe_model), _Egrid))
                 _Efull  = np.geomspace(0.5, 1.5e4, 500)
-                _I_full = float(_trapz(differential_flux(_Efull, theta_deg=0.0, model=_ffe_model), _Efull))
+                _I_full = float(_trapz(differential_flux(_Efull - 0.10566, theta_deg=0.0, model=_ffe_model), _Efull))
             except Exception as _e:
                 I_vert    = 0.0
                 _I_full   = 0.0
                 _flux_err = str(_e)
 
-        # ── Angular factor: R = I_V × 2π × (1 − cos⁴θ_max) / 4 ─────────────
-        _ang_rad  = np.radians(float(theta_max))
-        Omega_eff = 2.0 * np.pi * (1.0 - np.cos(_ang_rad) ** 4) / 4.0
-
-        # ── Rate & time ───────────────────────────────────────────────────────
-        _rate_s   = I_vert * Omega_eff * A_src_cm2
+        # ── Rate through the source surface: the same R as the generator's
+        #    "Surface rate R" and UCMuGen's rate(), for the chosen flux model:
+        #    R = ∫dp ∫dΩ J(p,θ) ∫_S max(0, -n·d) dA (gui/live_time.py).
+        _src_now = _LT.Source(
+            mode=int(source_mode), plane=int(source_plane) if source_mode in (1, 2) else 1,
+            radius_cm=float(radius) * 100.0,
+            half_lx_cm=float(plane_lx) * 100.0, half_ly_cm=float(plane_ly) * 100.0,
+            tilt_deg=float(disk_tilt) if source_mode in (1, 2) else 0.0,
+            tilt_az_deg=float(disk_tilt_az) if source_mode in (1, 2) else 0.0)
+        _th_rate = 0.0 if angular_mode == 1 else float(theta_max)
+        try:
+            _rate_s = _LT.surface_rate(_ffe_model, max(e_min, 0.5 + 0.10566),
+                                       _emax_flux, _th_rate, _src_now) or 0.0
+        except Exception as _e:
+            _rate_s, _flux_err = 0.0, str(_e)
         _rate_min = _rate_s * 60.0
         _t_s      = (_N_t / _rate_s) if _rate_s > 0 else float("inf")
         _t_str    = _fmt_time(_t_s) if _rate_s > 0 else "—"
@@ -3676,13 +3915,14 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
         # ── Metrics ───────────────────────────────────────────────────────────
         _tm1, _tm2, _tm3 = st.columns(3)
         _tm1.metric("Equivalent exposure time", _t_str,
-                    help="t = N / (I_vert × Ω_eff × A_src)  —  time a real detector "
-                         "covering the source area would take to collect N muons.")
+                    help="t = N_tried / R, R the rate of muons crossing the source "
+                         "surface in the energy and zenith windows (the generator's "
+                         "\"Surface rate R\", UCMuGen's rate()).")
         _tm2.metric("Surface crossing rate",
                     f"{_rate_min:,.0f} /min" if _rate_min >= 1.0
                     else f"{_rate_s:.2g} /s" if _rate_s > 0
                     else "—",
-                    help=f"I_vert × Ω_eff × A_src  in [{_emin_flux:.1f}, {_emax_flux:.0f}] GeV")
+                    help=f"R through the source surface in [{_emin_flux:.1f}, {_emax_flux:.0f}] GeV")
         _tm3.metric("N muons", f"{_N_t:,}", help=_N_lbl)
 
         # ── Detail caption ────────────────────────────────────────────────────
@@ -3692,7 +3932,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
         st.caption(
             f"I_vert = {I_vert:.3g} cm⁻²sr⁻¹s⁻¹  |  "
             f"E: {_e_range_str}  ({100*_band_frac:.1f}% of full spectrum)  |  "
-            f"Ω_eff = {Omega_eff:.4f} sr  (θ ≤ {theta_max:.0f}°)  |  "
+            f"R = {_rate_s:.4g} s⁻¹  (θ ≤ {_th_rate:.0f}°, projection onto the source)  |  "
             f"A_src = {_area_m2:.2g} m²  ({_a_label})"
         )
 
@@ -3787,16 +4027,20 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             "Flux model", list(_FFE_MODEL_LABELS.keys()),
             format_func=lambda k: _FFE_MODEL_LABELS[k], index=0, key="df_model",
             help=(
-                "**Reyna–Bugaev** (for total rate): calibrated to PDG ±20%. "
-                "Uses energy-independent cos_th_star^1.85 factor — correct for "
-                "total flux (dominated by low-E muons), wrong for angular shape at E > 46 GeV.\n\n"
-                "**Guan 2015 / Frosin 2025** (for angular analysis): explicitly models "
-                "pion/kaon angular enhancement — above ~46 GeV at 30°, I(θ)/I(0°) > 1 "
-                "(more oblique muons than vertical). Confirmed by CMS and IceCube. "
-                "Best choice for muography where E_min > 20 GeV. "
-                "Absolute flux unreliable below 20 GeV E_min.\n\n"
-                "**Bugaev / Gaisser–Tang**: Gaisser formula only valid above 10 GeV. "
-                "10× too low below that."
+                "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
+                "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
+                "within 10% of the 0–75° surface data it was fitted to. Valid "
+                "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
+                "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
+                "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
+                "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
+                "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
+                "**Tang et al. (2006)**: Gaisser formula with low-energy and "
+                "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
+                "1 GeV/c.\n\n"
+                "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
+                "Valid only above 100/cosθ GeV; below that it overestimates "
+                "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
             )
         )
         _df_theta = _dfc2.slider("Zenith angle θ [°]", 0, 89, 0, 1, key="df_theta",
@@ -3807,18 +4051,10 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                                        help="Lower integration cut-off.")
         _df_alt   = _dfc4.number_input("Altitude [m]", 0, 5000, 0, 100, key="df_alt",
                                        help="Applies exp(h/8500 m) correction.")
-        if _df_model in ("guan_2015", "frosin_2025") and float(_df_emin) < 20.0:
-            st.warning(
-                f"⚠️  **{_FFE_MODEL_LABELS[_df_model].split('[')[0].strip()}** with "
-                f"E_min = {_df_emin:.1f} GeV: absolute flux I is **~×100 underestimated** "
-                f"(E_eff correction dominates below 20 GeV). "
-                f"The **angular ratio I(θ)/I(0°) is unaffected** and remains reliable. "
-                f"For absolute flux → use Reyna–Bugaev.", icon="⚠️")
-        if _df_model in ("bugaev", "gaisser_tang") and float(_df_emin) < 10.0:
-            st.warning(
-                f"⚠️  Gaisser formula valid above 10 GeV only. "
-                f"At E_min = {_df_emin:.1f} GeV the absolute flux is ~×10 too low. "
-                f"→ Use Reyna–Bugaev for E_min < 10 GeV.", icon="⚠️")
+        _vw_df = _ffe_validity_warning(_df_model, max(float(_df_emin) - 0.10566, 0.0),
+                                       float(_df_theta))
+        if _vw_df:
+            st.warning(f"⚠️  {_vw_df}", icon="⚠️")
         try:
             _df_I_theta, _df_I_theta_T = angular_profile(
                 np.array([0.0, float(_df_theta)]), E_min_GeV=float(_df_emin),
@@ -3926,19 +4162,14 @@ GUI default A = 6 cm²·sr ≈ 100 cm² × 0.06 sr (narrow telescope-like).
 
 **Which model to use:**
 
-| Model | For absolute rate | For angular shape I(θ)/I(0°) | Min E_min |
+| Model | Absolute rate | Angular shape I(θ)/I(0°) | Valid from |
 |---|---|---|---|
-| **Reyna–Bugaev** ← for rates | ✅ ±20% of PDG | ⚠️ energy-independent, wrong > 46 GeV | 1 GeV |
-| Bugaev / Gaisser–Tang | ⚠️ ×10 too low < 10 GeV | ⚠️ energy-independent | **10 GeV** |
-| **Guan 2015** ← for angular | ⚠️ wrong < 20 GeV | ✅ Best: pion/kaon + cosθ* | **20 GeV** |
-| **Frosin 2025** ← for angular | ⚠️ wrong < 20 GeV | ✅ Best: pion/kaon + cosθ* | **20 GeV** |
+| **Reyna (2006)** ← recommended | ✅ vertical 70.2 m⁻²s⁻¹sr⁻¹ above 1 GeV/c (PDG ≈ 70) | ✅ cos³θ·I_V(p cosθ): hardens with θ | 1 GeV/c |
+| **Guan 2015 / Frosin 2025** | ✅ 60–63 (PDG notes recent data 10–15% below 70) | ✅ pion/kaon + cosθ* | 1 GeV |
+| **Tang et al. (2006)** | ✅ 60 | ✅ modified Gaisser + cosθ* | ~1 GeV (worst 40% at θ > 85°, E < 10 GeV) |
+| Gaisser (1990) (`bugaev` key) | ⚠️ ×12 too high below 100 GeV | ✅ above 100/cosθ GeV | **100/cosθ GeV** |
 
-**Why Guan/Frosin are better for muography angular analysis:**  
-Above ~46 GeV at 30°, oblique muons are *more* abundant than vertical muons because pion/kaon decays are enhanced at large angles (pions re-interact less). Guan explicitly models this pion/kaon angular enhancement. Reyna-Bugaev applies a constant cos_th_star^1.85 factor regardless of energy — correct for total flux, wrong at muography energies. This is confirmed by CMS, IceCube, and AMANDA measurements.
-
-**Why Guan/Frosin absolute flux is wrong at low E_min:**  
-Their correction term E_eff = E·(1 + a/(E·cosθ*^b)) pushes the effective energy to 4.6× the real energy at 1 GeV, strongly suppressing the flux. Their **angular ratio** I(θ)/I(0°) is correct because this bias cancels.  
-→ Use Guan/Frosin only if E_min shown in the metrics is > 20 GeV (i.e. significant overburden).
+All five are compared with PDG and published data in `docs/FLUX_NORMALISATION_AUDIT.md` (Section 4). Above ~100 GeV every model gives the sec θ enhancement (oblique muons more abundant than vertical); Reyna lies ~50% above Guan/Frosin/Tang at 1 TeV/c, closer to the CosmoALEPH data.
 
 ---
 
@@ -3978,16 +4209,20 @@ T = I(rock, θ) / I(open sky, same θ) — the fraction of muons that survive th
             format_func=lambda k: _FFE_MODEL_LABELS[k],
             key="ffe_model",
             help=(
-                "**Reyna–Bugaev** (for total rate): calibrated to PDG ±20%. "
-                "Uses energy-independent cos_th_star^1.85 factor — correct for "
-                "total flux (dominated by low-E muons), wrong for angular shape at E > 46 GeV.\n\n"
-                "**Guan 2015 / Frosin 2025** (for angular analysis): explicitly models "
-                "pion/kaon angular enhancement — above ~46 GeV at 30°, I(θ)/I(0°) > 1 "
-                "(more oblique muons than vertical). Confirmed by CMS and IceCube. "
-                "Best choice for muography where E_min > 20 GeV. "
-                "Absolute flux unreliable below 20 GeV E_min.\n\n"
-                "**Bugaev / Gaisser–Tang**: Gaisser formula only valid above 10 GeV. "
-                "10× too low below that."
+                "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
+                "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
+                "within 10% of the 0–75° surface data it was fitted to. Valid "
+                "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
+                "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
+                "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
+                "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
+                "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
+                "**Tang et al. (2006)**: Gaisser formula with low-energy and "
+                "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
+                "1 GeV/c.\n\n"
+                "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
+                "Valid only above 100/cosθ GeV; below that it overestimates "
+                "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
             )
         )
         ffe_acceptance  = _ff3.number_input(
@@ -4011,29 +4246,13 @@ T = I(rock, θ) / I(open sky, same θ) — the fraction of muons that survive th
 
         # ── Contextual warnings based on current inputs ───────────────────
         _E_min_warn = emin_from_opacity(ffe_opacity)  # None if too deep
-        _guan_models = ("guan_2015", "frosin_2025")
-        _gaisser_models = ("bugaev", "gaisser_tang")
 
-        if ffe_model in _guan_models and (
-                _E_min_warn is None or _E_min_warn < 20.0):
-            st.warning(
-                f"⚠️  **{_FFE_MODEL_LABELS[ffe_model].split('[')[0].strip()}**: "
-                f"E_min = {f'{_E_min_warn:.0f} GeV' if _E_min_warn else '< 20 GeV'} "
-                f"— absolute flux is unreliable below 20 GeV with this model. "
-                f"Absolute I shown will be **~×100 underestimated**. "
-                f"Angular ratio I(θ)/I(0°) remains correct. "
-                f"→ Switch to **Reyna–Bugaev** for rate estimates.",
-                icon="⚠️")
-
-        if ffe_model in _gaisser_models and (
-                _E_min_warn is None or _E_min_warn < 10.0):
-            st.warning(
-                f"⚠️  **{_FFE_MODEL_LABELS[ffe_model].split('[')[0].strip()}**: "
-                f"Gaisser formula is valid only above 10 GeV. "
-                f"Current E_min = {f'{_E_min_warn:.0f} GeV' if _E_min_warn else '< 10 GeV'} "
-                f"— flux will be ~×10 underestimated. "
-                f"→ Switch to **Reyna–Bugaev**.",
-                icon="⚠️")
+        # Validity per the source papers (see fast_flux_estimator.validity_warning).
+        _vw = _ffe_validity_warning(ffe_model, _E_min_warn if _E_min_warn is not None else 0.0,
+                                    float(ffe_theta_deg))
+        if _vw:
+            st.warning(f"⚠️  **{_FFE_MODEL_LABELS[ffe_model].split('[')[0].strip()}**: {_vw}",
+                       icon="⚠️")
 
         if ffe_theta_deg > 50 and ffe_thickness_m > 0:
             st.info(
@@ -4898,11 +5117,15 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
             # ── Bethe-Bloch settings ──────────────────────────────────────────────
             _px1, _px2, _px3 = st.columns(3)
             with _px1:
+                # Must match the material table of both drivers
+                # (gui/ucmuon_bb_driver.py _BB_MAT, ucmuon_transport_bb_omp.f90).
+                # Up to v1.2.0 the labels said Limestone / Water-Ice / Iron for
+                # 2 / 3 / 4, which the drivers run as Ice / Water / Concrete.
                 _pxs_mat_map = {
                     "Standard Rock  (Z=11, A=22, ρ=2.65)": 1,
-                    "Limestone       (Z=15.6, A=31.2, ρ=2.71)": 2,
-                    "Water / Ice     (Z=7.42, A=14.2, ρ=1.00)": 3,
-                    "Iron            (Z=26, A=55.85, ρ=7.87)":  4,
+                    "Ice            (Z=7.42, A=14.99, ρ=0.917)": 2,
+                    "Water          (Z=7.42, A=14.99, ρ=1.00)": 3,
+                    "Concrete       (Z=11.11, A=22.08, ρ=2.30)": 4,
                     "Custom": 5,
                 }
                 _pxs_choice = st.selectbox("Bethe-Bloch material", list(_pxs_mat_map.keys()),
@@ -5271,6 +5494,9 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                                 if transport_engine == "PUMAS"
                                 and st.session_state.get("pumas_mode","forward") == "backward"
                                 else m_outfile)
+                if not (transport_engine == "PUMAS"
+                        and st.session_state.get("pumas_mode", "forward") == "backward"):
+                    _record_ug_source(_ug_file_out, m_infile)
                 st.session_state.update({
                     "ug_file":           _ug_file_out,
                     "ug_use_filter":     ug_use_filter,
@@ -5340,7 +5566,11 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
     # ══════════════════════════════════════════════════════════════════════════════
     # TAB 3 — RESULTS & VISUALIZATION
     # ══════════════════════════════════════════════════════════════════════════════
-with tab_results:
+def _render_results_tab():
+    """The Results tab. It returns, rather than calling st.stop(), when there
+    is nothing to show: st.stop() ends the whole script, so up to v1.2.0 a
+    fresh install (no output files yet) rendered the Terrain, Config and
+    Density tabs empty and never autosaved."""
 
     # ── File selector (compact single row) ────────────────────────────────────
     _pumas_out   = st.session_state.get("pumas_outfile", "output/pumas_flux.dat")
@@ -5383,17 +5613,17 @@ with tab_results:
             chosen = manual_file
             st.success(f"✅  Using `{manual_file}`")
         else:
-            st.error(f"❌  Not found: `{manual_file}`"); st.stop()
+            st.error(f"❌  Not found: `{manual_file}`"); return
     elif chosen_auto:
         chosen = chosen_auto
     else:
-        st.stop()
+        return
 
     try:
         _mt = Path(chosen).stat().st_mtime if Path(chosen).exists() else 0
         df  = load_file(chosen, mtime=_mt)
     except Exception as _ex:
-        st.error(f"Could not load: {_ex}"); st.stop()
+        st.error(f"Could not load: {_ex}"); return
 
     # ── Classify the loaded file ───────────────────────────────────────────────
     ug_filter_file  = st.session_state.get("ug_filtered_file", "output/muons_ug_selected.dat")
@@ -5412,7 +5642,7 @@ with tab_results:
     if _has_charge:
         _np_c = int((df["charge"] == 1).sum())
         _nm_c = int((df["charge"] == -1).sum())
-    rate_per_s, _, flux_ok = _compute_flux(len(df))
+    rate_per_s, live_time_s, flux_ok, _rate_note, _rate_sigma = _compute_flux(df, is_underground, chosen)
     _det_t3 = (st.session_state.get("gen_detectors", [])
                if st.session_state.get("gen_use_detector", False) else [])
 
@@ -5444,9 +5674,15 @@ with tab_results:
             _qb3.metric("Survived (transport)", f"{_n_surv_det:,}")
             _qb4.metric("Detector hit rate",    f"{100*len(df)/max(_n_surv_det,1):.1f}%")
         elif flux_ok and rate_per_s is not None:
-            _sigma = rate_per_s / np.sqrt(max(len(df), 1))
-            _qb3.metric("Rate [/s]",   f"{rate_per_s:.4g}", delta=f"±{_sigma:.3g}")
-            _qb4.metric("Rate [/day]", f"{rate_per_s*86400:.4g}")
+            _qb3.metric("Rate [/s]",   f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
+            _qb4.metric("Live time",   _fmt_time(live_time_s))
+    if flux_ok and rate_per_s is not None and not (is_pumas_flux or is_pumas_events):
+        st.caption(
+            f"Live time T = N_tried / R = {st.session_state.get('gen_ntry', 0):,} / "
+            f"{st.session_state.get('gen_surface_rate') or 0:.4g} s⁻¹ (R: flux through the "
+            f"source surface, same estimator as UCMuGen rate()). {_rate_note}.")
+    elif not flux_ok and not (is_pumas_flux or is_pumas_events) and _rate_note:
+        st.caption(f"No rate: {_rate_note}.")
 
     # ── Detailed statistics (collapsed — expand for full breakdown) ───────────
     with st.expander("📊  Detailed statistics", expanded=False):
@@ -5488,17 +5724,15 @@ with tab_results:
                 st.caption("MC estimate — 600k rays from disk centre.")
 
         if flux_ok and rate_per_s is not None:
-            st.markdown("**Estimated detector rate**")
-            _sigma = rate_per_s / np.sqrt(max(len(df), 1))
+            st.markdown("**Rate of the loaded rows and live time**")
             _rc1, _rc2, _rc3, _rc4 = st.columns(4)
-            _rc1.metric("Rate [/s]",   f"{rate_per_s:.4g}",   delta=f"±{_sigma:.3g}")
-            _rc2.metric("Rate [/min]", f"{rate_per_s*60:.4g}")
-            _rc3.metric("Rate [/h]",   f"{rate_per_s*3600:.4g}")
-            _rc4.metric("Rate [/day]", f"{rate_per_s*86400:.4g}")
+            _rc1.metric("Rate [/s]",   f"{rate_per_s:.4g}",   delta=f"±{_rate_sigma:.3g}")
+            _rc2.metric("Rate [/day]", f"{rate_per_s*86400:.4g}")
+            _rc3.metric("Live time",   _fmt_time(live_time_s))
+            _rc4.metric("Surface rate R [/s]", f"{st.session_state.get('gen_surface_rate') or 0:.4g}")
             st.caption(
-                f"Φ = {st.session_state.get('gen_integrated_flux',0):.4e} cm⁻²s⁻¹sr⁻¹  |  "
-                f"R = {st.session_state.get('gen_radius',0):.0f} m  |  "
-                f"N_gen = {st.session_state.get('gen_nmuons_done',0):,}")
+                f"N_tried = {st.session_state.get('gen_ntry', 0):,}  |  "
+                f"source: {_lt_source().mode} (1 disk, 2 rectangle, 3 hemisphere)  |  {_rate_note}")
 
     st.divider()
 
@@ -5804,6 +6038,8 @@ with tab_results:
             "rock_density":    st.session_state.get("music_rho",         "—"),
             "N_survived":      st.session_state.get("music_nmuons_survived","—"),
             "rate_per_s":      f"{rate_per_s:.6g}" if flux_ok else "—",
+            "live_time_s":     f"{live_time_s:.6g}" if live_time_s else "—",
+            "surface_rate_per_s": st.session_state.get("gen_surface_rate", "—"),
             "solid_angle_sr":  "—",
         }
         _det_exp = st.session_state.get("gen_detectors",[]) if st.session_state.get("gen_use_detector",False) else []
@@ -5822,6 +6058,10 @@ with tab_results:
     st.caption("🌌 **UCMuon** — UCLouvain Muography Group | "
                "Hamid Basiri · [hamid.basiri@uclouvain.be](mailto:hamid.basiri@uclouvain.be) | "
                "MIT License 2026")
+
+
+with tab_results:
+    _render_results_tab()
 
 
 with tab_config:
@@ -5928,11 +6168,25 @@ with tab_config:
         st.divider()
         if st.button("🗑️  Reset autosave", width='stretch',
                      help="Delete the autosave file so the app starts fresh next time."):
+            # Deleting the file is not enough: save_settings() at the end of
+            # this run would write the current values straight back (as it did
+            # up to v1.2.0). Drop the saved values from the session too, and
+            # rerun, so the app comes back on its defaults.
             try:
+                _saved = {}
+                try:                       # a corrupt file is still deleted
+                    with open(AUTOSAVE_FILE) as _fh:
+                        _saved = json.load(_fh)
+                except (OSError, ValueError):
+                    pass
                 Path(AUTOSAVE_FILE).unlink(missing_ok=True)
-                st.success("Autosave deleted.")
+                for _k in list(_saved):
+                    st.session_state.pop(_k, None)
+                st.session_state["_autosave_reset_done"] = True
             except Exception as _ex:
                 st.error(f"Could not delete: {_ex}")
+            else:
+                st.rerun()
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — TERRAIN (DEM-AWARE TRANSPORT)
 # Note: save_settings() is called AFTER this block so terrain widget states

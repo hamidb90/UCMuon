@@ -389,6 +389,8 @@ def render_backward_mc_tab(script_dir):
                     f"✅  Computed in {elapsed:.1f} s  |  "
                     f"Expected rate: **{res['rate_m2_s']:.4e} m⁻² s⁻¹**"
                 )
+                if res["info"].get("range_note"):
+                    st.warning("⚠️  " + res["info"]["range_note"])
             except Exception as _e:
                 import traceback
                 st.error(f"❌  Computation failed: {_e}")
