@@ -745,7 +745,8 @@ def render_geometry_builder(det_lat: float, det_lon: float,
     build_col, clear_col = st.columns([3, 1])
     with clear_col:
         if st.button("🗑 Clear", key="geom_clear", width='stretch'):
-            st.session_state.pop("_synth_dem", None)
+            for k in ("_synth_dem", "_terrain_synth_dem"):
+                st.session_state.pop(k, None)
             st.rerun()
     with build_col:
         do_build = st.button("🔷 Build Synthetic DEM", type="primary",

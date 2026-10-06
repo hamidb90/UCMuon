@@ -21,7 +21,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v1.2.0)
+## Status & scope (v1.3.0)
 
 The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
@@ -592,6 +592,20 @@ See [`docs/MUSIC_FILES.md`](docs/MUSIC_FILES.md) for full instructions.
 ---
 
 ## GUI tabs
+
+**Basic / Advanced.** The "Advanced mode" toggle next to the page title.
+**Basic** has the Generator, Transport and Results tabs with the essential
+inputs: spectrum, energy range (filled in with the spectrum's recommended
+range), angular distribution, source type, an optional detector, output files
+and the PHITS / Geant4 source exports; in Transport the input file (the
+generator's output or any muon file), engine and material; Results with every
+plot including 3D tracks. With the detector on, it derives and shows the safety
+margin (2σ of multiple scattering), the source size and the overburden from the
+detector depth; without it, or for another input file, you give the source size
+and the depth.
+**Advanced** adds the Terrain, Density and Config tabs and shows every setting;
+switching back and forth keeps the Advanced values. A fresh install opens in
+Basic.
 
 | Tab | Content |
 |---|---|

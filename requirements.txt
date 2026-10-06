@@ -8,7 +8,7 @@
 # Python >= 3.9 required.
 
 # ── Core (always required) ────────────────────────────────────────────────────
-streamlit>=1.35
+streamlit>=1.49        # width="stretch" on st.button / st.dataframe (1.48 fails)
 pandas>=2.0
 numpy>=1.24
 plotly>=5.18

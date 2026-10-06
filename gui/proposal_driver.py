@@ -281,7 +281,13 @@ def main():
 
     infile   = nxt(); outfile  = nxt()
     depth_m  = float(nxt("90"))
-    med_type = int(nxt("1"))
+    # Medium line: the type, optionally followed by the density in g/cm³
+    # ("1 2.71"), which replaces the built-in density of types 1-4 (up to
+    # v1.2.0 the GUI's density was not sent and the built-in one was used).
+    _med_tok = nxt("1").split()
+    med_type = int(_med_tok[0])
+    try:    rho_override = float(_med_tok[1])
+    except (IndexError, ValueError): rho_override = None
 
     custom_rho = None
     custom_ZAI = None            # (Z_eff, A_eff, I_eV) — GUI order: Z A rho I
@@ -299,6 +305,8 @@ def main():
 
     med_name  = _MED_MAP.get(med_type, "StandardRock")
     ref_rho   = _REF_RHO.get(med_name, 2.65)
+    if custom_rho is None and rho_override is not None and rho_override > 0.0:
+        custom_rho = rho_override
     dmult     = (custom_rho / ref_rho) if custom_rho else 1.0
     rho_used  = ref_rho * dmult
 

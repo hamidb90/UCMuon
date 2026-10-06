@@ -82,8 +82,9 @@ program ucmuon_transport_bb_omp
   !---------------------------------------------------------------------------
   ! Material properties (set from stdin)
   !---------------------------------------------------------------------------
-  integer  :: mat_type, ms_enable
+  integer  :: mat_type, ms_enable, mat_dummy, ios_rho
   real(8)  :: Z_eff, A_eff, rho_mat, I_eV
+  real(8)  :: rho_override   ! optional 2nd value on the mat_type line [g/cm^3]
   real(8)  :: X0_gcm2        ! radiation length   [g/cm^2]
   real(8)  :: b_rad          ! radiative b        [cm^2/g]
   real(8)  :: C_dens         ! Sternheimer asymptotic C
@@ -171,7 +172,13 @@ program ucmuon_transport_bb_omp
   write(*,*) '   3 = Water          (Z=7.42, A=14.99, rho=1.000 g/cm3, I=79.7 eV)'
   write(*,*) '   4 = Concrete       (Z=11.11, A=22.08, rho=2.300 g/cm3, I=135.2 eV)'
   write(*,*) '   5 = Custom'
-  read(*,*) mat_type
+  write(*,*) '   (an optional density [g/cm3] after the type, e.g. "1 2.71",'
+  write(*,*) '    replaces the table density of types 1-4)'
+  read(*,'(A)') linebuf
+  read(linebuf,*) mat_type
+  rho_override = -1.d0
+  read(linebuf,*,iostat=ios_rho) mat_dummy, rho_override
+  if (ios_rho /= 0) rho_override = -1.d0
 
   select case(mat_type)
     case(1)  ! Standard Rock (Groom 2001 parameters)
@@ -203,6 +210,9 @@ program ucmuon_transport_bb_omp
       Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
       X0_gcm2=26.54d0; b_rad=3.02d-6; mat_type=1
   end select
+  ! The composition comes from the type, the density from the GUI's shared
+  ! density input (up to v1.2.0 it was always the table value).
+  if (mat_type /= 5 .and. rho_override > 0.d0) rho_mat = rho_override
 
   write(*,*) ' Multiple scattering? (1=ON, 0=OFF):'
   read(*,*) ms_enable

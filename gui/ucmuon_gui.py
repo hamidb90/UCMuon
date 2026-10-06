@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.2.0"          # app version — keep in sync with CITATION.cff
+__version__ = "1.3.0"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -101,6 +101,8 @@ from fast_flux_estimator import (
     validity_warning as _ffe_validity_warning,
 )
 import live_time as _LT
+import ui_state as _UIS
+import basic_mode as _BM
 
 AUTOSAVE_FILE = "ucmuon_autosave.json"
 
@@ -110,12 +112,33 @@ def save_settings():
     Uses an atomic write (write to .tmp then os.replace) to prevent a
     mid-crash from leaving a truncated / corrupt autosave file.
     """
+    data = _settings_snapshot()
+
+    # Atomic write: write to .tmp then rename — prevents corrupt file on crash
+    _tmp = Path(AUTOSAVE_FILE + ".tmp")
+    try:
+        with open(_tmp, "w") as f:
+            json.dump(data, f, indent=2, default=str)
+        os.replace(str(_tmp), AUTOSAVE_FILE)   # atomic on POSIX and Win32
+    except Exception as _e:
+        # Non-fatal — next save will retry
+        try:
+            _tmp.unlink(missing_ok=True)
+        except Exception:
+            pass
+
+
+def _settings_snapshot():
+    """The settings save_settings() persists, as a dict (also the
+    "settings" part of the Config tab's downloadable config JSON)."""
     keys_to_save = [
         # ── Widget keys — must exactly match the key= parameter on each widget ─
+        "ui_mode",                                    # Basic / Advanced switch
+        "bd_use_detector", "bd_src_size",             # Basic: detector filter, source size
         "gen_spectrum_mode", "source_mode",           # spectrum + source shape
         "parma_lat", "parma_lon", "parma_alt",        # PARMA location
         "parma_year", "parma_month", "parma_day",     # PARMA date
-        "parma_charge", "parma_sw",  # PARMA charge / solar
+        "parma_charge", "parma_sw", "parma_sw_from_date",  # PARMA charge / solar
         "transport_engine", "density_mode",            # transport / material
         "music_rho", "music_rad", "music_rho_sigma",  # material params
         "emin", "emax",                               # energy range
@@ -134,6 +157,14 @@ def save_settings():
         "usedetector", "outputsel", "ndet",           # detector filter
         "gen_workflow",                                # Standard vs DAS-REM mode
         "musicpreset", "music_depth_m", "nthreads",   # material, depth, threads
+        "music_omp_threads",                          # Transport OpenMP threads (MUSIC)
+        # settings Basic hides that were never autosaved (so they survived
+        # neither a restart nor, now, being hidden)
+        "transport_outfile", "transport_all_chk",
+        "phitsxs_mat_choice", "phitsxs_ms_enable",
+        "g4_fmt_radio", "g4_source_sel",
+        "prop_Z", "prop_A", "prop_Iev", "px_zeff", "px_aeff", "px_Iev",
+        "stochastic_Zeff", "stochastic_Aeff", "stochastic_Iev", "stochastic_brad",
         "proposal_e_cut", "proposal_v_cut",           # PROPOSAL stochastic cuts
         "proposal_tables_dir", "proposal_med_choice", # PROPOSAL medium & tables
         "proposal_scatter_choice",                    # PROPOSAL scattering model
@@ -149,7 +180,7 @@ def save_settings():
         "terrain_lat", "terrain_lon", "terrain_alt", "terrain_rho",
         "terrain_engine_choice", "terrain_naz", "terrain_nze",
         "terrain_zemax", "terrain_step", "terrain_dem_path",
-        "terrain_dem_mode",       # DEM source radio (Upload vs Download)
+        "terrain_dem_mode",       # DEM source radio (bundled / upload / download)
         "terrain_outfile",        # terrain_infile intentionally omitted:
                                   # its selectbox key is NOT autosaved because a
                                   # stale path in session_state causes
@@ -162,7 +193,9 @@ def save_settings():
         "gen_ntry", "gen_surface_rate", "gen_spectrum_run", "gen_run_started",
         "gen_run_files", "ug_sources", "gen_use_dasrem", "gen_source_plane",
         "gen_disk_tilt", "gen_disk_tilt_az",
+        "gen_ui_mode", "gen_basic_used", "gen_basic_summary",  # Basic run record
         "surface_file", "selected_file", "ug_file",
+        "ug_depth_m", "ug_rho",                       # what the last transport used
     ]
     data = {k: st.session_state[k] for k in keys_to_save if k in st.session_state}
     # ── Dynamic detector widget keys (up to 10 detectors) ────────────────────
@@ -173,21 +206,12 @@ def save_settings():
             _dk = f"{_sfx}{_i}"
             if _dk in st.session_state:
                 data[_dk] = st.session_state[_dk]
+    # Hidden widgets (Basic mode, or a condition such as the PARMA site with
+    # another spectrum) are not in the session any more: keep their last values.
+    data = _UIS.remember(data)
     # Stamp a schema version so load_settings can detect stale files
     data["_ucmuon_schema_version"] = 3
-
-    # Atomic write: write to .tmp then rename — prevents corrupt file on crash
-    _tmp = Path(AUTOSAVE_FILE + ".tmp")
-    try:
-        with open(_tmp, "w") as f:
-            json.dump(data, f, indent=2, default=str)
-        os.replace(str(_tmp), AUTOSAVE_FILE)   # atomic on POSIX and Win32
-    except Exception as _e:
-        # Non-fatal — next save will retry
-        try:
-            _tmp.unlink(missing_ok=True)
-        except Exception:
-            pass
+    return data
 
 
 def load_settings():
@@ -199,6 +223,12 @@ def load_settings():
       - Invalid JSON  → warns user, renames to .corrupt, starts fresh
       - Wrong schema  → silently ignores (incompatible old format)
     """
+    # Once per session: afterwards ui_state keeps the values of hidden widgets,
+    # and reading the file again would bring back keys removed on purpose
+    # (ui_state.forget) before the end-of-run save has updated the file.
+    if st.session_state.get("_ucmuon_settings_loaded"):
+        return
+    st.session_state["_ucmuon_settings_loaded"] = True
     p = Path(AUTOSAVE_FILE)
     if not p.exists():
         return
@@ -267,6 +297,9 @@ def _apply_pending_restore():
         st.session_state["music_preset_prev"] = pending["musicpreset"]
     st.session_state["_cfg_restore_msg"] = n_applied
 _apply_pending_restore()
+# Put back persisted values that Streamlit dropped because their widgets were
+# hidden in the last run (Basic mode, conditional controls); see ui_state.py.
+_UIS.restore_missing()
 
 # ── Show autosave corruption warning (set by load_settings on bad file) ──────
 def _maybe_warn_autosave():
@@ -1044,26 +1077,32 @@ def build_phitsxs_input(cfg):
       3  transport_all   0|1
       4  ncols_hint      auto-detected; sent for Fortran compat
       5  depth_m
-      6  mat_type        1=StdRock 2=Ice 3=Water 4=Concrete 5=Custom
+      6  mat_type        1=StdRock 2=Ice 3=Water 4=Concrete 5=Custom,
+                         then the density on the same line ("1 2.71")
       [mat_type=5 only: Zeff  Aeff  rho_gcm3  I_eV]
       7  ms_enable       0|1
+
+    The type sets the composition; the density is the shared one
+    (cfg["rho"], the Transport tab's or the Terrain tab's ρ). Up to v1.2.0
+    the drivers always used the table density of the type, so ρ was ignored.
     """
     transport_all = 1 if cfg.get("transport_all", False) else 0
     ms_enable     = 1 if cfg.get("phitsxs_ms_enable", True) else 0
     mat_type      = cfg.get("phitsxs_mat_type", 1)
+    rho           = cfg.get("rho")
     lines = [
         _abspath(cfg.get("infile", "")),
         _abspath(cfg.get("outfile", "")),
         str(transport_all),
         str(int(cfg.get("ncols", 13))),
         str(cfg["depth_m"]),
-        str(mat_type),
+        f"{mat_type} {float(rho)}" if (rho and mat_type != 5) else str(mat_type),
     ]
     if mat_type == 5:
         lines += [
             str(cfg.get("phitsxs_Zeff", 11.0)),
             str(cfg.get("phitsxs_Aeff", 22.0)),
-            str(cfg.get("phitsxs_rho",  2.65)),
+            str(rho if rho else cfg.get("phitsxs_rho", 2.65)),
             str(cfg.get("phitsxs_I_eV", 136.4)),
         ]
     lines.append(str(ms_enable))
@@ -1079,25 +1118,31 @@ def build_proposal_input(cfg):
       1  infile
       2  outfile
       3  depth_m
-      4  medium_type  (1=StandardRock, 2=Water, 3=Ice, 4=Seawater, 5=Custom)
+      4  medium_type  (1=StandardRock, 2=Water, 3=Ice, 4=Seawater, 5=Custom),
+                      then the density on the same line ("1 2.71")
       [if 5: Z_eff  A_eff  rho  I_eV]
+
+    The type sets the composition; the density is the shared cfg["rho"]
+    (up to v1.2.0 it was not sent, so PROPOSAL ran at its built-in density).
       5  transport_all  (0/1)
       6  e_cut_MeV  (stochastic absolute energy cut)
       7  v_cut      (stochastic relative cut)
       8  scattering (0=none, 1=Highland, 2=HighlandIntegral, 3=Moliere)
       9  tables_dir (path for interpolation tables, empty = ~/.proposal/tables)
     """
+    med = cfg.get("proposal_medium_type", 1)
+    rho = cfg.get("rho")
     lines = [
         _abspath(cfg["infile"]),
         _abspath(cfg["outfile"]),
         str(cfg["depth_m"]),
-        str(cfg.get("proposal_medium_type", 1)),
+        f"{med} {float(rho)}" if (rho and med != 5) else str(med),
     ]
-    if cfg.get("proposal_medium_type", 1) == 5:
+    if med == 5:
         lines += [
             str(cfg.get("proposal_Z",   11.0)),
             str(cfg.get("proposal_A",   22.0)),
-            str(cfg.get("proposal_rho",  2.65)),
+            str(rho if rho else cfg.get("proposal_rho", 2.65)),
             str(cfg.get("proposal_I_eV", 136.4)),
         ]
     lines += [
@@ -1517,14 +1562,17 @@ def _auto_phits_convert():
     DAS-REM: converts the UCMuon output to PHITS format (Fortran never runs).
     Fortran: file was already written by the generator; just confirm it exists.
     """
-    if not st.session_state.get("savephits", True):
+    # The run's own choice, recorded at Run (Basic runs export no PHITS file
+    # whatever the Advanced checkbox says).
+    if not st.session_state.get("gen_save_phits", st.session_state.get("savephits", True)):
         return
     if st.session_state.get("gen_phits_done", False):
         return
     if _gg("gen_running") or _gg("gen_success") is not True:
         return
 
-    phits_dst = st.session_state.get("outputphits", "output/muons_for_phits.dat")
+    phits_dst = st.session_state.get("gen_output_phits",
+                                     st.session_state.get("outputphits", "output/muons_for_phits.dat"))
     is_dasrem = st.session_state.get("gen_use_dasrem", False)
 
     if is_dasrem:
@@ -1909,20 +1957,18 @@ def _auto_ug_filter():
 
         # Sanity check: warn if detector is shallower than transport depth
         if "alive" in dfu.columns and det_list:
-            transport_depth_cm = float(
-                st.session_state.get("music_depth_m", 0)) * 100.0
-            d0 = det_list[0]
-            det_max_depth_cm = abs(min(
-                d0.get("az", 0), d0.get("bz", 0)
-            )) if d0["shape"] == 1 else abs(min(
-                d0.get("zmin", 0), d0.get("zmax", 0)
-            ))
-            if det_max_depth_cm < transport_depth_cm * 0.9:
+            # the depth this transport ran with (in Basic it comes from the
+            # detector, not from the music_depth_m input, which may say 90 m)
+            transport_depth_cm = float(st.session_state.get(
+                "ug_depth_m", st.session_state.get("music_depth_m", 0))) * 100.0
+            det_top_cm = 100.0 * min(_BM.top_depth_m(_d) for _d in det_list)
+            if transport_depth_cm > det_top_cm + 100.0:
                 st.warning(
-                    f"⚠️  Depth mismatch: detector deepest face is at "
-                    f"{det_max_depth_cm/100:.1f} m but MUSIC transported to "
-                    f"~{transport_depth_cm/100:.1f} m. "
-                    f"Set MUSIC depth ≤ {det_max_depth_cm/100:.1f} m for correct results."
+                    f"⚠️  Depth mismatch: the detector's top face is at "
+                    f"{det_top_cm/100:.1f} m but the transport went through "
+                    f"{transport_depth_cm/100:.1f} m of rock, so part of the detector "
+                    f"sits inside the rock. Set the overburden to "
+                    f"{det_top_cm/100:.1f} m (the rock above the detector)."
                 )
 
         dfsel, nhit   = apply_ug_detector_filter(dfu, det_list)
@@ -1945,6 +1991,11 @@ def _auto_ug_filter():
         )
         st.session_state["ug_filtered_file"] = dst
         st.session_state["ug_filter_done"]   = True
+        # The detector-hit file descends from the same surface file as the
+        # underground file it was cut from, so Results can give it that run's
+        # live time (up to v1.2.0 it was not recorded and always had "No rate").
+        _src_surface = (st.session_state.get("ug_sources") or {}).get(_norm_path(src))
+        _record_ug_source(dst, _src_surface)
 
     except Exception as ex:
         st.error(f"❌  Underground filter failed: {ex}")
@@ -2336,7 +2387,10 @@ def plot_3d_surface(df, radius_m, detectors=None, source_mode=1,
 # ══════════════════════════════════════════════════════════════════════════════
 # SURVIVAL RATE vs DEPTH
 # ══════════════════════════════════════════════════════════════════════════════
-def plot_survival_vs_depth(df, depth_m, rho):
+def plot_survival_vs_depth(df, depth_m, rho, actual_rate=None, engine="transport"):
+    """CSDA survival curve from df's surface energies (df = every transported
+    muon) and the Monte Carlo survival at depth_m: actual_rate [%] when given
+    (the transport's own count), else the 'alive' fraction of df."""
     depths_m    = np.linspace(0, depth_m * 1.5, 120)
     depths_gcm2 = depths_m * 100.0 * rho
 
@@ -2354,13 +2408,7 @@ def plot_survival_vs_depth(df, depth_m, rho):
     rates    = [100.0 * np.sum(energies > e + MUON_MASS_GEV) / total
                 for e in E_min_GeV]
 
-    # Bug 2 fix: prefer stored MUSIC result over re-computing from possibly
-    # filtered df (which would give 100% if ug_selected file is loaded)
-    n_survived    = st.session_state.get("music_nmuons_survived",    None)
-    n_transported = st.session_state.get("music_nmuons_transported", None)
-    if n_survived is not None and n_transported and n_transported > 0:
-        actual_rate = 100.0 * n_survived / n_transported
-    else:
+    if actual_rate is None:
         actual_rate = 100.0 * (df["alive"] == 1).sum() / total
 
 
@@ -2373,7 +2421,7 @@ def plot_survival_vs_depth(df, depth_m, rho):
     ))
     fig.add_vline(
         x=depth_m, line=dict(color="#ffd700", width=2, dash="dash"),
-        annotation_text=f"  MUSIC depth: {depth_m} m<br>  Rate: {actual_rate:.1f}%",
+        annotation_text=f"  Transport depth: {depth_m} m<br>  Survival: {actual_rate:.1f}%",
         annotation_font=dict(color="#ffd700", size=12),
         annotation_position="top right",
     )
@@ -2381,7 +2429,7 @@ def plot_survival_vs_depth(df, depth_m, rho):
         x=[depth_m], y=[actual_rate], mode="markers",
         marker=dict(color="#ffd700", size=12, symbol="diamond",
                     line=dict(color="white", width=1.5)),
-        name=f"MUSIC Monte Carlo result: {actual_rate:.1f}% at {depth_m} m",
+        name=f"{engine} Monte Carlo: {actual_rate:.1f}% at {depth_m} m",
     ))
     fig.update_layout(
         xaxis_title="Rock depth [m]",
@@ -2396,10 +2444,10 @@ def plot_survival_vs_depth(df, depth_m, rho):
         margin=dict(l=60, r=30, t=80, b=50), height=440,
         title=dict(
             text=(
-                "CSDA Analytical Estimate vs MUSIC Monte Carlo Result<br>"
+                f"CSDA Analytical Estimate vs {engine} Monte Carlo Result<br>"
                 "<sup>Blue curve: Groom (2001) CSDA range table — "
                 "fraction of input muons with E_surface > E_min(depth) | "
-                "◆ Actual MUSIC survival at transport depth</sup>"
+                f"◆ {engine} survival at transport depth</sup>"
             ),
             font=dict(color="white", size=14),
         ),
@@ -2422,7 +2470,32 @@ def plot_survival_vs_depth(df, depth_m, rho):
 # ══════════════════════════════════════════════════════════════════════════════
 # UI
 # ══════════════════════════════════════════════════════════════════════════════
-st.title(f"🌌 UCMuon  ·  v{__version__}")
+# ── Basic / Advanced switch (page header, visible from every tab) ────────────
+# Basic hides detail, not choices, and derives the rest (basic_mode.py). It
+# never writes the keys of the controls it hides, so the Advanced settings are
+# still there when switching back. A fresh install starts in Basic; an
+# autosave from before the switch existed (no ui_mode in it) in Advanced.
+if st.session_state.get("ui_mode") not in ("Basic", "Advanced"):
+    st.session_state["ui_mode"] = "Advanced" if Path(AUTOSAVE_FILE).exists() else "Basic"
+# The toggle is not persisted itself: it follows ui_mode (the saved setting)
+# and writes it back in its callback, which runs before the rerun.
+def _on_mode_toggle():
+    st.session_state["ui_mode"] = ("Advanced" if st.session_state["ui_mode_toggle"]
+                                   else "Basic")
+
+
+st.session_state["ui_mode_toggle"] = st.session_state["ui_mode"] == "Advanced"
+_hdr1, _hdr2 = st.columns([5, 1], vertical_alignment="center")
+with _hdr1:
+    st.title(f"🌌 UCMuon  ·  v{__version__}")
+with _hdr2:
+    st.toggle("Advanced mode", key="ui_mode_toggle", on_change=_on_mode_toggle,
+              help="**Off (Basic)**: Generator, Transport and Results with the "
+                   "essential inputs; energy range, safety margin and source size "
+                   "are derived and shown. **On (Advanced)**: every tab (also "
+                   "Terrain, Density, Config) and every setting. Switching keeps "
+                   "the Advanced values.")
+_ADV = st.session_state["ui_mode"] == "Advanced"
 st.caption(
     f"🌌 **UCMuon (You See Muon)!** v{__version__} — UCLouvain Muography Group | "
     "Hamid Basiri · [hamid.basiri@uclouvain.be](mailto:hamid.basiri@uclouvain.be) | "
@@ -2487,43 +2560,8 @@ def compute_detector_solid_angle(detectors, origin_cm=(0.0, 0.0, 0.0),
     return solid_angle_sr, cos2_acceptance, solid_angle_msr, frac_hemisphere
 
 
-def _source_reach(det, theta_max_deg, src_z_m, source_mode, source_plane, disk_tilt,
-                  disk_cx_m, disk_cy_m, disk_r_m, u1_m, u2_m, v1_m, v2_m):
-    """For a horizontal disk or rectangle source (not tilted), whether every
-    straight path at zenith <= theta_max into the margin-inflated detector
-    starts on the source. Returns None when it does (or the check does not
-    apply), else (needed, have, unit_text): the radius, or the half-widths,
-    the source needs. A muon reaching a point at depth d below the source at
-    zenith θ starts d·tan θ away horizontally, so the deepest points decide."""
-    if source_plane != 1 or source_mode not in (1, 2) or abs(disk_tilt) > 1e-9:
-        return None
-    t = math.tan(math.radians(min(float(theta_max_deg), 89.9)))
-    z_src, m = float(src_z_m) * 100.0, float(det["margin"])
-    if det["shape"] == 1:
-        rr = float(det["r"]) + m
-        pts = [(det["ax"], det["ay"], min(det["az"], det["bz"]) - m),
-               (det["bx"], det["by"], min(det["az"], det["bz"]) - m),
-               (det["ax"], det["ay"], det["az"]), (det["bx"], det["by"], det["bz"])]
-        pts = [(x, y, z, rr) for x, y, z in pts]
-    else:
-        xs = (det["xmin"] - m, det["xmax"] + m)
-        ys = (det["ymin"] - m, det["ymax"] + m)
-        z0 = min(det["zmin"], det["zmax"]) - m
-        pts = [(x, y, z0, 0.0) for x in xs for y in ys]
-    pts = [(x, y, z, r) for x, y, z, r in pts if z < z_src]
-    if not pts:
-        return None
-    if source_mode == 1:
-        need = max(math.hypot(x - disk_cx_m * 100.0, y - disk_cy_m * 100.0) + r
-                   + (z_src - z) * t for x, y, z, r in pts) / 100.0
-        return None if need <= disk_r_m * 1.0001 else (need, disk_r_m, "radius")
-    lo_u = min(x - r - (z_src - z) * t for x, y, z, r in pts) / 100.0
-    hi_u = max(x + r + (z_src - z) * t for x, y, z, r in pts) / 100.0
-    lo_v = min(y - r - (z_src - z) * t for x, y, z, r in pts) / 100.0
-    hi_v = max(y + r + (z_src - z) * t for x, y, z, r in pts) / 100.0
-    if lo_u >= u1_m - 1e-6 and hi_u <= u2_m + 1e-6 and lo_v >= v1_m - 1e-6 and hi_v <= v2_m + 1e-6:
-        return None
-    return ((lo_u, hi_u, lo_v, hi_v), (u1_m, u2_m, v1_m, v2_m), "extent")
+# The reach check lives in basic_mode.py, which also sizes Basic's source with it.
+_source_reach = _BM.source_reach
 
 
 def _warn_source_reach(det, theta_max_deg, **src):
@@ -2550,6 +2588,73 @@ def _warn_source_reach(det, theta_max_deg, **src):
             f"x from {lo_u:.0f} to {hi_u:.0f} m and y from {lo_v:.0f} to {hi_v:.0f} m "
             f"(it has {have[0]:.0f} to {have[1]:.0f} and {have[2]:.0f} to {have[3]:.0f} m), "
             f"or a lower θ_max.")
+
+
+# ── Basic mode: the detector ─────────────────────────────────────────────────
+# Defaults of the per-detector widgets (Generator tab), used when a key has
+# never been rendered.
+_DET_DEFAULTS = {"sh": 1, "ax": 0.0, "ay": 0.0, "az": -9000.0, "bx": 0.0, "by": 0.0,
+                 "bz": 0.0, "rr": 5.0, "xn": -100.0, "yn": -100.0, "zn": -9000.0,
+                 "xx": 100.0, "yx": 100.0, "zx": 0.0}
+
+
+def _session_detectors():
+    """The detectors the per-detector keys define (margin 0), as the
+    generator receives them. Basic reads them without rendering those keys."""
+    ss = st.session_state
+    out = []
+    for i in range(int(ss.get("ndet", 1) or 1)):
+        g = lambda k: float(ss.get(f"{k}{i}", _DET_DEFAULTS[k]))
+        if int(ss.get(f"sh{i}", 1)) == 1:
+            d = {"shape": 1, "ax": g("ax"), "ay": g("ay"), "az": g("az"),
+                 "bx": g("bx"), "by": g("by"), "bz": g("bz"), "r": g("rr")}
+        else:
+            d = {"shape": 2, "xmin": g("xn"), "ymin": g("yn"), "zmin": g("zn"),
+                 "xmax": g("xx"), "ymax": g("yx"), "zmax": g("zx")}
+        d["margin"] = 0.0
+        out.append(d)
+    return out
+
+
+def _basic_detectors(e_min):
+    """The detectors with Basic's margin: 2σ_r of multiple scattering at the
+    deepest point, for the Transport tab's density (basic_mode.margin_cm)."""
+    rho = float(st.session_state.get("music_rho", 2.65) or 2.65)
+    dets = _session_detectors()
+    for d in dets:
+        d["margin"] = round(_BM.margin_cm(d, rho, e_min), 1)
+    return dets
+
+
+def _basic_det_changed():
+    """on_change of Basic's detector inputs (centre, top depth, height, size
+    in m): write the detector into the per-detector keys, so Advanced shows
+    the same detector in its A/B or min/max form."""
+    ss = st.session_state
+    # On a shape change the other shape's size may not exist yet: carry the
+    # size across (box 2r x 2r, cylinder of the smaller half-side).
+    r = float(ss.get("bd_radius") or min(ss.get("bd_width", 1.0), ss.get("bd_length", 1.0)) / 2.0)
+    d = _BM.detector_from_basic(ss["bd_shape"], ss["bd_cx"], ss["bd_cy"], ss["bd_top"],
+                                ss["bd_height"], r, ss.get("bd_width", 2.0 * r),
+                                ss.get("bd_length", 2.0 * r))
+    ss["sh0"] = d["shape"]
+    if d["shape"] == 1:
+        ss.update(ax0=d["ax"], ay0=d["ay"], az0=d["az"], bx0=d["bx"], by0=d["by"],
+                  bz0=d["bz"], rr0=d["r"])
+    else:
+        ss.update(xn0=d["xmin"], yn0=d["ymin"], zn0=d["zmin"],
+                  xx0=d["xmax"], yx0=d["ymax"], zx0=d["zmax"])
+
+
+def _basic_use_recommended():
+    """Basic: put the chosen spectrum's recommended energy range (when it has
+    one) and θ_max into the energy and angle inputs. on_change of the
+    spectrum in Basic, and the "Use the recommended range" button."""
+    ss = st.session_state
+    rec = _BM.recommended(ss.get("gen_spectrum_mode", _BM.DEFAULT_SPECTRUM))
+    if rec["emin"] is not None:
+        ss["emin"], ss["emax"] = float(rec["emin"]), float(rec["emax"])
+    ss["thetamax"] = float(rec["theta_max"])
 
 
 def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
@@ -2723,7 +2828,11 @@ def _compute_flux(df, is_underground=False, path=None):
     """
     Rate of the loaded rows and the live time of the run it came from.
 
-    Returns (rate_per_s, live_time_s, valid, note, sigma_per_s).
+    Returns (rate_per_s, live_time_s, valid, note, sigma_per_s, row_weights).
+    row_weights is None when the rows need no weight (angular mode 6) or none
+    is known; otherwise one importance weight per row of df (stopped muons
+    included), for plotting the physical spectrum rather than the sampling
+    distribution (up to v1.2.0 the Results plots were unweighted).
 
     live time T = N_tried / R, with R the rate of muons crossing the source
     surface in the energy and zenith windows: the "Surface rate R" the
@@ -2736,7 +2845,7 @@ def _compute_flux(df, is_underground=False, path=None):
     """
     ss = st.session_state
     if ss.get("gen_use_dasrem"):
-        return None, None, False, "guaranteed-hit runs carry no live time", None
+        return None, None, False, "guaranteed-hit runs carry no live time", None, None
     # The tried count, surface rate and settings below belong to the last
     # generator run; a file from any other run would get its live time
     # silently (up to v1.2.0 they were used whatever file was loaded).
@@ -2744,7 +2853,7 @@ def _compute_flux(df, is_underground=False, path=None):
         return (None, None, False,
                 "this file is not from the last generator run, whose tried count "
                 "and surface rate are the only ones known: load that run's file, "
-                "or rerun the generator for this one", None)
+                "or rerun the generator for this one", None, None)
     # The spectrum the run used, recorded at Run (not the selector's current
     # value, and 2 or 8 for a mono-energetic beam).
     spec   = int(ss.get("gen_spectrum_run", ss.get("gen_spectrum_mode", 0)) or 0)
@@ -2760,48 +2869,62 @@ def _compute_flux(df, is_underground=False, path=None):
     if not rate_s or not ntry:
         why = ("no absolute normalisation for this spectrum" if spec in (2, 8)
                else "run the generator to get the tried count and surface rate")
-        return None, None, False, why, None
+        return None, None, False, why, None, None
     T = _LT.live_time(int(ntry), float(rate_s))
 
-    rows = df[df["alive"] == 1] if (is_underground and "alive" in df.columns) else df
+    keep = ((df["alive"] == 1).to_numpy() if (is_underground and "alive" in df.columns)
+            else np.ones(len(df), dtype=bool))
+    w_all = None
     if amode == 6:
-        w = np.ones(len(rows))
+        w = np.ones(int(keep.sum()))
         note = "angular mode 6: rows are flux-distributed, rate = n / T"
     else:
         try:
-            if "Es" in rows.columns:          # underground file: surface kinematics
-                E = rows["Es"].to_numpy(float)
+            if "Es" in df.columns:            # underground file: surface kinematics
+                E = df["Es"].to_numpy(float)
                 p = np.sqrt(np.maximum(E ** 2 - 0.10566 ** 2, 0.0))
-                th, ph = rows["theta_s"].to_numpy(float), rows["phi_s"].to_numpy(float)
+                th, ph = df["theta_s"].to_numpy(float), df["phi_s"].to_numpy(float)
                 d = np.stack([np.sin(th) * np.cos(ph), np.sin(th) * np.sin(ph), -np.cos(th)], axis=1)
-                x = rows[["xs", "ys", "zs"]].to_numpy(float)
+                x = df[["xs", "ys", "zs"]].to_numpy(float)
             else:
-                p = rows["p"].to_numpy(float)
-                d = rows[["px", "py", "pz"]].to_numpy(float) / np.maximum(p, 1e-30)[:, None]
-                x = rows[["x", "y", "z"]].to_numpy(float)
-            w = _LT.event_weights(spec, amode, emin, emax, thmax, src, p, d, x, float(rate_s))
+                p = df["p"].to_numpy(float)
+                d = df[["px", "py", "pz"]].to_numpy(float) / np.maximum(p, 1e-30)[:, None]
+                x = df[["x", "y", "z"]].to_numpy(float)
+            w_all = _LT.event_weights(spec, amode, emin, emax, thmax, src, p, d, x, float(rate_s))
         except (KeyError, ValueError) as _e:
-            w = None
-        if w is None:
+            w_all = None
+        if w_all is None:
             return (None, T, False,
                     "legacy angular mode with no per-event weight (vertical beam or PARMA): "
-                    "use angular mode 6 for rates", None)
+                    "use angular mode 6 for rates", None, None)
+        w_all = np.asarray(w_all, dtype=float)
+        w = w_all[keep]
         note = f"angular mode {amode}: rows weighted to the true flux, rate = Σw / T"
     rate = float(np.sum(w)) / T
     sigma = float(np.sqrt(np.sum(w ** 2))) / T
-    return rate, T, True, note, sigma
+    return rate, T, True, note, sigma, w_all
 
 
 
 
-tab_gen, tab_music, tab_terrain, tab_results, tab_density, tab_config = st.tabs([
-    "🌌  Generator",
-    "🪨  Transport",
-    "🗺  Terrain",
-    "📊  Results",
-    "🔬  Density",
-    "📋  Config",
-])
+# Basic: Generator, Transport and Results. The hidden tabs keep their
+# settings (ui_state's shadow store) and come back in Advanced.
+if _ADV:
+    tab_gen, tab_music, tab_terrain, tab_results, tab_density, tab_config = st.tabs([
+        "🌌  Generator",
+        "🪨  Transport",
+        "🗺  Terrain",
+        "📊  Results",
+        "🔬  Density",
+        "📋  Config",
+    ])
+else:
+    tab_gen, tab_music, tab_results = st.tabs([
+        "🌌  Generator",
+        "🪨  Transport",
+        "📊  Results",
+    ])
+    tab_terrain = tab_density = tab_config = None
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -2810,26 +2933,42 @@ tab_gen, tab_music, tab_terrain, tab_results, tab_density, tab_config = st.tabs(
 with tab_gen:
 
     # ── Workflow selector ─────────────────────────────────────────────────────
-    gen_workflow = st.radio(
-        "Workflow",
-        ["Standard", "DAS-REM"],
-        format_func=lambda x: {
-            "Standard": "🔵  Standard  —  forward generation",
-            "DAS-REM":  "🔴  Guaranteed-hit mode  —  100 % detector hits",
-        }[x],
-        horizontal=True,
-        key="gen_workflow",
-        help=(
-            "**Standard:** uniform sampling on the source surface, optional detector filter. "
-            "N muons = total generated (acceptance < 100 %).\n\n"
-            "**Guaranteed-hit mode:** samples the muon hit point uniformly on the detector face "
-            "first, then back-projects to the source surface via straight-line geometry — every "
-            "muon is guaranteed to reach the detector (no wasted trials). "
-            "This reverse-sampling strategy follows the approach of "
-            "Yao et al., *J. Appl. Phys.* **138**, 144901 (2025)."
-        ),
-    )
+    if _ADV:
+        gen_workflow = st.radio(
+            "Workflow",
+            ["Standard", "DAS-REM"],
+            format_func=lambda x: {
+                "Standard": "🔵  Standard  —  forward generation",
+                "DAS-REM":  "🔴  Guaranteed-hit mode  —  100 % detector hits",
+            }[x],
+            horizontal=True,
+            key="gen_workflow",
+            help=(
+                "**Standard:** uniform sampling on the source surface, optional detector filter. "
+                "N muons = total generated (acceptance < 100 %).\n\n"
+                "**Guaranteed-hit mode:** samples the muon hit point uniformly on the detector face "
+                "first, then back-projects to the source surface via straight-line geometry — every "
+                "muon is guaranteed to reach the detector (no wasted trials). "
+                "This reverse-sampling strategy follows the approach of "
+                "Yao et al., *J. Appl. Phys.* **138**, 144901 (2025)."
+            ),
+        )
+    else:
+        gen_workflow = "Standard"   # Basic: forward generation
     use_dasrem = (gen_workflow == "DAS-REM")
+    if (_ADV and st.session_state.get("gen_ui_mode") == "Basic"
+            and st.session_state.get("gen_basic_used")):
+        _bn1, _bn2 = st.columns([5, 1])
+        _bn1.info("ℹ️ The last generator run used **Basic** settings: "
+                  f"{st.session_state.get('gen_basic_summary', '')}. "
+                  "The controls below show your Advanced values.")
+        if _bn2.button("Copy into the controls", key="btn_copy_basic",
+                       help="Set the Advanced controls to the values that run used."):
+            # Widget keys can only be written before their widgets render:
+            # apply them through the pending-restore step at the next rerun.
+            st.session_state["_cfg_restore_pending"] = dict(st.session_state["gen_basic_used"])
+            _UIS.forget("gen_basic_used", "gen_basic_summary")
+            st.rerun()
     st.divider()
 
     # ══════════════════════════════════════════════════════════════════════════
@@ -2842,16 +2981,23 @@ with tab_gen:
         st.markdown("#### Physics")
 
         # ── Mono-energetic beam toggle ────────────────────────────────────────
-        mono_beam = st.checkbox(
-            "⚡  Mono-energetic beam  (single energy E₀)",
-            value=False, key="gen_mono",
-            help="Every particle is generated at exactly E₀ (total energy). "
-                 "The spectrum model is bypassed (delta-function energy); "
-                 "the angular distribution below still applies. "
-                 "Useful for detector-response and transport validation studies.",
-        )
+        if _ADV:
+            mono_beam = st.checkbox(
+                "⚡  Mono-energetic beam  (single energy E₀)",
+                value=False, key="gen_mono",
+                help="Every particle is generated at exactly E₀ (total energy). "
+                     "The spectrum model is bypassed (delta-function energy); "
+                     "the angular distribution below still applies. "
+                     "Useful for detector-response and transport validation studies.",
+            )
+
+        else:
+            mono_beam = False
 
         # ── Spectrum model (compact selectbox) ────────────────────────────────
+        # Fresh sessions start on Guan 2015 over 1-2500 GeV (both modes; up to
+        # v1.2.0 on CosmoALEPH from 100 GeV, which drops every muon below it).
+        st.session_state.setdefault("gen_spectrum_mode", _BM.DEFAULT_SPECTRUM)
         spectrum_mode = st.selectbox(
             "Spectrum model",
             [1, 2, 3, 4, 5, 6, 7, 8],
@@ -2913,6 +3059,7 @@ with tab_gen:
             ),
             key="gen_spectrum_mode",
             disabled=mono_beam,
+            on_change=None if _ADV else _basic_use_recommended,
         )
         # reference line shown below the energy inputs — includes range guide
         _spec_refs = {
@@ -2952,18 +3099,32 @@ with tab_gen:
         else:
             st.markdown("**Energy range**")
             _ec1, _ec2 = st.columns(2)
-            # Defaults match the default spectrum model ① CosmoALEPH
-            # (valid ~100–2500 GeV/c) so a fresh session starts warning-free.
-            st.session_state.setdefault("emin", 100.0)
-            st.session_state.setdefault("emax", 2500.0)
+            # Defaults match the default spectrum model ④ Guan 2015 (fitted
+            # above 1 GeV) so a fresh session starts warning-free.
+            st.session_state.setdefault("emin", _BM.DEFAULT_EMIN)
+            st.session_state.setdefault("emax", _BM.DEFAULT_EMAX)
             e_min = _ec1.number_input("E min [GeV]", 0.01, 10000.0, step=0.1,
                                        format="%.2f", key="emin")
             e_max = _ec2.number_input("E max [GeV]", 0.1, 100000.0, step=100.0,
                                        format="%.0f", key="emax")
             if spectrum_mode in _spec_refs:
                 st.caption(f"{_spec_refs[spectrum_mode]}  |  your range: E ∈ [{e_min:.2f}, {e_max:.0f}] GeV")
-            st.caption("💡 CSDA floor & muography window for your detector depth → "
-                       "[🧰 Helpers & calculators](#helpers)")
+            if _ADV:                     # the helpers are an Advanced section
+                st.caption("💡 CSDA floor & muography window for your detector depth → "
+                           "[🧰 Helpers & calculators](#helpers)")
+            if not _ADV:
+                # Basic: choosing a spectrum fills in its recommended range
+                # (README validity table); the user can change it.
+                _rec = _BM.recommended(spectrum_mode)
+                # Shown only when the range differs (the line above already
+                # gives the validity range).
+                if (_rec["emin"] is not None
+                        and (e_min, e_max) != (float(_rec["emin"]), float(_rec["emax"]))):
+                    _rc1, _rc2 = st.columns([3, 1])
+                    _rc1.caption(f"Recommended for {_rec['name']}: {_rec['emin']:g} to "
+                                 f"{_rec['emax']:g} GeV ({_rec['note']}).")
+                    _rc2.button("Use the recommended range", key="btn_basic_rec_range",
+                                on_click=_basic_use_recommended)
         # Out-of-range warnings per model
         _erange_warns = {
             1: (e_min < 100.0 or e_max > 2500,  "CosmoALEPH fit reproduces the measurement only in ~100–2500 GeV/c; below that it overestimates the flux (×3.4 at 10 GeV/c, ×46 in the integral above 1 GeV/c); for shallow targets prefer ④ Guan, ⑤ Frosin or ⑦ Reyna–Bugaev."),
@@ -2981,7 +3142,7 @@ with tab_gen:
         if spectrum_mode == 8:
             st.info("⚡ **Electron mode:** output file `charge` column is ±1 (e⁺/e⁻). "
                     "PHITS dump uses PDG codes 11/−11. Angular mode ⑤ cos³θ recommended.")
-        elif e_min < 1.0:
+        elif e_min < 1.0 and _ADV:
             st.caption("ℹ️  Sub-GeV muons are available via **guaranteed-hit mode** (workflow toggle at the top).")
         if use_dasrem and not mono_beam and spectrum_mode in (3, 8):
             _dr_unsup = "③ PARMA/EXPACS" if spectrum_mode == 3 else "⑧ Cosmic electrons"
@@ -3007,12 +3168,26 @@ with tab_gen:
                 parma_year  = _pd1.number_input("Year",  2000, 2050, _today.year,  1, key="parma_year")
                 parma_month = _pd2.number_input("Month", 1,    12,   _today.month, 1, key="parma_month")
                 parma_day   = _pd3.number_input("Day",   1,    31,   _today.day,   1, key="parma_day")
-                _pw1, _pw2 = st.columns(2)
-                parma_charge = _pw1.radio("Charge", [0, 1, -1],
-                                         format_func=lambda x: {0:"μ⁺+μ⁻", 1:"μ⁺", -1:"μ⁻"}[x],
-                                         horizontal=True, key="parma_charge")
-                parma_sw = _pw2.number_input("W (Wolf) index", -135.0, 300.0, 0.0, 5.0, key="parma_sw",
-                                             help="0 = solar min, ~150 = solar max.")
+                if _ADV:
+                    _pw1, _pw2 = st.columns(2)
+                    parma_charge = _pw1.radio("Charge", [0, 1, -1],
+                                             format_func=lambda x: {0:"μ⁺+μ⁻", 1:"μ⁺", -1:"μ⁻"}[x],
+                                             horizontal=True, key="parma_charge")
+                    # The date sets the solar modulation through PARMA's W-index
+                    # table (up to v1.2.0 the generator ignored the date and always
+                    # used the typed W, 0 by default). -999 tells it "from the date".
+                    _sw_date = _pw2.checkbox("W index from the date", value=True,
+                                             key="parma_sw_from_date",
+                                             help="PARMA's daily solar-modulation W index "
+                                                  "(neutron-monitor table). Untick to type W.")
+                    if _sw_date:
+                        parma_sw = -999.0
+                    else:
+                        parma_sw = _pw2.number_input("W index", -135.0, 300.0, 0.0, 5.0, key="parma_sw",
+                                                     help="0 = solar min, ~150 = solar max.")
+                else:
+                    # Basic: both charges, W index from the date (B15).
+                    parma_charge, parma_sw = 0, -999.0
                 with st.expander("Citation requirement (EXPACS/PARMA)", expanded=False):
                     st.caption(
                         "Publishing results from this mode requires citing both papers below "
@@ -3025,7 +3200,8 @@ with tab_gen:
                     )
                 _plines = _gl("gen_lines")
                 _diag   = [l for l in _plines if any(k in l for k in
-                           ("atm. depth","cutoff rigid","FFP","W index","getHP","mu+ fraction"))]
+                           ("atm. depth","cutoff rigid","W of date","W index","WARNING: PARMA",
+                            "mu+ fraction"))]
                 if _diag:
                     st.divider()
                     st.caption("**Last PARMA diagnostics:**")
@@ -3033,7 +3209,7 @@ with tab_gen:
         else:
             parma_lat = 50.7; parma_lon = 4.4; parma_alt = 0.0
             parma_year = 2026; parma_month = 1; parma_day = 20
-            parma_charge = 0; parma_sw = 0.0
+            parma_charge = 0; parma_sw = -999.0
 
         st.divider()
 
@@ -3075,8 +3251,9 @@ with tab_gen:
         theta_max = 85.0
         if angular_mode in [2, 3, 4, 5, 6]:
             theta_max = st.slider("Max zenith angle θ_max [°]", 10.0, 89.0, 85.0, 1.0, key="thetamax")
-            st.caption("💡 Recommended θ_max for your detector → "
-                       "[🧰 Helpers & calculators](#helpers)")
+            if _ADV:
+                st.caption("💡 Recommended θ_max for your detector → "
+                           "[🧰 Helpers & calculators](#helpers)")
         if _is_parma and angular_mode == 2:
             st.info(
                 "**PARMA mode:** option ② samples from PARMA's energy-averaged zenith "
@@ -3108,6 +3285,7 @@ with tab_gen:
                 "⚠️  Angular mode ④ P(θ|E) is **not available in guaranteed-hit mode** — "
                 "a uniform cone would be used instead. Choose ②, ③ or ⑤."
             )
+
 
     # ────────────────────── RIGHT — conditional on workflow ──────────────────
     with _col_r:
@@ -3179,104 +3357,150 @@ with tab_gen:
                                        key="source_mode",
                                        label_visibility="collapsed")
 
-            if source_mode == 3:
-                source_plane = 1
-                with _sg_plane:
-                    st.markdown("**Parameters**")
-                    hemi_radius = st.number_input("Radius [m]", 0.01, 10000.0, 200.0, 1.0,
-                                                  key="radius",
-                                                  help="Muons start on the upper hemisphere surface.")
-                    hemi_cz_m   = st.number_input("Centre z [m]", -10000.0, 10000.0, 0.0, 1.0,
-                                                  key="sourcezm",
-                                                  help="z of the equator / sphere centre.")
-                    st.caption(f"Area ≈ {2*np.pi*hemi_radius**2/1e6:.4f} km²  |  "
-                               f"z ∈ [{hemi_cz_m:.1f}, {hemi_cz_m+hemi_radius:.1f}] m")
-                src_u1_m = src_u2_m = src_v1_m = src_v2_m = 0.0
-                src_w_m  = hemi_cz_m
-                radius   = hemi_radius
-                plane_lx = plane_ly = 0.0
-                disk_cx = disk_cy = disk_tilt = disk_tilt_az = 0.0
-                disk_r  = hemi_radius
-            else:
-                with _sg_plane:
-                    st.markdown("**Plane**")
-                    source_plane = st.radio(
-                        "Source plane", [1, 2, 3], index=0, horizontal=False,
-                        key="source_plane",
-                        format_func=lambda x: {
-                            1: "XY  horizontal  (muons → −Z)",
-                            2: "XZ  vertical    (muons → −Y)",
-                            3: "YZ  vertical    (muons → −X)",
-                        }[x],
-                        help="Orientation of the generation surface in world coordinates.",
-                        label_visibility="collapsed")
-
-                _uname, _vname, _wname = {1: ("X","Y","Z"), 2: ("X","Z","Y"), 3: ("Y","Z","X")}[source_plane]
-                _w_help = {
-                    1: "z = 0 → surface. Negative → underground.",
-                    2: "Fixed Y coordinate of the vertical XZ source plane.",
-                    3: "Fixed X coordinate of the vertical YZ source plane.",
-                }[source_plane]
-
-                if source_mode == 1:
-                    # ── Disk ──────────────────────────────────────────────────
-                    _dc1, _dc2, _dc3 = st.columns(3)
-                    disk_cx = _dc1.number_input(f"Center {_uname} [m]", -1e5, 1e5, 0.0, 1.0, key="disk_cx")
-                    disk_cy = _dc2.number_input(f"Center {_vname} [m]", -1e5, 1e5, 0.0, 1.0, key="disk_cy")
-                    disk_r  = _dc3.number_input("Radius [m]", 0.01, 1e5, 200.0, 1.0, key="disk_r")
-                    _dw, _dt1, _dt2 = st.columns(3)
-                    src_w_m      = _dw.number_input(f"{_wname} fixed [m]", -1e5, 1e5, 0.0, 1.0,
-                                                    key="src_w", help=_w_help)
-                    disk_tilt    = _dt1.number_input("Tilt [°]", 0.0, 89.9, 0.0, 1.0,
-                                                     key="disk_tilt",
-                                                     help="0 = flat in chosen plane. 90 = edge-on.")
-                    disk_tilt_az = _dt2.number_input(f"Tilt azimuth [°]", 0.0, 360.0, 0.0, 5.0,
-                                                     key="disk_tilt_az",
-                                                     help=f"Tilt direction toward {_uname} axis = 0°.")
-                    st.caption(f"r = {disk_r:.1f} m  |  Area = {np.pi*disk_r**2/1e6:.4f} km²"
-                               + (f"  |  Tilt {disk_tilt:.1f}° @ {disk_tilt_az:.0f}°"
-                                  if disk_tilt > 0.01 else ""))
-                    src_u1_m = disk_cx - disk_r;  src_u2_m = disk_cx + disk_r
-                    src_v1_m = disk_cy - disk_r;  src_v2_m = disk_cy + disk_r
-                    radius   = disk_r
+            if _ADV:
+                if source_mode == 3:
+                    source_plane = 1
+                    with _sg_plane:
+                        st.markdown("**Parameters**")
+                        hemi_radius = st.number_input("Radius [m]", 0.01, 10000.0, 200.0, 1.0,
+                                                      key="radius",
+                                                      help="Muons start on the upper hemisphere surface.")
+                        hemi_cz_m   = st.number_input("Centre z [m]", -10000.0, 10000.0, 0.0, 1.0,
+                                                      key="sourcezm",
+                                                      help="z of the equator / sphere centre.")
+                        st.caption(f"Area ≈ {2*np.pi*hemi_radius**2/1e6:.4f} km²  |  "
+                                   f"z ∈ [{hemi_cz_m:.1f}, {hemi_cz_m+hemi_radius:.1f}] m")
+                    src_u1_m = src_u2_m = src_v1_m = src_v2_m = 0.0
+                    src_w_m  = hemi_cz_m
+                    radius   = hemi_radius
+                    plane_lx = plane_ly = 0.0
+                    disk_cx = disk_cy = disk_tilt = disk_tilt_az = 0.0
+                    disk_r  = hemi_radius
                 else:
-                    # ── Rectangle ─────────────────────────────────────────────
-                    _r1, _r2 = st.columns(2)
-                    src_u1_m = _r1.number_input(f"{_uname} min [m]", -1e5, 1e5, -200.0, 0.01,
-                                                format="%.3f", key="src_u1")
-                    src_u2_m = _r2.number_input(f"{_uname} max [m]", -1e5, 1e5,  200.0, 0.01,
-                                                format="%.3f", key="src_u2")
-                    _r3, _r4 = st.columns(2)
-                    src_v1_m = _r3.number_input(f"{_vname} min [m]", -1e5, 1e5, -200.0, 0.01,
-                                                format="%.3f", key="src_v1")
-                    src_v2_m = _r4.number_input(f"{_vname} max [m]", -1e5, 1e5,  200.0, 0.01,
-                                                format="%.3f", key="src_v2")
-                    _rw, _rt1, _rt2 = st.columns(3)
-                    src_w_m      = _rw.number_input(f"{_wname} fixed [m]", -1e5, 1e5, 0.0, 0.01,
-                                                    format="%.3f", key="src_w", help=_w_help)
-                    disk_tilt    = _rt1.number_input("Tilt [°]", 0.0, 89.9, 0.0, 1.0,
-                                                     key="disk_tilt",
-                                                     help="0 = flat in chosen plane. 90 = edge-on.")
-                    disk_tilt_az = _rt2.number_input(f"Tilt azimuth [°]", 0.0, 360.0, 0.0, 5.0,
-                                                     key="disk_tilt_az",
-                                                     help=f"Tilt direction toward {_uname} axis = 0°.")
-                    _hu = abs(src_u2_m - src_u1_m);  _hv = abs(src_v2_m - src_v1_m)
-                    _rect_area = _hu * _hv
-                    _rect_area_str = (f"{_rect_area/1e6:.4f} km²" if _rect_area >= 1e4
-                                      else f"{_rect_area:.4f} m²")
-                    st.caption(f"{_hu:.3f} × {_hv:.3f} m  |  Area = {_rect_area_str}"
-                               + (f"  |  Tilt {disk_tilt:.1f}° @ {disk_tilt_az:.0f}°"
-                                  if disk_tilt > 0.01 else ""))
-                    disk_cx = (src_u1_m + src_u2_m) / 2.0
-                    disk_cy = (src_v1_m + src_v2_m) / 2.0
-                    radius  = min(abs(src_u2_m - src_u1_m), abs(src_v2_m - src_v1_m)) / 2.0
-                    disk_r  = radius
+                    with _sg_plane:
+                        st.markdown("**Plane**")
+                        source_plane = st.radio(
+                            "Source plane", [1, 2, 3], index=0, horizontal=False,
+                            key="source_plane",
+                            format_func=lambda x: {
+                                1: "XY  horizontal  (muons → −Z)",
+                                2: "XZ  vertical    (muons → −Y)",
+                                3: "YZ  vertical    (muons → −X)",
+                            }[x],
+                            help="Orientation of the generation surface in world coordinates.",
+                            label_visibility="collapsed")
 
-                plane_lx   = abs(src_u2_m - src_u1_m) / 2.0
-                plane_ly   = abs(src_v2_m - src_v1_m) / 2.0
-                source_z_m = src_w_m
-                hemi_radius = radius
-                hemi_cz_m   = src_w_m
+                    _uname, _vname, _wname = {1: ("X","Y","Z"), 2: ("X","Z","Y"), 3: ("Y","Z","X")}[source_plane]
+                    _w_help = {
+                        1: "z = 0 → surface. Negative → underground.",
+                        2: "Fixed Y coordinate of the vertical XZ source plane.",
+                        3: "Fixed X coordinate of the vertical YZ source plane.",
+                    }[source_plane]
+
+                    if source_mode == 1:
+                        # ── Disk ──────────────────────────────────────────────────
+                        _dc1, _dc2, _dc3 = st.columns(3)
+                        disk_cx = _dc1.number_input(f"Center {_uname} [m]", -1e5, 1e5, 0.0, 1.0, key="disk_cx")
+                        disk_cy = _dc2.number_input(f"Center {_vname} [m]", -1e5, 1e5, 0.0, 1.0, key="disk_cy")
+                        disk_r  = _dc3.number_input("Radius [m]", 0.01, 1e5, 200.0, 1.0, key="disk_r")
+                        _dw, _dt1, _dt2 = st.columns(3)
+                        src_w_m      = _dw.number_input(f"{_wname} fixed [m]", -1e5, 1e5, 0.0, 1.0,
+                                                        key="src_w", help=_w_help)
+                        disk_tilt    = _dt1.number_input("Tilt [°]", 0.0, 89.9, 0.0, 1.0,
+                                                         key="disk_tilt",
+                                                         help="0 = flat in chosen plane. 90 = edge-on.")
+                        disk_tilt_az = _dt2.number_input(f"Tilt azimuth [°]", 0.0, 360.0, 0.0, 5.0,
+                                                         key="disk_tilt_az",
+                                                         help=f"Tilt direction toward {_uname} axis = 0°.")
+                        st.caption(f"r = {disk_r:.1f} m  |  Area = {np.pi*disk_r**2/1e6:.4f} km²"
+                                   + (f"  |  Tilt {disk_tilt:.1f}° @ {disk_tilt_az:.0f}°"
+                                      if disk_tilt > 0.01 else ""))
+                        src_u1_m = disk_cx - disk_r;  src_u2_m = disk_cx + disk_r
+                        src_v1_m = disk_cy - disk_r;  src_v2_m = disk_cy + disk_r
+                        radius   = disk_r
+                    else:
+                        # ── Rectangle ─────────────────────────────────────────────
+                        _r1, _r2 = st.columns(2)
+                        src_u1_m = _r1.number_input(f"{_uname} min [m]", -1e5, 1e5, -200.0, 0.01,
+                                                    format="%.3f", key="src_u1")
+                        src_u2_m = _r2.number_input(f"{_uname} max [m]", -1e5, 1e5,  200.0, 0.01,
+                                                    format="%.3f", key="src_u2")
+                        _r3, _r4 = st.columns(2)
+                        src_v1_m = _r3.number_input(f"{_vname} min [m]", -1e5, 1e5, -200.0, 0.01,
+                                                    format="%.3f", key="src_v1")
+                        src_v2_m = _r4.number_input(f"{_vname} max [m]", -1e5, 1e5,  200.0, 0.01,
+                                                    format="%.3f", key="src_v2")
+                        _rw, _rt1, _rt2 = st.columns(3)
+                        src_w_m      = _rw.number_input(f"{_wname} fixed [m]", -1e5, 1e5, 0.0, 0.01,
+                                                        format="%.3f", key="src_w", help=_w_help)
+                        disk_tilt    = _rt1.number_input("Tilt [°]", 0.0, 89.9, 0.0, 1.0,
+                                                         key="disk_tilt",
+                                                         help="0 = flat in chosen plane. 90 = edge-on.")
+                        disk_tilt_az = _rt2.number_input(f"Tilt azimuth [°]", 0.0, 360.0, 0.0, 5.0,
+                                                         key="disk_tilt_az",
+                                                         help=f"Tilt direction toward {_uname} axis = 0°.")
+                        _hu = abs(src_u2_m - src_u1_m);  _hv = abs(src_v2_m - src_v1_m)
+                        _rect_area = _hu * _hv
+                        _rect_area_str = (f"{_rect_area/1e6:.4f} km²" if _rect_area >= 1e4
+                                          else f"{_rect_area:.4f} m²")
+                        st.caption(f"{_hu:.3f} × {_hv:.3f} m  |  Area = {_rect_area_str}"
+                                   + (f"  |  Tilt {disk_tilt:.1f}° @ {disk_tilt_az:.0f}°"
+                                      if disk_tilt > 0.01 else ""))
+                        disk_cx = (src_u1_m + src_u2_m) / 2.0
+                        disk_cy = (src_v1_m + src_v2_m) / 2.0
+                        radius  = min(abs(src_u2_m - src_u1_m), abs(src_v2_m - src_v1_m)) / 2.0
+                        disk_r  = radius
+
+                    plane_lx   = abs(src_u2_m - src_u1_m) / 2.0
+                    plane_ly   = abs(src_v2_m - src_v1_m) / 2.0
+                    source_z_m = src_w_m
+                    hemi_radius = radius
+                    hemi_cz_m   = src_w_m
+
+            else:
+                # Basic: derived from the detector (basic_mode.required_source):
+                # horizontal, at z = 0, just large enough that every straight path at
+                # θ ≤ θ_max into the margin-inflated detector starts on it. Not
+                # written to the Advanced keys.
+                if st.session_state.get("bd_use_detector", True):
+                    _bdets = _basic_detectors(e_min)
+                    # vertical muons (mode 1) need no more than the detector's footprint
+                    _bsrc = _BM.required_source(
+                        _bdets, 0.0 if angular_mode == 1 else theta_max, source_mode)
+                else:
+                    with _sg_plane:
+                        st.markdown("**Size**")
+                        st.session_state.setdefault("bd_src_size", _BM.BASIC_SOURCE_SIZE_M)
+                        st.number_input("Half-width [m]" if source_mode == 2 else "Radius [m]",
+                                        0.01, 1e5, step=10.0, key="bd_src_size",
+                                        help="Horizontal source at the ground, centred on "
+                                             "the origin (a square for the rectangle).")
+                    _bsrc = _BM.free_source(source_mode, st.session_state["bd_src_size"])
+                source_plane = 1
+                disk_cx, disk_cy = _bsrc["disk_cx"], _bsrc["disk_cy"]
+                disk_r = radius = _bsrc["disk_r"]
+                src_u1_m, src_u2_m = _bsrc["src_u1_m"], _bsrc["src_u2_m"]
+                src_v1_m, src_v2_m = _bsrc["src_v1_m"], _bsrc["src_v2_m"]
+                src_w_m = source_z_m = 0.0
+                disk_tilt = disk_tilt_az = 0.0
+                hemi_radius, hemi_cz_m = radius, 0.0
+                if source_mode == 3:
+                    plane_lx = plane_ly = 0.0
+                    _bsrc_txt = f"hemisphere of radius {radius:,.0f} m on the z axis"
+                elif source_mode == 1:
+                    plane_lx = plane_ly = radius
+                    _bsrc_txt = (f"disk of radius {radius:,.0f} m at the ground, centred on "
+                                 f"({disk_cx:.1f}, {disk_cy:.1f}) m")
+                else:
+                    plane_lx = abs(src_u2_m - src_u1_m) / 2.0
+                    plane_ly = abs(src_v2_m - src_v1_m) / 2.0
+                    _bsrc_txt = (f"rectangle x {src_u1_m:,.0f} to {src_u2_m:,.0f} m, "
+                                 f"y {src_v1_m:,.0f} to {src_v2_m:,.0f} m at the ground")
+                if st.session_state.get("bd_use_detector", True):
+                    st.caption(f"Size set from the detector: {_bsrc_txt}, so every muon "
+                               f"reaching it at θ ≤ {theta_max:.0f}° starts on the source.")
+                else:
+                    st.caption(f"Source: {_bsrc_txt}.")
 
             st.divider()
 
@@ -3284,7 +3508,9 @@ with tab_gen:
             st.markdown("#### Sampling")
             _samp_c1, _samp_c2 = st.columns(2)
             nmuons_gen = int(_samp_c1.number_input(
-                "Muons to generate", min_value=100, max_value=None, value=100_000, step=1_000,
+                ("Detector hits to generate"
+                 if not _ADV and st.session_state.get("bd_use_detector", True)
+                 else "Muons to generate"), min_value=100, max_value=None, value=100_000, step=1_000,
                 key="nmuonsgen",
                 help=("**Detector filter ON:** this many *accepted* muons (hits); "
                       "total tried = N / acceptance.\n\n"
@@ -3304,8 +3530,9 @@ with tab_gen:
             elif _gen_missing:
                 _samp_c2.warning(
                     "`ucmuon_gen_omp` not found — the **Standard** workflow needs the "
-                    "Fortran generator, so its Run button is disabled. Switch the "
-                    "Workflow (top of this tab) to **Guaranteed-hit mode**, which uses "
+                    "Fortran generator, so its Run button is disabled. "
+                    + ("Switch to **Advanced** mode, then switch the " if not _ADV else "Switch the ")
+                    + "Workflow (top of this tab) to **Guaranteed-hit mode**, which uses "
                     "a pure-Python generator and works without Fortran. To enable the "
                     "Standard workflow, "
                     + ("install gfortran via MSYS2 and re-run the installer (see INSTALL.md)."
@@ -3392,72 +3619,140 @@ with tab_gen:
 
     else:
         # ── Standard: detector filter (optional) ──────────────────────────────
-        use_detector = st.checkbox("🔍  Enable surface detector filter  (ray → geometry intersection)",
-                                   key="usedetector")
-        output_sel = "output/muons_selected.dat"
-        detectors  = []
-        if use_detector:
-            _df1, _df2 = st.columns([3, 2])
-            output_sel = _df1.text_input("Selected muons file", "output/muons_selected.dat", key="outputsel")
-            ndet = int(_df2.number_input("Number of detectors", 1, 10, 1, key="ndet"))
-            _det_cols = st.columns(min(ndet, 3))
-            for i in range(ndet):
-                with _det_cols[i % len(_det_cols)]:
-                    with st.expander(f"Detector {i+1}", expanded=(i == 0)):
-                        shape  = st.selectbox("Shape", [1, 2], key=f"sh{i}",
-                                     format_func=lambda x: "Cylinder" if x == 1 else "Box (AABB)")
-                        margin = st.number_input(
-                            "Safety margin [cm]", 0.0, 500.0, 0.0, key=f"mg{i}",
-                            help="Acceptance halo added around the detector to catch "
-                                 "muons scattered back in by MCS.")
-                        st.caption("💡 Margin sizing → [🧰 Helpers & calculators](#helpers) "
-                                   "→ 🎯 MCS margin")
-                        d = {"shape": shape, "margin": margin}
-                        if shape == 1:
-                            _dc1, _dc2 = st.columns(2)
-                            with _dc1:
-                                st.markdown("**Bottom A**")
-                                d["ax"] = st.number_input("Ax [cm]", value=0.0,     key=f"ax{i}")
-                                d["ay"] = st.number_input("Ay [cm]", value=0.0,     key=f"ay{i}")
-                                d["az"] = st.number_input("Az [cm]", value=-9000.0, key=f"az{i}")
-                            with _dc2:
-                                st.markdown("**Top B**")
-                                d["bx"] = st.number_input("Bx [cm]", value=0.0, key=f"bx{i}")
-                                d["by"] = st.number_input("By [cm]", value=0.0, key=f"by{i}")
-                                d["bz"] = st.number_input("Bz [cm]", value=0.0, key=f"bz{i}")
-                            d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 5.0, key=f"rr{i}")
-                        else:
-                            _dc1, _dc2 = st.columns(2)
-                            with _dc1:
-                                d["xmin"] = st.number_input("Xmin [cm]", value=-100.0,  key=f"xn{i}")
-                                d["ymin"] = st.number_input("Ymin [cm]", value=-100.0,  key=f"yn{i}")
-                                d["zmin"] = st.number_input("Zmin [cm]", value=-9000.0, key=f"zn{i}")
-                            with _dc2:
-                                d["xmax"] = st.number_input("Xmax [cm]", value=100.0, key=f"xx{i}")
-                                d["ymax"] = st.number_input("Ymax [cm]", value=100.0, key=f"yx{i}")
-                                d["zmax"] = st.number_input("Zmax [cm]", value=0.0,   key=f"zx{i}")
-                        detectors.append(d)
-                        _warn_margin(d, e_min, theta_max, locals().get("src_w_m", 0.0))
-                        _warn_source_reach(
-                            d, theta_max, src_z_m=locals().get("src_w_m", 0.0),
-                            source_mode=source_mode, source_plane=locals().get("source_plane", 1),
-                            disk_tilt=locals().get("disk_tilt", 0.0),
-                            disk_cx_m=locals().get("disk_cx", 0.0), disk_cy_m=locals().get("disk_cy", 0.0),
-                            disk_r_m=locals().get("disk_r", 0.0),
-                            u1_m=locals().get("src_u1_m", 0.0), u2_m=locals().get("src_u2_m", 0.0),
-                            v1_m=locals().get("src_v1_m", 0.0), v2_m=locals().get("src_v2_m", 0.0))
+        if _ADV:
+            use_detector = st.checkbox("🔍  Enable surface detector filter  (ray → geometry intersection)",
+                                       key="usedetector")
+            output_sel = "output/muons_selected.dat"
+            detectors  = []
+            if use_detector:
+                _df1, _df2 = st.columns([3, 2])
+                output_sel = _df1.text_input("Selected muons file", "output/muons_selected.dat", key="outputsel")
+                ndet = int(_df2.number_input("Number of detectors", 1, 10, 1, key="ndet"))
+                _det_cols = st.columns(min(ndet, 3))
+                for i in range(ndet):
+                    with _det_cols[i % len(_det_cols)]:
+                        with st.expander(f"Detector {i+1}", expanded=(i == 0)):
+                            shape  = st.selectbox("Shape", [1, 2], key=f"sh{i}",
+                                         format_func=lambda x: "Cylinder" if x == 1 else "Box (AABB)")
+                            margin = st.number_input(
+                                "Safety margin [cm]", 0.0, 500.0, 0.0, key=f"mg{i}",
+                                help="Acceptance halo added around the detector to catch "
+                                     "muons scattered back in by MCS.")
+                            st.caption("💡 Margin sizing → [🧰 Helpers & calculators](#helpers) "
+                                       "→ 🎯 MCS margin")
+                            d = {"shape": shape, "margin": margin}
+                            if shape == 1:
+                                _dc1, _dc2 = st.columns(2)
+                                with _dc1:
+                                    st.markdown("**Bottom A**")
+                                    d["ax"] = st.number_input("Ax [cm]", value=0.0,     key=f"ax{i}")
+                                    d["ay"] = st.number_input("Ay [cm]", value=0.0,     key=f"ay{i}")
+                                    d["az"] = st.number_input("Az [cm]", value=-9000.0, key=f"az{i}")
+                                with _dc2:
+                                    st.markdown("**Top B**")
+                                    d["bx"] = st.number_input("Bx [cm]", value=0.0, key=f"bx{i}")
+                                    d["by"] = st.number_input("By [cm]", value=0.0, key=f"by{i}")
+                                    d["bz"] = st.number_input("Bz [cm]", value=0.0, key=f"bz{i}")
+                                d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 5.0, key=f"rr{i}")
+                            else:
+                                _dc1, _dc2 = st.columns(2)
+                                with _dc1:
+                                    d["xmin"] = st.number_input("Xmin [cm]", value=-100.0,  key=f"xn{i}")
+                                    d["ymin"] = st.number_input("Ymin [cm]", value=-100.0,  key=f"yn{i}")
+                                    d["zmin"] = st.number_input("Zmin [cm]", value=-9000.0, key=f"zn{i}")
+                                with _dc2:
+                                    d["xmax"] = st.number_input("Xmax [cm]", value=100.0, key=f"xx{i}")
+                                    d["ymax"] = st.number_input("Ymax [cm]", value=100.0, key=f"yx{i}")
+                                    d["zmax"] = st.number_input("Zmax [cm]", value=0.0,   key=f"zx{i}")
+                            detectors.append(d)
+                            _warn_margin(d, e_min, theta_max, locals().get("src_w_m", 0.0))
+                            _warn_source_reach(
+                                d, theta_max, src_z_m=locals().get("src_w_m", 0.0),
+                                source_mode=source_mode, source_plane=locals().get("source_plane", 1),
+                                disk_tilt=locals().get("disk_tilt", 0.0),
+                                disk_cx_m=locals().get("disk_cx", 0.0), disk_cy_m=locals().get("disk_cy", 0.0),
+                                disk_r_m=locals().get("disk_r", 0.0),
+                                u1_m=locals().get("src_u1_m", 0.0), u2_m=locals().get("src_u2_m", 0.0),
+                                v1_m=locals().get("src_v1_m", 0.0), v2_m=locals().get("src_v2_m", 0.0))
 
 
-        if not use_detector:
-            st.caption(
-                "💡  Switch to **Guaranteed-hit mode** (top toggle) for 100 % detector hits — no wasted trials."
-            )
+            if not use_detector:
+                st.caption(
+                    "💡  Switch to **Guaranteed-hit mode** (top toggle) for 100 % detector hits — no wasted trials."
+                )
+
+        else:
+            # Basic: one detector, given as centre, depth of its top face, height and
+            # size in metres (written into the per-detector keys, so Advanced shows the
+            # same detector); the margin is derived. The filter is Basic's own
+            # setting (bd_use_detector, on by default), not Advanced's usedetector.
+            st.markdown("#### Detector")
+            st.session_state.setdefault("bd_use_detector", True)
+            use_detector = st.checkbox(
+                "Detector filter: keep only the muons that reach a detector",
+                key="bd_use_detector",
+                help="On: give the detector below; the safety margin and the source "
+                     "size are derived from it, and the run stops at the number of "
+                     "hits asked for. Off: every generated muon is kept, on a source "
+                     "of the size you give (Source, above).")
+            output_sel = "output/muons_selected.dat"
+            _sdets = _session_detectors() if use_detector else [None]
+            _b0 = (_BM.basic_from_detector(_sdets[0])
+                   if use_detector and len(_sdets) == 1 else None)
+            if not use_detector:
+                pass
+            elif _b0 is None:
+                st.info(f"ℹ️ {len(_sdets)} detector(s) defined in Advanced mode (more than one, "
+                        "or a cylinder with a tilted axis): Basic uses them as they are. "
+                        "Edit them in Advanced mode.")
+            else:
+                # Show the current detector (set before the widgets render).
+                st.session_state["bd_shape"] = _b0["shape"]
+                for _k in ("cx", "cy", "top", "height", "radius", "width", "length"):
+                    if _b0.get(f"{_k}_m") is not None:
+                        st.session_state[f"bd_{_k}"] = float(_b0[f"{_k}_m"])
+                _bd1, _bd2, _bd3 = st.columns(3)
+                _bd1.selectbox("Shape", [1, 2], key="bd_shape", on_change=_basic_det_changed,
+                               format_func=lambda x: "Cylinder (vertical)" if x == 1 else "Box")
+                _bd2.number_input("Centre x [m]", -1e5, 1e5, step=1.0, format="%.2f",
+                                  key="bd_cx", on_change=_basic_det_changed)
+                _bd3.number_input("Centre y [m]", -1e5, 1e5, step=1.0, format="%.2f",
+                                  key="bd_cy", on_change=_basic_det_changed)
+                _bd4, _bd5, _bd6 = st.columns(3)
+                _bd4.number_input("Depth of top face [m]", -1e4, 1e4, step=1.0, format="%.2f",
+                                  key="bd_top", on_change=_basic_det_changed,
+                                  help="Below the ground (z = 0). 0 = at the surface.")
+                _bd5.number_input("Height [m]", 0.001, 1e4, step=0.5, format="%.3f",
+                                  key="bd_height", on_change=_basic_det_changed)
+                if _b0["shape"] == 1:
+                    _bd6.number_input("Radius [m]", 0.001, 1e4, step=0.1, format="%.3f",
+                                      key="bd_radius", on_change=_basic_det_changed)
+                else:
+                    _bd6.number_input("Width (x) [m]", 0.001, 1e5, step=0.5, format="%.3f",
+                                      key="bd_width", on_change=_basic_det_changed)
+                    _bd6.number_input("Length (y) [m]", 0.001, 1e5, step=0.5, format="%.3f",
+                                      key="bd_length", on_change=_basic_det_changed)
+            detectors = _basic_detectors(e_min) if use_detector else []
+            if use_detector:
+                # Derived settings, read-only (Advanced keeps its own values).
+                st.markdown("**Derived settings**")
+                _dv3, _dv4 = st.columns(2)
+                _dv3.metric("Safety margin", f"{max(d['margin'] for d in detectors):.0f} cm",
+                            help="2σ_r of multiple scattering at the detector's deepest point, "
+                                 f"ρ = {float(st.session_state.get('music_rho', 2.65) or 2.65):.2f} "
+                                 "g/cm³ (Transport tab), muons of E_min or the lowest energy "
+                                 "that gets there.")
+                _dv4.metric("Source", (f"R = {radius:,.0f} m" if source_mode != 2 else
+                                       f"{src_u2_m - src_u1_m:,.0f} × {src_v2_m - src_v1_m:,.0f} m"))
+            else:
+                st.caption("No detector: every generated muon is written, and the "
+                           "Transport tab asks for the overburden depth.")
 
     # ══════════════════════════════════════════════════════════════════════════
     # ROW 3 — Output & export
     # ══════════════════════════════════════════════════════════════════════════
     st.divider()
-    with st.expander("📁  Output & export", expanded=False):
+    with st.expander("📁  Output files & export  (PHITS, Geant4)", expanded=False):
         if use_dasrem:
             output_all = "output/muons_surface.dat"
             st.caption("ℹ️  Guaranteed-hit mode writes a **single file** — its name is set "
@@ -3465,7 +3760,14 @@ with tab_gen:
                        "detector hit, so there is no hits/misses split.")
         else:
             output_all = st.text_input("Surface muon file", "output/muons_surface.dat",
-                                       key="outputall")
+                                       key="outputall",
+                                       help="Every generated muon (without a detector "
+                                            "filter, or with 'Save ALL muons').")
+            if not _ADV and use_detector:
+                # Basic: the hits file's name (Advanced sets it with its detectors).
+                output_sel = st.text_input("Detector-hits file", "output/muons_selected.dat",
+                                           key="outputsel",
+                                           help="The muons that reach the detector.")
         st.markdown("**Optional exports**")
         _ex1, _ex2, _ex3 = st.columns(3)
         with _ex1:
@@ -3512,6 +3814,7 @@ with tab_gen:
                         st.caption("ℹ️  Enable **Save ALL muons** so the all-muons file "
                                    "is written; otherwise Geant4 falls back to detector hits.")
 
+
     # defaults if expander never opened
     if "output_all"  not in dir(): output_all = "output/muons_surface.dat"  # noqa: E701
     if "save_all"    not in dir(): save_all   = False                        # noqa: E701
@@ -3536,11 +3839,17 @@ with tab_gen:
         _dr_extra_str = "  |  " + "  |  ".join(_dr_extras) if _dr_extras else ""
         st.info(f"📄 Will write: `{_dr_out_preview}`{_dr_extra_str}  "
                 f"(all {nmuons_gen:,} muons guaranteed to hit the detector)")
-    elif use_detector:
-        st.info(f"📄 Will write: `{output_all}` + `{output_sel}`" if save_all
-                else f"📄 Will write: `{output_sel}` only  (detector filter ON, save-all OFF)")
     else:
-        st.info(f"📄 Will write: `{output_all}`")
+        # the exports too (up to v1.2.0 the line named the muon files only)
+        _exp_str = "".join(
+            f"  |  {_lbl} → `{_f}`" for _on, _lbl, _f in
+            ((save_phits, "PHITS", output_phits), (save_geant4, "Geant4", output_geant4)) if _on)
+        if use_detector:
+            st.info((f"📄 Will write: `{output_all}` + `{output_sel}`" if save_all
+                     else f"📄 Will write: `{output_sel}` (detector hits; save-all off)")
+                    + _exp_str)
+        else:
+            st.info(f"📄 Will write: `{output_all}`" + _exp_str)
 
     _rb1, _rb2 = st.columns([4, 1])
     _run_label = ("▶  Run Generator  —  guaranteed-hit mode  (Python)"
@@ -3564,10 +3873,44 @@ with tab_gen:
         # Drop the previous run's flux: runs that print no "Integrated flux"
         # line (PARMA, DAS-REM, power-law) must not silently reuse a stale
         # value from an earlier spectrum in the rate estimate.
-        st.session_state.pop("gen_integrated_flux", None)
-        st.session_state.pop("gen_surface_rate", None)
+        _UIS.forget("gen_integrated_flux", "gen_surface_rate")
         st.session_state["gen_use_dasrem"]    = use_dasrem
         st.session_state["gen_save_all"]      = save_all
+        st.session_state["gen_save_phits"]    = save_phits
+        st.session_state["gen_output_phits"]  = output_phits
+        # Which mode ran, and for a Basic run the values it used, as Advanced
+        # widget keys: Advanced shows them and can copy them on request
+        # (decision 2026-10-05); Basic itself never writes those keys.
+        st.session_state["gen_ui_mode"] = st.session_state.get("ui_mode", "Advanced")
+        if _ADV:
+            _UIS.forget("gen_basic_used", "gen_basic_summary")
+        else:
+            _bu = {"gen_workflow": "Standard", "gen_mono": False, "emin": float(e_min),
+                   "emax": float(e_max), "angularmode": int(angular_mode),
+                   "thetamax": float(theta_max), "usedetector": bool(use_detector),
+                   "source_plane": 1, "src_w": 0.0,
+                   "disk_tilt": 0.0, "disk_tilt_az": 0.0,
+                   "parma_charge": 0, "parma_sw_from_date": True}
+            if use_detector:
+                _bu["ndet"] = len(detectors)
+                _bu.update({f"mg{_i}": float(_d["margin"]) for _i, _d in enumerate(detectors)})
+            if source_mode == 1:
+                _bu.update(disk_cx=float(disk_cx), disk_cy=float(disk_cy), disk_r=float(disk_r))
+                _bsz = f"disk R = {disk_r:,.0f} m"
+            elif source_mode == 2:
+                _bu.update(src_u1=float(src_u1_m), src_u2=float(src_u2_m),
+                           src_v1=float(src_v1_m), src_v2=float(src_v2_m))
+                _bsz = f"rectangle {src_u2_m - src_u1_m:,.0f} × {src_v2_m - src_v1_m:,.0f} m"
+            else:
+                _bu.update(radius=float(radius), sourcezm=0.0)
+                _bsz = f"hemisphere R = {radius:,.0f} m"
+            st.session_state["gen_basic_used"] = _bu
+            st.session_state["gen_basic_summary"] = (
+                f"{_BM.recommended(spectrum_mode)['name']}, E {e_min:g}–{e_max:g} GeV, "
+                f"angular mode {angular_mode}, θ_max {theta_max:.0f}°, "
+                + (f"margin {max(_d['margin'] for _d in detectors):.0f} cm, "
+                   if use_detector else "no detector filter, ")
+                + _bsz)
         st.session_state["gen_output_all"]    = output_all
         st.session_state["gen_ntry"]          = None
         st.session_state["gen_theta_max"]     = theta_max
@@ -3597,6 +3940,11 @@ with tab_gen:
                 st.session_state["surface_file"] = output_sel
         st.session_state["gen_run_files"] = [
             _norm_path(f) for f, on in ((output_all, write_surface), (output_sel, use_detector)) if on]
+        # A new run's output must be what Transport and Terrain preselect: drop
+        # the remembered input choices (up to v1.2.0 a remembered file won over
+        # the newest generator output).
+        for _k in ("transport_infile", "transport_infile_select", "terrain_infile_select"):
+            st.session_state.pop(_k, None)
 
         if use_dasrem:
             # ── DAS-REM mode: pure Python generator ──────────────────────────
@@ -3669,8 +4017,8 @@ with tab_gen:
 
     # ── Post-run: manual PHITS export — fallback only, shown when the automatic
     #    "PHITS source (s-type=17)" export in 📁 Output & export is disabled ────
-    if (_gg("gen_success") is True and not _gg("gen_running")
-            and not st.session_state.get("savephits", True)):
+    if (_ADV and _gg("gen_success") is True and not _gg("gen_running")
+            and not st.session_state.get("gen_save_phits", st.session_state.get("savephits", True))):
         st.divider()
         if st.checkbox("Export surface muons as PHITS source", key="phits_surf_enable",
                        help="Manual converter — available because the automatic PHITS "
@@ -3716,7 +4064,7 @@ with tab_gen:
     _store_gen_params()
 
     # ── MCS acceptance estimator ──────────────────────────────────────────────
-    if (_MCS_GUI_OK
+    if (_ADV and _MCS_GUI_OK
             and _gg("gen_success") is True
             and not _gg("gen_running")
             and st.session_state.get("gen_use_detector", False)
@@ -3752,677 +4100,678 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
     # ══════════════════════════════════════════════════════════════════════════
     # ROW 5 — Helpers & calculators (planning tools — do not affect generation)
     # ══════════════════════════════════════════════════════════════════════════
-    st.divider()
-    st.markdown('<div id="helpers"></div>', unsafe_allow_html=True)
-    st.markdown("#### 🧰  Helpers & calculators")
-    st.caption("Planning tools — they inform parameter choices and do **not** "
-               "change the generation.")
+    if _ADV:
+        st.divider()
+        st.markdown('<div id="helpers"></div>', unsafe_allow_html=True)
+        st.markdown("#### 🧰  Helpers & calculators")
+        st.caption("Planning tools — they inform parameter choices and do **not** "
+                   "change the generation.")
 
-    # ── 📏 Source & detector geometry helpers ───────────────────────────────
-    with st.expander("📏  Source size, MCS margin & detector solid angle", expanded=False):
-        _hlp_src, _hlp_mcs, _hlp_sa = st.tabs([
-            "📏  Source size & energy window",
-            "🎯  MCS margin",
-            "📐  Detector solid angle",
-        ])
-        with _hlp_src:
-            if detectors and _SRCOPT_GUI_OK:
-                render_combined_source_panel(
-                    detectors=detectors, e_min=e_min, e_max=e_max,
-                    theta_max=theta_max, source_mode=source_mode,
-                    radius=radius, plane_lx=plane_lx, plane_ly=plane_ly,
+        # ── 📏 Source & detector geometry helpers ───────────────────────────────
+        with st.expander("📏  Source size, MCS margin & detector solid angle", expanded=False):
+            _hlp_src, _hlp_mcs, _hlp_sa = st.tabs([
+                "📏  Source size & energy window",
+                "🎯  MCS margin",
+                "📐  Detector solid angle",
+            ])
+            with _hlp_src:
+                if detectors and _SRCOPT_GUI_OK:
+                    render_combined_source_panel(
+                        detectors=detectors, e_min=e_min, e_max=e_max,
+                        theta_max=theta_max, source_mode=source_mode,
+                        radius=radius, plane_lx=plane_lx, plane_ly=plane_ly,
+                    )
+                else:
+                    st.info("Define at least one detector (enable the detector filter or "
+                            "guaranteed-hit mode) to get source size, energy-window and "
+                            "θ_max recommendations.")
+            with _hlp_mcs:
+                _render_mcs_margin_helper(detectors)
+            with _hlp_sa:
+                if detectors:
+                    _sa_sr, _ca_sr, _sa_msr, _frac = compute_detector_solid_angle(detectors)
+                    _sg1, _sg2, _sg3, _sg4 = st.columns(4)
+                    _sg1.metric("Solid angle",      f"{_sa_sr:.4e} sr")
+                    _sg2.metric("Solid angle",      f"{_sa_msr:.4f} msr")
+                    _sg3.metric("Fraction of 2π",   f"{_frac*100:.4f} %")
+                    _sg4.metric("cos²θ acceptance", f"{_ca_sr:.4e} sr")
+                    st.caption("MC estimate (600k rays from source centre). "
+                               "cos²θ acceptance is used in the flux formula.")
+                else:
+                    st.info("Define at least one detector to compute its solid angle.")
+
+        # ── Equivalent real measurement time ─────────────────────────────────────
+        with st.expander("⏱️  Equivalent real measurement time", expanded=False):
+            st.caption(
+                "How long a real detector would need to collect an equivalent number of muons "
+                "passing through the source surface area. "
+                "Formula: **t = N / (I_vert × Ω_eff × A_src)**"
+            )
+            if mono_beam:
+                st.warning(
+                    "⚡ Mono-energetic beam: the rate estimate below is **not meaningful** for a "
+                    "delta-function spectrum. Disable mono-energetic mode for realistic exposure-time estimates."
                 )
+
+            _mtime_c1, _mtime_c2 = st.columns([3, 2])
+            with _mtime_c1:
+                # ── Flux model ────────────────────────────────────────────────────
+                _ffe_model = st.selectbox(
+                    "Flux model for rate estimate",
+                    list(_FFE_MODEL_LABELS.keys()),
+                    index=list(_FFE_MODEL_LABELS.keys()).index("reyna_bugaev"),
+                    format_func=lambda k: _FFE_MODEL_LABELS[k],
+                    key="mtime_ffe_model",
+                    help="**Reyna-Bugaev** (recommended): matches PDG sea-level intensity "
+                         "(I_V > 1 GeV/c = 70.2 vs PDG ≈ 70 m⁻²sr⁻¹s⁻¹).\n\n"
+                         "**Guan/Frosin**: fitted to data at 1 GeV–1 TeV and all zenith "
+                         "angles; vertical intensity above 1 GeV/c 60–63 m⁻²s⁻¹sr⁻¹ "
+                         "(PDG ≈ 70, Reyna 70.2). **Tang et al. (2006)**: modified Gaisser, "
+                         "60 m⁻²s⁻¹sr⁻¹. **Gaisser (1990)** (Bugaev key) is valid only above "
+                         "100/cosθ GeV and overestimates below that."
+                )
+
+            with _mtime_c2:
+                st.markdown("")  # vertical alignment spacer
+                # e_min is a total energy; the estimator's argument is kinetic.
+                _vw = _ffe_validity_warning(_ffe_model, max(e_min - 0.10566, 0.0))
+                if _vw:
+                    st.warning(f"⚠️  {_vw}", icon="⚠️")
+
+            # ── Source area — computed from the geometry the user already set ──────
+            if source_mode == 1:
+                _area_m2 = np.pi * radius ** 2
+                _a_label = f"disk  r = {radius:.1f} m"
+            elif source_mode == 3:
+                _area_m2 = np.pi * radius ** 2
+                _a_label = f"hemisphere  R = {radius:.1f} m (projected)"
             else:
-                st.info("Define at least one detector (enable the detector filter or "
-                        "guaranteed-hit mode) to get source size, energy-window and "
-                        "θ_max recommendations.")
-        with _hlp_mcs:
-            _render_mcs_margin_helper(detectors)
-        with _hlp_sa:
-            if detectors:
-                _sa_sr, _ca_sr, _sa_msr, _frac = compute_detector_solid_angle(detectors)
-                _sg1, _sg2, _sg3, _sg4 = st.columns(4)
-                _sg1.metric("Solid angle",      f"{_sa_sr:.4e} sr")
-                _sg2.metric("Solid angle",      f"{_sa_msr:.4f} msr")
-                _sg3.metric("Fraction of 2π",   f"{_frac*100:.4f} %")
-                _sg4.metric("cos²θ acceptance", f"{_ca_sr:.4e} sr")
-                st.caption("MC estimate (600k rays from source centre). "
-                           "cos²θ acceptance is used in the flux formula.")
+                _area_m2 = 4.0 * plane_lx * plane_ly
+                _a_label = f"{2*plane_lx:.1f} × {2*plane_ly:.1f} m rectangle"
+            A_src_cm2 = _area_m2 * 1e4
+
+            # ── N muons ───────────────────────────────────────────────────────────
+            _ntry = st.session_state.get("gen_ntry", None)
+            if use_dasrem:
+                _N_t         = int(nmuons_gen)
+                _N_lbl       = "guaranteed detector hits"
+                _N_note      = None
+                _dasrem_note = True
+            elif use_detector and _ntry and _ntry > 0:
+                _N_t         = int(_ntry)
+                _N_lbl       = f"total tried  ({_ntry:,} from last run)"
+                _N_note      = None
+                _dasrem_note = False
+            elif use_detector:
+                _N_t         = int(nmuons_gen)
+                _N_lbl       = "target hits  (run once to get exact tried count)"
+                _N_note      = ("Run the generator once to get the exact tried count. "
+                                "Until then this uses N_hits as a lower bound — actual time will be **longer**.")
+                _dasrem_note = False
             else:
-                st.info("Define at least one detector to compute its solid angle.")
+                _N_t         = int(nmuons_gen)
+                _N_lbl       = "total generated"
+                _N_note      = None
+                _dasrem_note = False
 
-    # ── Equivalent real measurement time ─────────────────────────────────────
-    with st.expander("⏱️  Equivalent real measurement time", expanded=False):
-        st.caption(
-            "How long a real detector would need to collect an equivalent number of muons "
-            "passing through the source surface area. "
-            "Formula: **t = N / (I_vert × Ω_eff × A_src)**"
-        )
-        if mono_beam:
-            st.warning(
-                "⚡ Mono-energetic beam: the rate estimate below is **not meaningful** for a "
-                "delta-function spectrum. Disable mono-energetic mode for realistic exposure-time estimates."
-            )
-
-        _mtime_c1, _mtime_c2 = st.columns([3, 2])
-        with _mtime_c1:
-            # ── Flux model ────────────────────────────────────────────────────
-            _ffe_model = st.selectbox(
-                "Flux model for rate estimate",
-                list(_FFE_MODEL_LABELS.keys()),
-                index=list(_FFE_MODEL_LABELS.keys()).index("reyna_bugaev"),
-                format_func=lambda k: _FFE_MODEL_LABELS[k],
-                key="mtime_ffe_model",
-                help="**Reyna-Bugaev** (recommended): matches PDG sea-level intensity "
-                     "(I_V > 1 GeV/c = 70.2 vs PDG ≈ 70 m⁻²sr⁻¹s⁻¹).\n\n"
-                     "**Guan/Frosin**: fitted to data at 1 GeV–1 TeV and all zenith "
-                     "angles; vertical intensity above 1 GeV/c 60–63 m⁻²s⁻¹sr⁻¹ "
-                     "(PDG ≈ 70, Reyna 70.2). **Tang et al. (2006)**: modified Gaisser, "
-                     "60 m⁻²s⁻¹sr⁻¹. **Gaisser (1990)** (Bugaev key) is valid only above "
-                     "100/cosθ GeV and overestimates below that."
-            )
-
-        with _mtime_c2:
-            st.markdown("")  # vertical alignment spacer
-            # e_min is a total energy; the estimator's argument is kinetic.
-            _vw = _ffe_validity_warning(_ffe_model, max(e_min - 0.10566, 0.0))
-            if _vw:
-                st.warning(f"⚠️  {_vw}", icon="⚠️")
-
-        # ── Source area — computed from the geometry the user already set ──────
-        if source_mode == 1:
-            _area_m2 = np.pi * radius ** 2
-            _a_label = f"disk  r = {radius:.1f} m"
-        elif source_mode == 3:
-            _area_m2 = np.pi * radius ** 2
-            _a_label = f"hemisphere  R = {radius:.1f} m (projected)"
-        else:
-            _area_m2 = 4.0 * plane_lx * plane_ly
-            _a_label = f"{2*plane_lx:.1f} × {2*plane_ly:.1f} m rectangle"
-        A_src_cm2 = _area_m2 * 1e4
-
-        # ── N muons ───────────────────────────────────────────────────────────
-        _ntry = st.session_state.get("gen_ntry", None)
-        if use_dasrem:
-            _N_t         = int(nmuons_gen)
-            _N_lbl       = "guaranteed detector hits"
-            _N_note      = None
-            _dasrem_note = True
-        elif use_detector and _ntry and _ntry > 0:
-            _N_t         = int(_ntry)
-            _N_lbl       = f"total tried  ({_ntry:,} from last run)"
-            _N_note      = None
-            _dasrem_note = False
-        elif use_detector:
-            _N_t         = int(nmuons_gen)
-            _N_lbl       = "target hits  (run once to get exact tried count)"
-            _N_note      = ("Run the generator once to get the exact tried count. "
-                            "Until then this uses N_hits as a lower bound — actual time will be **longer**.")
-            _dasrem_note = False
-        else:
-            _N_t         = int(nmuons_gen)
-            _N_lbl       = "total generated"
-            _N_note      = None
-            _dasrem_note = False
-
-        # ── Flux integral ─────────────────────────────────────────────────────
-        _emin_flux = max(e_min, 0.5)
-        _emax_flux = min(e_max, 1.5e4)
-        _clamped   = _emin_flux > e_min
-        _flux_err  = None
-        if _emin_flux >= _emax_flux:
-            I_vert    = 0.0
-            _I_full   = 0.0
-            _flux_err = f"E_min ({_emin_flux:.2f} GeV) ≥ E_max — set E_max > 0.5 GeV"
-        else:
-            try:
-                _trapz  = getattr(np, "trapezoid", None) or np.trapz
-                _Egrid  = np.geomspace(_emin_flux, _emax_flux, 500)
-                # _Egrid is total energy (the generator's convention);
-                # differential_flux takes kinetic energy. dT = dE, so only the
-                # argument shifts. (Passing E as T raised a 1 GeV threshold by
-                # m_mu, 4% in flux at 1 GeV, before the 2026-09 audit.)
-                I_vert  = float(_trapz(differential_flux(_Egrid - 0.10566, theta_deg=0.0, model=_ffe_model), _Egrid))
-                _Efull  = np.geomspace(0.5, 1.5e4, 500)
-                _I_full = float(_trapz(differential_flux(_Efull - 0.10566, theta_deg=0.0, model=_ffe_model), _Efull))
-            except Exception as _e:
+            # ── Flux integral ─────────────────────────────────────────────────────
+            _emin_flux = max(e_min, 0.5)
+            _emax_flux = min(e_max, 1.5e4)
+            _clamped   = _emin_flux > e_min
+            _flux_err  = None
+            if _emin_flux >= _emax_flux:
                 I_vert    = 0.0
                 _I_full   = 0.0
-                _flux_err = str(_e)
+                _flux_err = f"E_min ({_emin_flux:.2f} GeV) ≥ E_max — set E_max > 0.5 GeV"
+            else:
+                try:
+                    _trapz  = getattr(np, "trapezoid", None) or np.trapz
+                    _Egrid  = np.geomspace(_emin_flux, _emax_flux, 500)
+                    # _Egrid is total energy (the generator's convention);
+                    # differential_flux takes kinetic energy. dT = dE, so only the
+                    # argument shifts. (Passing E as T raised a 1 GeV threshold by
+                    # m_mu, 4% in flux at 1 GeV, before the 2026-09 audit.)
+                    I_vert  = float(_trapz(differential_flux(_Egrid - 0.10566, theta_deg=0.0, model=_ffe_model), _Egrid))
+                    _Efull  = np.geomspace(0.5, 1.5e4, 500)
+                    _I_full = float(_trapz(differential_flux(_Efull - 0.10566, theta_deg=0.0, model=_ffe_model), _Efull))
+                except Exception as _e:
+                    I_vert    = 0.0
+                    _I_full   = 0.0
+                    _flux_err = str(_e)
 
-        # ── Rate through the source surface: the same R as the generator's
-        #    "Surface rate R" and UCMuGen's rate(), for the chosen flux model:
-        #    R = ∫dp ∫dΩ J(p,θ) ∫_S max(0, -n·d) dA (gui/live_time.py).
-        _src_now = _LT.Source(
-            mode=int(source_mode), plane=int(source_plane) if source_mode in (1, 2) else 1,
-            radius_cm=float(radius) * 100.0,
-            half_lx_cm=float(plane_lx) * 100.0, half_ly_cm=float(plane_ly) * 100.0,
-            tilt_deg=float(disk_tilt) if source_mode in (1, 2) else 0.0,
-            tilt_az_deg=float(disk_tilt_az) if source_mode in (1, 2) else 0.0)
-        _th_rate = 0.0 if angular_mode == 1 else float(theta_max)
-        try:
-            _rate_s = _LT.surface_rate(_ffe_model, max(e_min, 0.5 + 0.10566),
-                                       _emax_flux, _th_rate, _src_now) or 0.0
-        except Exception as _e:
-            _rate_s, _flux_err = 0.0, str(_e)
-        _rate_min = _rate_s * 60.0
-        _t_s      = (_N_t / _rate_s) if _rate_s > 0 else float("inf")
-        _t_str    = _fmt_time(_t_s) if _rate_s > 0 else "—"
+            # ── Rate through the source surface: the same R as the generator's
+            #    "Surface rate R" and UCMuGen's rate(), for the chosen flux model:
+            #    R = ∫dp ∫dΩ J(p,θ) ∫_S max(0, -n·d) dA (gui/live_time.py).
+            _src_now = _LT.Source(
+                mode=int(source_mode), plane=int(source_plane) if source_mode in (1, 2) else 1,
+                radius_cm=float(radius) * 100.0,
+                half_lx_cm=float(plane_lx) * 100.0, half_ly_cm=float(plane_ly) * 100.0,
+                tilt_deg=float(disk_tilt) if source_mode in (1, 2) else 0.0,
+                tilt_az_deg=float(disk_tilt_az) if source_mode in (1, 2) else 0.0)
+            _th_rate = 0.0 if angular_mode == 1 else float(theta_max)
+            try:
+                _rate_s = _LT.surface_rate(_ffe_model, max(e_min, 0.5 + 0.10566),
+                                           _emax_flux, _th_rate, _src_now) or 0.0
+            except Exception as _e:
+                _rate_s, _flux_err = 0.0, str(_e)
+            _rate_min = _rate_s * 60.0
+            _t_s      = (_N_t / _rate_s) if _rate_s > 0 else float("inf")
+            _t_str    = _fmt_time(_t_s) if _rate_s > 0 else "—"
 
-        _band_frac   = I_vert / _I_full if _I_full > 0 else 0.0
-        _rate_full_m = _I_full * (np.pi / 2.0) * A_src_cm2 * 60.0
+            _band_frac   = I_vert / _I_full if _I_full > 0 else 0.0
+            _rate_full_m = _I_full * (np.pi / 2.0) * A_src_cm2 * 60.0
 
-        # ── Metrics ───────────────────────────────────────────────────────────
-        _tm1, _tm2, _tm3 = st.columns(3)
-        _tm1.metric("Equivalent exposure time", _t_str,
-                    help="t = N_tried / R, R the rate of muons crossing the source "
-                         "surface in the energy and zenith windows (the generator's "
-                         "\"Surface rate R\", UCMuGen's rate()).")
-        _tm2.metric("Surface crossing rate",
-                    f"{_rate_min:,.0f} /min" if _rate_min >= 1.0
-                    else f"{_rate_s:.2g} /s" if _rate_s > 0
-                    else "—",
-                    help=f"R through the source surface in [{_emin_flux:.1f}, {_emax_flux:.0f}] GeV")
-        _tm3.metric("N muons", f"{_N_t:,}", help=_N_lbl)
+            # ── Metrics ───────────────────────────────────────────────────────────
+            _tm1, _tm2, _tm3 = st.columns(3)
+            _tm1.metric("Equivalent exposure time", _t_str,
+                        help="t = N_tried / R, R the rate of muons crossing the source "
+                             "surface in the energy and zenith windows (the generator's "
+                             "\"Surface rate R\", UCMuGen's rate()).")
+            _tm2.metric("Surface crossing rate",
+                        f"{_rate_min:,.0f} /min" if _rate_min >= 1.0
+                        else f"{_rate_s:.2g} /s" if _rate_s > 0
+                        else "—",
+                        help=f"R through the source surface in [{_emin_flux:.1f}, {_emax_flux:.0f}] GeV")
+            _tm3.metric("N muons", f"{_N_t:,}", help=_N_lbl)
 
-        # ── Detail caption ────────────────────────────────────────────────────
-        _e_range_str = (f"{_emin_flux:.1f}–{_emax_flux:.0f} GeV"
-                        + ("  *(E_min clamped — model unreliable below 0.5 GeV)*"
-                           if _clamped else ""))
-        st.caption(
-            f"I_vert = {I_vert:.3g} cm⁻²sr⁻¹s⁻¹  |  "
-            f"E: {_e_range_str}  ({100*_band_frac:.1f}% of full spectrum)  |  "
-            f"R = {_rate_s:.4g} s⁻¹  (θ ≤ {_th_rate:.0f}°, projection onto the source)  |  "
-            f"A_src = {_area_m2:.2g} m²  ({_a_label})"
-        )
-
-        # ── Contextual warnings ───────────────────────────────────────────────
-        if _area_m2 <= 0:
-            st.warning(
-                "⚠️  **Source area = 0 m²** — adjust the source geometry above "
-                "(" + ("rectangle: set X_min ≠ X_max and Y_min ≠ Y_max"
-                        if source_mode == 2 else "set radius > 0") + ")."
-            )
-        if _flux_err:
-            st.warning(f"⚠️  Flux computation error: {_flux_err}")
-
-        if _N_note:
-            st.warning(_N_note)
-        if _dasrem_note:
-            st.info(
-                "ℹ️  **Guaranteed-hit mode:** this is the time for N muons to cross the source surface "
-                "regardless of the detector. In a real measurement you'd see fewer detector hits "
-                "(acceptance < 100%) — actual run time is longer by 1/acceptance.",
-                icon="ℹ️"
-            )
-        if _t_s < 10.0 and _rate_s > 0:
-            st.info(
-                f"⚡ Very fast rate ({_rate_min:,.0f} /min). "
-                f"Consider reducing N or the source area if a quick test is sufficient.",
-                icon="⚡"
-            )
-        if _band_frac < 0.5 and _rate_s > 0:
-            st.info(
-                f"E band [{_emin_flux:.1f}–{_emax_flux:.0f} GeV] = **{100*_band_frac:.1f}%** of full spectrum.  "
-                f"Full-spectrum rate through this source: ≈ {_rate_full_m:,.0f} /min  "
-                f"(cf. ~10000 m⁻²min⁻¹ rule of thumb)."
-            )
-
-    # ── Energy threshold estimator ────────────────────────────────────────────
-    with st.expander("⚡  Energy threshold estimator  (Groom 2001)", expanded=False):
-        st.caption("Minimum muon kinetic energy to traverse a given rock thickness via CSDA range.")
-        _et1, _et2 = st.columns(2)
-        _et_depth = _et1.number_input("Rock thickness [m]", 0.1, 10000.0,
-                                      float(st.session_state.get("music_depth_m", 90.0)),
-                                      5.0, key="et_depth")
-        _et_rho   = _et2.number_input("Rock density [g/cm³]", 0.1, 20.0,
-                                      float(st.session_state.get("music_rho", 2.65)),
-                                      0.05, key="et_rho")
-        _et_opacity          = _et_depth * 100.0 * _et_rho
-        _et_E_GeV, _et_E_MeV = _groom_threshold_energy(_et_opacity)
-        _thr_str = f"{_et_E_GeV:.3f} GeV" if _et_E_GeV >= 1.0 else f"{_et_E_MeV:.0f} MeV"
-        _em1, _em2, _em3 = st.columns(3)
-        _em1.metric("Opacity  ρ·L", f"{_et_opacity:,.0f} g/cm²")
-        _em2.metric("Min. penetrating energy", _thr_str)
-        _em3.metric("→ Set Emin ≥", _thr_str)
-        _et_T_GeV = _GROOM_T_MEV / 1000.0
-        _fig_et   = go.Figure()
-        _fig_et.add_trace(go.Scatter(
-            x=_et_T_GeV, y=_GROOM_R_GCM2, mode="lines",
-            line=dict(color="#38bdf8", width=3), name="Groom (2001) CSDA",
-            hovertemplate="T = %{x:.4g} GeV<br>Range = %{y:.3g} g/cm²<extra></extra>",
-        ))
-        _fig_et.add_trace(go.Scatter(
-            x=[_et_E_GeV], y=[_et_opacity], mode="markers",
-            marker=dict(color="#ffd700", size=14, symbol="star", line=dict(color="#000", width=1.5)),
-            name=f"⚡ Threshold {_thr_str}",
-            hovertemplate=f"Threshold = {_thr_str}<extra></extra>",
-        ))
-        _fig_et.update_layout(
-            height=240, margin=dict(l=60, r=20, t=10, b=40),
-            paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
-            font=dict(color="#e0e0e0", size=10), showlegend=True,
-            legend=dict(bgcolor="rgba(20,22,35,0.95)", bordercolor="#888", borderwidth=1,
-                        font=dict(size=10, color="#fff"), x=0.02, y=0.02,
-                        xanchor="left", yanchor="bottom"),
-            xaxis=dict(type="log", title="Kinetic energy T [GeV]", gridcolor="#2a2a3a", zeroline=False),
-            yaxis=dict(type="log", title="CSDA Range [g/cm²]",     gridcolor="#2a2a3a", zeroline=False),
-        )
-        st.plotly_chart(_fig_et, config={"displayModeBar": False})
-        _approx = ("" if abs(_et_rho - 2.65) < 0.05 else
-                   f"  ⚠️ Table is for Standard Rock (ρ=2.65 g/cm³); ρ={_et_rho:.2f} gives an approximation.")
-        st.info(f"💡 For **{_et_depth:.0f} m** at **{_et_rho:.2f} g/cm³** "
-                f"(opacity {_et_opacity:,.0f} g/cm²): set **Emin ≥ {_thr_str}**.{_approx}", icon="⚡")
-        st.caption("📚 Groom, Mokhov & Striganov, ADNDT 78 (2001). CSDA neglects straggling — treat as lower bound.")
-
-    # ── Directional flux ──────────────────────────────────────────────────────
-    with st.expander("🧭  Directional flux  [cm⁻² sr⁻¹ s⁻¹]", expanded=False):
-        st.caption(
-            "Sea-level muon flux **per solid angle** as a function of zenith angle θ. "
-            "All parametrizations are **azimuth-symmetric** — Φ does not depend on φ. "
-            "For geomagnetic / East–West effects use PARMA (spectrum ③)."
-        )
-        _dfc1, _dfc2, _dfc3, _dfc4 = st.columns([2, 2, 1, 1])
-        _df_model = _dfc1.selectbox(
-            "Flux model", list(_FFE_MODEL_LABELS.keys()),
-            format_func=lambda k: _FFE_MODEL_LABELS[k], index=0, key="df_model",
-            help=(
-                "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
-                "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
-                "within 10% of the 0–75° surface data it was fitted to. Valid "
-                "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
-                "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
-                "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
-                "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
-                "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
-                "**Tang et al. (2006)**: Gaisser formula with low-energy and "
-                "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
-                "1 GeV/c.\n\n"
-                "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
-                "Valid only above 100/cosθ GeV; below that it overestimates "
-                "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
-            )
-        )
-        _df_theta = _dfc2.slider("Zenith angle θ [°]", 0, 89, 0, 1, key="df_theta",
-                                 help="0° = vertical. Rock path = L/cosθ — doubles at 60°.")
-        _df_emin  = _dfc3.number_input("E_min [GeV]", 0.1, 10000.0,
-                                       max(0.1, float(st.session_state.get("emin", 1.0))),
-                                       0.1, format="%.2f", key="df_emin",
-                                       help="Lower integration cut-off.")
-        _df_alt   = _dfc4.number_input("Altitude [m]", 0, 5000, 0, 100, key="df_alt",
-                                       help="Applies exp(h/8500 m) correction.")
-        _vw_df = _ffe_validity_warning(_df_model, max(float(_df_emin) - 0.10566, 0.0),
-                                       float(_df_theta))
-        if _vw_df:
-            st.warning(f"⚠️  {_vw_df}", icon="⚠️")
-        try:
-            _df_I_theta, _df_I_theta_T = angular_profile(
-                np.array([0.0, float(_df_theta)]), E_min_GeV=float(_df_emin),
-                model=_df_model, altitude_m=float(_df_alt))
-            _df_I_vert  = _df_I_theta[0]
-            _df_I_at_th = _df_I_theta[1]
-            _df_ratio   = _df_I_theta_T[1]
-            _dfm1, _dfm2, _dfm3, _dfm4, _dfm5 = st.columns(5)
-            def _fmt_flux(v):
-                if v <= 0: return "—"
-                exp = int(np.floor(np.log10(v)))
-                man = v / 10**exp
-                return f"{man:.2f}×10{exp:+d}".replace("+","⁺").replace("-","⁻").replace(
-                    "0","⁰").replace("1","¹").replace("2","²").replace("3","³").replace(
-                    "4","⁴").replace("5","⁵").replace("6","⁶").replace("7","⁷").replace(
-                    "8","⁸").replace("9","⁹")
-            _dfm1.metric("I(0°)",          f"{_df_I_vert:.3g}",  help="[cm⁻²sr⁻¹s⁻¹]")
-            _dfm2.metric(f"I({_df_theta}°)", f"{_df_I_at_th:.3g}", help="[cm⁻²sr⁻¹s⁻¹]")
-            _dfm3.metric("I(θ)/I(0°)", f"{_df_ratio:.4f}" if _df_I_vert > 0 else "—",
-                         help="Angular ratio relative to vertical.")
-            _cos2 = np.cos(np.radians(_df_theta))**2
-            _dfm4.metric("cos²θ (naive)", f"{_cos2:.4f}", delta=f"Δ = {_df_ratio-_cos2:+.4f}",
-                         help="Naive approximation — compare to model curve.")
-            _dfm5.metric("Model E_min", f"{_df_emin:.0f} GeV", help="Lower cut-off for integration.")
-            st.divider()
-            _BG = "rgb(15,17,23)"
-            _dfp_l, _dfp_r = st.columns(2)
-            with _dfp_l:
-                st.markdown("**dΦ/dT spectrum** (log–log)")
-                _T_plot = np.logspace(np.log10(max(float(_df_emin), 0.5)), 4.0, 300)
-                _phi_vert = differential_flux(_T_plot, theta_deg=0.0, model=_df_model, altitude_m=float(_df_alt))
-                _phi_th   = differential_flux(_T_plot, theta_deg=float(_df_theta), model=_df_model, altitude_m=float(_df_alt))
-                _fig_spec = go.Figure()
-                _fig_spec.add_trace(go.Scatter(x=_T_plot, y=_phi_vert, name="θ = 0°",
-                    mode="lines", line=dict(color="rgba(56,189,248,0.9)", width=2)))
-                if _df_theta > 0:
-                    _fig_spec.add_trace(go.Scatter(x=_T_plot, y=_phi_th, name=f"θ = {_df_theta}°",
-                        mode="lines", line=dict(color="rgba(251,146,60,0.9)", width=2, dash="dash")))
-                _fig_spec.update_layout(
-                    height=300, margin=dict(l=60, r=10, t=10, b=50),
-                    paper_bgcolor=_BG, plot_bgcolor="rgb(20,22,30)", font=dict(color="white", size=10),
-                    xaxis=dict(title="T [GeV]", type="log", gridcolor="#2a2a3a", zeroline=False),
-                    yaxis=dict(title="dΦ/dT  [cm⁻²s⁻¹sr⁻¹GeV⁻¹]", type="log", gridcolor="#2a2a3a", zeroline=False),
-                    legend=dict(font=dict(color="white", size=10), bgcolor="rgba(0,0,0,0.4)"))
-                st.plotly_chart(_fig_spec, config={"displayModeBar": False})
-            with _dfp_r:
-                st.markdown("**Angular profile** I(θ) / I(0°)")
-                _th_arr  = np.arange(0, 90, 2, dtype=float)
-                _I_prof, _T_prof = angular_profile(_th_arr, E_min_GeV=float(_df_emin),
-                    model=_df_model, altitude_m=float(_df_alt))
-                _cos2_arr = np.cos(np.radians(_th_arr))**2
-                _fig_ang = go.Figure()
-                _fig_ang.add_trace(go.Scatter(x=_th_arr, y=_T_prof,
-                    name=_FFE_MODEL_LABELS[_df_model].split("←")[0].split("[")[0].strip(),
-                    mode="lines", line=dict(color="rgba(56,189,248,0.9)", width=2.5)))
-                _fig_ang.add_trace(go.Scatter(x=_th_arr, y=_cos2_arr, name="cos²θ",
-                    mode="lines", line=dict(color="rgba(255,255,255,0.35)", width=1.5, dash="dot")))
-                _fig_ang.add_trace(go.Scatter(x=[float(_df_theta)], y=[_df_ratio], mode="markers",
-                    marker=dict(size=11, color="rgba(251,146,60,1)", symbol="diamond",
-                                line=dict(color="#fff", width=1.5)),
-                    name=f"θ = {_df_theta}°  ({_df_ratio:.3f})"))
-                _y_max = max(1.2, float(np.nanmax(_T_prof)) * 1.1)
-                _fig_ang.update_layout(
-                    height=300, margin=dict(l=55, r=10, t=10, b=50),
-                    paper_bgcolor=_BG, plot_bgcolor="rgb(20,22,30)", font=dict(color="white", size=10),
-                    xaxis=dict(title="θ [°]", range=[0,89], gridcolor="#2a2a3a", zeroline=False),
-                    yaxis=dict(title="I(θ) / I(0°)", range=[0,_y_max], gridcolor="#2a2a3a", zeroline=False),
-                    legend=dict(font=dict(color="white", size=9), bgcolor="rgba(0,0,0,0.4)"))
-                st.plotly_chart(_fig_ang, config={"displayModeBar": False})
+            # ── Detail caption ────────────────────────────────────────────────────
+            _e_range_str = (f"{_emin_flux:.1f}–{_emax_flux:.0f} GeV"
+                            + ("  *(E_min clamped — model unreliable below 0.5 GeV)*"
+                               if _clamped else ""))
             st.caption(
-                f"Model: **{_FFE_MODEL_LABELS[_df_model].split('←')[0].strip()}**  |  "
-                f"E_min = {_df_emin:.1f} GeV  |  altitude = {_df_alt} m a.s.l.  |  "
-                "All models azimuth-symmetric. "
-                "cosθ* corrects for Earth's curvature at large θ (Guan 2015, arXiv:1509.06176).")
-        except Exception as _df_err:
-            st.error(f"Flux computation error: {_df_err}")
-
-    # ── Fast flux estimator ────────────────────────────────────────────────
-    with st.expander("🪨  Fast Flux Estimator — flux through a rock slab (semi-analytical)", expanded=False):
-        st.caption(
-            "Semi-analytical flux I [cm⁻²sr⁻¹s⁻¹] after traversing a flat rock slab. "
-            "No MC needed — useful for site planning and exposure-time estimates. "
-            "All five models are azimuth-symmetric at sea level."
-        )
-
-        # ── Inline guidance ────────────────────────────────────────────────
-        with st.expander("📖  How to read these numbers — model guide & limitations", expanded=False):
-            st.markdown("""
-**What I [cm⁻²sr⁻¹s⁻¹] means:**  
-Muons crossing 1 cm² per second, per steradian of solid angle, from direction θ.  
-This is **not** a count rate — multiply by your detector acceptance A [cm²·sr] to get R [s⁻¹].
-
-**Detector acceptance A [cm²·sr]:**
-
-| Geometry | Formula |
-|---|---|
-| Single upward panel, area S, all angles | A = S × π |
-| Single panel, cone θ < θ_max | A = S × 2π(1 − cosθ_max) |
-| Two-panel telescope, area S, separation d | A = S²/d² |
-| UCMuon detector filter (Generator tab) | A = area × MC cos²θ acceptance |
-
-GUI default A = 6 cm²·sr ≈ 100 cm² × 0.06 sr (narrow telescope-like).
-
----
-
-**Which model to use:**
-
-| Model | Absolute rate | Angular shape I(θ)/I(0°) | Valid from |
-|---|---|---|---|
-| **Reyna (2006)** ← recommended | ✅ vertical 70.2 m⁻²s⁻¹sr⁻¹ above 1 GeV/c (PDG ≈ 70) | ✅ cos³θ·I_V(p cosθ): hardens with θ | 1 GeV/c |
-| **Guan 2015 / Frosin 2025** | ✅ 60–63 (PDG notes recent data 10–15% below 70) | ✅ pion/kaon + cosθ* | 1 GeV |
-| **Tang et al. (2006)** | ✅ 60 | ✅ modified Gaisser + cosθ* | ~1 GeV (worst 40% at θ > 85°, E < 10 GeV) |
-| Gaisser (1990) (`bugaev` key) | ⚠️ ×12 too high below 100 GeV | ✅ above 100/cosθ GeV | **100/cosθ GeV** |
-
-All five are compared with PDG and published data in `docs/FLUX_NORMALISATION_AUDIT.md` (Section 4). Above ~100 GeV every model gives the sec θ enhancement (oblique muons more abundant than vertical); Reyna lies ~50% above Guan/Frosin/Tang at 1 TeV/c, closer to the CosmoALEPH data.
-
----
-
-**Flat-slab limitations — when NOT to trust this tool:**
-
-- **θ > 50° through real terrain**: the path is NOT L/cosθ for a volcano. Use the **Terrain** tab with a DEM.  
-- **X > 100000 g/cm²**: models diverge by factors of 2–4 at extreme opacity. Full MC (MUSIC/PROPOSAL) is needed.  
-- **Azimuth φ**: all models ignore the ~2% East–West geomagnetic asymmetry. Use PARMA (generator spectrum ③) for φ-dependence.  
-- **CSDA E_min is a lower bound**: stochastic losses let some muons below E_min,CSDA survive. MUSIC thresholds are lower.
-
-**Transmission T definition:**  
-T = I(rock, θ) / I(open sky, same θ) — the fraction of muons that survive the rock *relative to the open-sky flux from the same direction*. Not relative to the vertical flux.
-""")
-
-        # ── Controls ───────────────────────────────────────────────────────
-        _ff1, _ff2, _ff3 = st.columns(3)
-
-        ffe_thickness_m = _ff1.number_input(
-            "Rock L [m]", 0.0, 5000.0, 100.0, 10.0, key="ffe_thickness",
-            help="Vertical rock thickness. Slant path = L/cosθ.")
-        ffe_rho         = _ff1.number_input(
-            "ρ [g/cm³]", 1.0, 5.0, float(RHO_STANDARD_ROCK), 0.05, key="ffe_rho",
-            help="Rock density. Standard Rock=2.65, limestone≈2.5, volcanic tuff≈1.7.")
-
-        ffe_theta_deg   = _ff2.slider(
-            "Zenith θ [°]", 0, 89,
-            int(st.session_state.get("ffe_theta", 0)), 1,
-            key="ffe_theta",
-            help="Muon arrival zenith angle. 0°=vertical. Rock path = L/cosθ — doubles at 60°.")
-        ffe_altitude_m  = _ff2.number_input(
-            "Altitude [m a.s.l.]", 0, 5000, 0, 100, key="ffe_altitude",
-            help="Surface altitude. Correction ≈ exp(h/8500 m). Valid below ~4 km.")
-
-        ffe_model       = _ff3.selectbox(
-            "Flux model",
-            list(_FFE_MODEL_LABELS.keys()),
-            format_func=lambda k: _FFE_MODEL_LABELS[k],
-            key="ffe_model",
-            help=(
-                "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
-                "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
-                "within 10% of the 0–75° surface data it was fitted to. Valid "
-                "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
-                "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
-                "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
-                "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
-                "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
-                "**Tang et al. (2006)**: Gaisser formula with low-energy and "
-                "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
-                "1 GeV/c.\n\n"
-                "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
-                "Valid only above 100/cosθ GeV; below that it overestimates "
-                "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
+                f"I_vert = {I_vert:.3g} cm⁻²sr⁻¹s⁻¹  |  "
+                f"E: {_e_range_str}  ({100*_band_frac:.1f}% of full spectrum)  |  "
+                f"R = {_rate_s:.4g} s⁻¹  (θ ≤ {_th_rate:.0f}°, projection onto the source)  |  "
+                f"A_src = {_area_m2:.2g} m²  ({_a_label})"
             )
-        )
-        ffe_acceptance  = _ff3.number_input(
-            "Acceptance A [cm²·sr]", 0.01, 1000.0, 6.0, 0.5, key="ffe_acceptance",
-            help=(
-                "Geometric acceptance = detector area × effective solid angle.\n\n"
-                "Single 10×10 cm² panel (full sky): 314 cm²·sr\n"
-                "Single panel, θ<30° cone: 84 cm²·sr\n"
-                "Telescope 10×10 cm², d=50 cm: 4 cm²·sr\n"
-                "MURAVES-style telescope: ~6 cm²·sr (this default)"
+
+            # ── Contextual warnings ───────────────────────────────────────────────
+            if _area_m2 <= 0:
+                st.warning(
+                    "⚠️  **Source area = 0 m²** — adjust the source geometry above "
+                    "(" + ("rectangle: set X_min ≠ X_max and Y_min ≠ Y_max"
+                            if source_mode == 2 else "set radius > 0") + ")."
+                )
+            if _flux_err:
+                st.warning(f"⚠️  Flux computation error: {_flux_err}")
+
+            if _N_note:
+                st.warning(_N_note)
+            if _dasrem_note:
+                st.info(
+                    "ℹ️  **Guaranteed-hit mode:** this is the time for N muons to cross the source surface "
+                    "regardless of the detector. In a real measurement you'd see fewer detector hits "
+                    "(acceptance < 100%) — actual run time is longer by 1/acceptance.",
+                    icon="ℹ️"
+                )
+            if _t_s < 10.0 and _rate_s > 0:
+                st.info(
+                    f"⚡ Very fast rate ({_rate_min:,.0f} /min). "
+                    f"Consider reducing N or the source area if a quick test is sufficient.",
+                    icon="⚡"
+                )
+            if _band_frac < 0.5 and _rate_s > 0:
+                st.info(
+                    f"E band [{_emin_flux:.1f}–{_emax_flux:.0f} GeV] = **{100*_band_frac:.1f}%** of full spectrum.  "
+                    f"Full-spectrum rate through this source: ≈ {_rate_full_m:,.0f} /min  "
+                    f"(cf. ~10000 m⁻²min⁻¹ rule of thumb)."
+                )
+
+        # ── Energy threshold estimator ────────────────────────────────────────────
+        with st.expander("⚡  Energy threshold estimator  (Groom 2001)", expanded=False):
+            st.caption("Minimum muon kinetic energy to traverse a given rock thickness via CSDA range.")
+            _et1, _et2 = st.columns(2)
+            _et_depth = _et1.number_input("Rock thickness [m]", 0.1, 10000.0,
+                                          float(st.session_state.get("music_depth_m", 90.0)),
+                                          5.0, key="et_depth")
+            _et_rho   = _et2.number_input("Rock density [g/cm³]", 0.1, 20.0,
+                                          float(st.session_state.get("music_rho", 2.65)),
+                                          0.05, key="et_rho")
+            _et_opacity          = _et_depth * 100.0 * _et_rho
+            _et_E_GeV, _et_E_MeV = _groom_threshold_energy(_et_opacity)
+            _thr_str = f"{_et_E_GeV:.3f} GeV" if _et_E_GeV >= 1.0 else f"{_et_E_MeV:.0f} MeV"
+            _em1, _em2, _em3 = st.columns(3)
+            _em1.metric("Opacity  ρ·L", f"{_et_opacity:,.0f} g/cm²")
+            _em2.metric("Min. penetrating energy", _thr_str)
+            _em3.metric("→ Set Emin ≥", _thr_str)
+            _et_T_GeV = _GROOM_T_MEV / 1000.0
+            _fig_et   = go.Figure()
+            _fig_et.add_trace(go.Scatter(
+                x=_et_T_GeV, y=_GROOM_R_GCM2, mode="lines",
+                line=dict(color="#38bdf8", width=3), name="Groom (2001) CSDA",
+                hovertemplate="T = %{x:.4g} GeV<br>Range = %{y:.3g} g/cm²<extra></extra>",
             ))
-        ffe_n_threshold = _ff3.number_input(
-            "Target N for t_exp", 1, 100000, 100, 10, key="ffe_n_thresh",
-            help="Exposure time to collect this many muons: t = N / (I × A).")
+            _fig_et.add_trace(go.Scatter(
+                x=[_et_E_GeV], y=[_et_opacity], mode="markers",
+                marker=dict(color="#ffd700", size=14, symbol="star", line=dict(color="#000", width=1.5)),
+                name=f"⚡ Threshold {_thr_str}",
+                hovertemplate=f"Threshold = {_thr_str}<extra></extra>",
+            ))
+            _fig_et.update_layout(
+                height=240, margin=dict(l=60, r=20, t=10, b=40),
+                paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
+                font=dict(color="#e0e0e0", size=10), showlegend=True,
+                legend=dict(bgcolor="rgba(20,22,35,0.95)", bordercolor="#888", borderwidth=1,
+                            font=dict(size=10, color="#fff"), x=0.02, y=0.02,
+                            xanchor="left", yanchor="bottom"),
+                xaxis=dict(type="log", title="Kinetic energy T [GeV]", gridcolor="#2a2a3a", zeroline=False),
+                yaxis=dict(type="log", title="CSDA Range [g/cm²]",     gridcolor="#2a2a3a", zeroline=False),
+            )
+            st.plotly_chart(_fig_et, config={"displayModeBar": False})
+            _approx = ("" if abs(_et_rho - 2.65) < 0.05 else
+                       f"  ⚠️ Table is for Standard Rock (ρ=2.65 g/cm³); ρ={_et_rho:.2f} gives an approximation.")
+            st.info(f"💡 For **{_et_depth:.0f} m** at **{_et_rho:.2f} g/cm³** "
+                    f"(opacity {_et_opacity:,.0f} g/cm²): set **Emin ≥ {_thr_str}**.{_approx}", icon="⚡")
+            st.caption("📚 Groom, Mokhov & Striganov, ADNDT 78 (2001). CSDA neglects straggling — treat as lower bound.")
 
-        # ── Computed quantities ────────────────────────────────────────────
-        # Path through flat slab is L/cosθ — correct for non-vertical muons
-        _cos_ffe = float(np.cos(np.radians(ffe_theta_deg)))
-        ffe_path_m  = ffe_thickness_m / _cos_ffe if _cos_ffe > 0.01 else ffe_thickness_m
-        ffe_opacity = ffe_rho * ffe_path_m * 100.0   # [g/cm²]
-
-        # ── Contextual warnings based on current inputs ───────────────────
-        _E_min_warn = emin_from_opacity(ffe_opacity)  # None if too deep
-
-        # Validity per the source papers (see fast_flux_estimator.validity_warning).
-        _vw = _ffe_validity_warning(ffe_model, _E_min_warn if _E_min_warn is not None else 0.0,
-                                    float(ffe_theta_deg))
-        if _vw:
-            st.warning(f"⚠️  **{_FFE_MODEL_LABELS[ffe_model].split('[')[0].strip()}**: {_vw}",
-                       icon="⚠️")
-
-        if ffe_theta_deg > 50 and ffe_thickness_m > 0:
-            st.info(
-                f"ℹ️  θ = {ffe_theta_deg}° > 50°: for real terrain (volcano, glacier) "
-                f"the flat-slab path L/cosθ = {ffe_path_m:.0f} m overestimates the "
-                f"true slant path. Use the **Terrain** tab with a DEM for accurate results.",
-                icon="🏔️")
-
-        if ffe_opacity > 100_000:
-            st.warning(
-                f"⚠️  X = {ffe_opacity:,.0f} g/cm² is very high. "
-                f"Models diverge by factors of 2–4 at this opacity. "
-                f"The FFE transmission T is an order-of-magnitude estimate only. "
-                f"Run MUSIC or PROPOSAL for reliable results.",
-                icon="⚠️")
-
-        try:
-            I_flux, E_min = integrated_flux(ffe_opacity, ffe_theta_deg,
-                                            model=ffe_model,
-                                            altitude_m=float(ffe_altitude_m))
-            I_open, _     = integrated_flux(0.0, 0.0,
-                                            model=ffe_model,
-                                            altitude_m=float(ffe_altitude_m))
-            I_open_th, _  = integrated_flux(0.0, ffe_theta_deg,
-                                            model=ffe_model,
-                                            altitude_m=float(ffe_altitude_m))
-            transmission  = I_flux / I_open_th if I_open_th > 0 else 0.0
-
-            # Metrics row
-            _ff_m1, _ff_m2, _ff_m3, _ff_m4, _ff_m5 = st.columns(5)
-            _ff_m1.metric("E_min [GeV]",
-                          f"{E_min:.2f}" if E_min else "∞",
-                          help="Min. kinetic energy to traverse X = ρ·L/cosθ (Groom 2001 CSDA).")
-            _ff_m2.metric("I(θ) [cm⁻²sr⁻¹s⁻¹]",
-                          f"{I_flux:.3e}" if I_flux > 0 else "0",
-                          help="Integrated flux per unit solid angle at the detector.")
-            _ff_m3.metric("I(0°) [cm⁻²sr⁻¹s⁻¹]",
-                          f"{I_open:.3e}" if I_open > 0 else "—",
-                          help="Vertical open-sky flux (no rock) for reference.")
-            _ff_m4.metric("Rock transmission T",
-                          f"{transmission:.4f}" if transmission > 0 else "0",
-                          delta=f"path {ffe_path_m:.0f} m  X={ffe_opacity:.0f} g/cm²",
-                          help="I(θ,rock) / I(θ,open). Accounts for L/cosθ path length.")
-            _rate_s  = I_flux * ffe_acceptance
-            _t_exp_s = float(ffe_n_threshold) / _rate_s if _rate_s > 0 else float('inf')
-            _t_str   = (f"{_t_exp_s:.1f} s"             if _t_exp_s < 3600         else
-                        f"{_t_exp_s/3600:.2f} h"         if _t_exp_s < 86400        else
-                        f"{_t_exp_s/86400:.1f} days"     if _t_exp_s < 86400*365    else
-                        f"{_t_exp_s/86400/365.25:.2f} yr")
-            _ff_m5.metric(f"t_exp ({ffe_n_threshold:,} μ)", _t_str,
-                          delta=f"rate {_rate_s*86400:.3g} /day",
-                          help="Time to accumulate target muon count: N / (I·A).")
-
+        # ── Directional flux ──────────────────────────────────────────────────────
+        with st.expander("🧭  Directional flux  [cm⁻² sr⁻¹ s⁻¹]", expanded=False):
             st.caption(
-                f"X = ρ·L/cosθ = {ffe_opacity:.0f} g/cm²  |  "
-                f"I₀(vertical) = {I_open:.3e} cm⁻²sr⁻¹s⁻¹  |  "
-                f"Model: {_FFE_MODEL_LABELS[ffe_model].split('←')[0].strip()}"
+                "Sea-level muon flux **per solid angle** as a function of zenith angle θ. "
+                "All parametrizations are **azimuth-symmetric** — Φ does not depend on φ. "
+                "For geomagnetic / East–West effects use PARMA (spectrum ③)."
+            )
+            _dfc1, _dfc2, _dfc3, _dfc4 = st.columns([2, 2, 1, 1])
+            _df_model = _dfc1.selectbox(
+                "Flux model", list(_FFE_MODEL_LABELS.keys()),
+                format_func=lambda k: _FFE_MODEL_LABELS[k], index=0, key="df_model",
+                help=(
+                    "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
+                    "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
+                    "within 10% of the 0–75° surface data it was fitted to. Valid "
+                    "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
+                    "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
+                    "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
+                    "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
+                    "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
+                    "**Tang et al. (2006)**: Gaisser formula with low-energy and "
+                    "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
+                    "1 GeV/c.\n\n"
+                    "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
+                    "Valid only above 100/cosθ GeV; below that it overestimates "
+                    "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
+                )
+            )
+            _df_theta = _dfc2.slider("Zenith angle θ [°]", 0, 89, 0, 1, key="df_theta",
+                                     help="0° = vertical. Rock path = L/cosθ — doubles at 60°.")
+            _df_emin  = _dfc3.number_input("E_min [GeV]", 0.1, 10000.0,
+                                           max(0.1, float(st.session_state.get("emin", 1.0))),
+                                           0.1, format="%.2f", key="df_emin",
+                                           help="Lower integration cut-off.")
+            _df_alt   = _dfc4.number_input("Altitude [m]", 0, 5000, 0, 100, key="df_alt",
+                                           help="Applies exp(h/8500 m) correction.")
+            _vw_df = _ffe_validity_warning(_df_model, max(float(_df_emin) - 0.10566, 0.0),
+                                           float(_df_theta))
+            if _vw_df:
+                st.warning(f"⚠️  {_vw_df}", icon="⚠️")
+            try:
+                _df_I_theta, _df_I_theta_T = angular_profile(
+                    np.array([0.0, float(_df_theta)]), E_min_GeV=float(_df_emin),
+                    model=_df_model, altitude_m=float(_df_alt))
+                _df_I_vert  = _df_I_theta[0]
+                _df_I_at_th = _df_I_theta[1]
+                _df_ratio   = _df_I_theta_T[1]
+                _dfm1, _dfm2, _dfm3, _dfm4, _dfm5 = st.columns(5)
+                def _fmt_flux(v):
+                    if v <= 0: return "—"
+                    exp = int(np.floor(np.log10(v)))
+                    man = v / 10**exp
+                    return f"{man:.2f}×10{exp:+d}".replace("+","⁺").replace("-","⁻").replace(
+                        "0","⁰").replace("1","¹").replace("2","²").replace("3","³").replace(
+                        "4","⁴").replace("5","⁵").replace("6","⁶").replace("7","⁷").replace(
+                        "8","⁸").replace("9","⁹")
+                _dfm1.metric("I(0°)",          f"{_df_I_vert:.3g}",  help="[cm⁻²sr⁻¹s⁻¹]")
+                _dfm2.metric(f"I({_df_theta}°)", f"{_df_I_at_th:.3g}", help="[cm⁻²sr⁻¹s⁻¹]")
+                _dfm3.metric("I(θ)/I(0°)", f"{_df_ratio:.4f}" if _df_I_vert > 0 else "—",
+                             help="Angular ratio relative to vertical.")
+                _cos2 = np.cos(np.radians(_df_theta))**2
+                _dfm4.metric("cos²θ (naive)", f"{_cos2:.4f}", delta=f"Δ = {_df_ratio-_cos2:+.4f}",
+                             help="Naive approximation — compare to model curve.")
+                _dfm5.metric("Model E_min", f"{_df_emin:.0f} GeV", help="Lower cut-off for integration.")
+                st.divider()
+                _BG = "rgb(15,17,23)"
+                _dfp_l, _dfp_r = st.columns(2)
+                with _dfp_l:
+                    st.markdown("**dΦ/dT spectrum** (log–log)")
+                    _T_plot = np.logspace(np.log10(max(float(_df_emin), 0.5)), 4.0, 300)
+                    _phi_vert = differential_flux(_T_plot, theta_deg=0.0, model=_df_model, altitude_m=float(_df_alt))
+                    _phi_th   = differential_flux(_T_plot, theta_deg=float(_df_theta), model=_df_model, altitude_m=float(_df_alt))
+                    _fig_spec = go.Figure()
+                    _fig_spec.add_trace(go.Scatter(x=_T_plot, y=_phi_vert, name="θ = 0°",
+                        mode="lines", line=dict(color="rgba(56,189,248,0.9)", width=2)))
+                    if _df_theta > 0:
+                        _fig_spec.add_trace(go.Scatter(x=_T_plot, y=_phi_th, name=f"θ = {_df_theta}°",
+                            mode="lines", line=dict(color="rgba(251,146,60,0.9)", width=2, dash="dash")))
+                    _fig_spec.update_layout(
+                        height=300, margin=dict(l=60, r=10, t=10, b=50),
+                        paper_bgcolor=_BG, plot_bgcolor="rgb(20,22,30)", font=dict(color="white", size=10),
+                        xaxis=dict(title="T [GeV]", type="log", gridcolor="#2a2a3a", zeroline=False),
+                        yaxis=dict(title="dΦ/dT  [cm⁻²s⁻¹sr⁻¹GeV⁻¹]", type="log", gridcolor="#2a2a3a", zeroline=False),
+                        legend=dict(font=dict(color="white", size=10), bgcolor="rgba(0,0,0,0.4)"))
+                    st.plotly_chart(_fig_spec, config={"displayModeBar": False})
+                with _dfp_r:
+                    st.markdown("**Angular profile** I(θ) / I(0°)")
+                    _th_arr  = np.arange(0, 90, 2, dtype=float)
+                    _I_prof, _T_prof = angular_profile(_th_arr, E_min_GeV=float(_df_emin),
+                        model=_df_model, altitude_m=float(_df_alt))
+                    _cos2_arr = np.cos(np.radians(_th_arr))**2
+                    _fig_ang = go.Figure()
+                    _fig_ang.add_trace(go.Scatter(x=_th_arr, y=_T_prof,
+                        name=_FFE_MODEL_LABELS[_df_model].split("←")[0].split("[")[0].strip(),
+                        mode="lines", line=dict(color="rgba(56,189,248,0.9)", width=2.5)))
+                    _fig_ang.add_trace(go.Scatter(x=_th_arr, y=_cos2_arr, name="cos²θ",
+                        mode="lines", line=dict(color="rgba(255,255,255,0.35)", width=1.5, dash="dot")))
+                    _fig_ang.add_trace(go.Scatter(x=[float(_df_theta)], y=[_df_ratio], mode="markers",
+                        marker=dict(size=11, color="rgba(251,146,60,1)", symbol="diamond",
+                                    line=dict(color="#fff", width=1.5)),
+                        name=f"θ = {_df_theta}°  ({_df_ratio:.3f})"))
+                    _y_max = max(1.2, float(np.nanmax(_T_prof)) * 1.1)
+                    _fig_ang.update_layout(
+                        height=300, margin=dict(l=55, r=10, t=10, b=50),
+                        paper_bgcolor=_BG, plot_bgcolor="rgb(20,22,30)", font=dict(color="white", size=10),
+                        xaxis=dict(title="θ [°]", range=[0,89], gridcolor="#2a2a3a", zeroline=False),
+                        yaxis=dict(title="I(θ) / I(0°)", range=[0,_y_max], gridcolor="#2a2a3a", zeroline=False),
+                        legend=dict(font=dict(color="white", size=9), bgcolor="rgba(0,0,0,0.4)"))
+                    st.plotly_chart(_fig_ang, config={"displayModeBar": False})
+                st.caption(
+                    f"Model: **{_FFE_MODEL_LABELS[_df_model].split('←')[0].strip()}**  |  "
+                    f"E_min = {_df_emin:.1f} GeV  |  altitude = {_df_alt} m a.s.l.  |  "
+                    "All models azimuth-symmetric. "
+                    "cosθ* corrects for Earth's curvature at large θ (Guan 2015, arXiv:1509.06176).")
+            except Exception as _df_err:
+                st.error(f"Flux computation error: {_df_err}")
+
+        # ── Fast flux estimator ────────────────────────────────────────────────
+        with st.expander("🪨  Fast Flux Estimator — flux through a rock slab (semi-analytical)", expanded=False):
+            st.caption(
+                "Semi-analytical flux I [cm⁻²sr⁻¹s⁻¹] after traversing a flat rock slab. "
+                "No MC needed — useful for site planning and exposure-time estimates. "
+                "All five models are azimuth-symmetric at sea level."
             )
 
-            # ── Plots: flux vs depth  +  angular profile side by side ────
-            _BG = "rgb(15,17,23)"
-            _ffe_pl, _ffe_pr = st.columns(2)
+            # ── Inline guidance ────────────────────────────────────────────────
+            with st.expander("📖  How to read these numbers — model guide & limitations", expanded=False):
+                st.markdown("""
+    **What I [cm⁻²sr⁻¹s⁻¹] means:**  
+    Muons crossing 1 cm² per second, per steradian of solid angle, from direction θ.  
+    This is **not** a count rate — multiply by your detector acceptance A [cm²·sr] to get R [s⁻¹].
 
-            with _ffe_pl:
-                st.markdown("**I(L) and T vs depth** at θ = {}°".format(ffe_theta_deg))
-                _depths = np.linspace(0.0, max(ffe_thickness_m * 1.5, 50.0), 120)
-                try:
-                    # Use L/cosθ path for each depth point
-                    _paths  = _depths / _cos_ffe if _cos_ffe > 0.01 else _depths
-                    _I_arr, _T_arr, _ = flux_vs_depth(
-                        _paths, ffe_rho, ffe_theta_deg,
-                        model=ffe_model, altitude_m=float(ffe_altitude_m))
-                    _fig_ffe = go.Figure()
-                    _fig_ffe.add_trace(go.Scatter(
-                        x=_depths, y=_I_arr,
-                        name="I(L, θ)  [cm⁻²sr⁻¹s⁻¹]",
-                        mode="lines",
-                        line=dict(color="rgba(0,230,255,0.9)", width=2),
-                        yaxis="y1",
-                    ))
-                    _fig_ffe.add_trace(go.Scatter(
-                        x=_depths, y=_T_arr,
-                        name="Transmission T",
-                        mode="lines",
-                        line=dict(color="rgba(255,165,0,0.85)", width=2, dash="dash"),
-                        yaxis="y2",
-                    ))
-                    if ffe_thickness_m > 0 and I_flux > 0:
+    **Detector acceptance A [cm²·sr]:**
+
+    | Geometry | Formula |
+    |---|---|
+    | Single upward panel, area S, all angles | A = S × π |
+    | Single panel, cone θ < θ_max | A = S × 2π(1 − cosθ_max) |
+    | Two-panel telescope, area S, separation d | A = S²/d² |
+    | UCMuon detector filter (Generator tab) | A = area × MC cos²θ acceptance |
+
+    GUI default A = 6 cm²·sr ≈ 100 cm² × 0.06 sr (narrow telescope-like).
+
+    ---
+
+    **Which model to use:**
+
+    | Model | Absolute rate | Angular shape I(θ)/I(0°) | Valid from |
+    |---|---|---|---|
+    | **Reyna (2006)** ← recommended | ✅ vertical 70.2 m⁻²s⁻¹sr⁻¹ above 1 GeV/c (PDG ≈ 70) | ✅ cos³θ·I_V(p cosθ): hardens with θ | 1 GeV/c |
+    | **Guan 2015 / Frosin 2025** | ✅ 60–63 (PDG notes recent data 10–15% below 70) | ✅ pion/kaon + cosθ* | 1 GeV |
+    | **Tang et al. (2006)** | ✅ 60 | ✅ modified Gaisser + cosθ* | ~1 GeV (worst 40% at θ > 85°, E < 10 GeV) |
+    | Gaisser (1990) (`bugaev` key) | ⚠️ ×12 too high below 100 GeV | ✅ above 100/cosθ GeV | **100/cosθ GeV** |
+
+    All five are compared with PDG and published data in `docs/FLUX_NORMALISATION_AUDIT.md` (Section 4). Above ~100 GeV every model gives the sec θ enhancement (oblique muons more abundant than vertical); Reyna lies ~50% above Guan/Frosin/Tang at 1 TeV/c, closer to the CosmoALEPH data.
+
+    ---
+
+    **Flat-slab limitations — when NOT to trust this tool:**
+
+    - **θ > 50° through real terrain**: the path is NOT L/cosθ for a volcano. Use the **Terrain** tab (Advanced mode) with a DEM.  
+    - **X > 100000 g/cm²**: models diverge by factors of 2–4 at extreme opacity. Full MC (MUSIC/PROPOSAL) is needed.  
+    - **Azimuth φ**: all models ignore the ~2% East–West geomagnetic asymmetry. Use PARMA (generator spectrum ③) for φ-dependence.  
+    - **CSDA E_min is a lower bound**: stochastic losses let some muons below E_min,CSDA survive. MUSIC thresholds are lower.
+
+    **Transmission T definition:**  
+    T = I(rock, θ) / I(open sky, same θ) — the fraction of muons that survive the rock *relative to the open-sky flux from the same direction*. Not relative to the vertical flux.
+    """)
+
+            # ── Controls ───────────────────────────────────────────────────────
+            _ff1, _ff2, _ff3 = st.columns(3)
+
+            ffe_thickness_m = _ff1.number_input(
+                "Rock L [m]", 0.0, 5000.0, 100.0, 10.0, key="ffe_thickness",
+                help="Vertical rock thickness. Slant path = L/cosθ.")
+            ffe_rho         = _ff1.number_input(
+                "ρ [g/cm³]", 1.0, 5.0, float(RHO_STANDARD_ROCK), 0.05, key="ffe_rho",
+                help="Rock density. Standard Rock=2.65, limestone≈2.5, volcanic tuff≈1.7.")
+
+            ffe_theta_deg   = _ff2.slider(
+                "Zenith θ [°]", 0, 89,
+                int(st.session_state.get("ffe_theta", 0)), 1,
+                key="ffe_theta",
+                help="Muon arrival zenith angle. 0°=vertical. Rock path = L/cosθ — doubles at 60°.")
+            ffe_altitude_m  = _ff2.number_input(
+                "Altitude [m a.s.l.]", 0, 5000, 0, 100, key="ffe_altitude",
+                help="Surface altitude. Correction ≈ exp(h/8500 m). Valid below ~4 km.")
+
+            ffe_model       = _ff3.selectbox(
+                "Flux model",
+                list(_FFE_MODEL_LABELS.keys()),
+                format_func=lambda k: _FFE_MODEL_LABELS[k],
+                key="ffe_model",
+                help=(
+                    "**Reyna (2006)**: I(p,θ) = cos³θ·I_V(p cosθ) (hep-ph/0604145 Eqs. 1–3). "
+                    "Vertical intensity above 1 GeV/c = 70.2 m⁻²s⁻¹sr⁻¹ (PDG ≈ 70); "
+                    "within 10% of the 0–75° surface data it was fitted to. Valid "
+                    "1 GeV/c < p < 2000 GeV/c / cosθ.\n\n"
+                    "**Guan 2015 / Frosin 2025**: Gaisser formula with Guan's low-energy "
+                    "and Earth-curvature corrections, fitted at 1 GeV–1 TeV, all zenith "
+                    "angles. Vertical integral above 1 GeV/c 10–14% below Reyna's; above "
+                    "~100 GeV they give the sec θ enhancement, I(θ)/I(0°) > 1.\n\n"
+                    "**Tang et al. (2006)**: Gaisser formula with low-energy and "
+                    "Earth-curvature modifications (PRD 74, 053007), 60 m⁻²s⁻¹sr⁻¹ above "
+                    "1 GeV/c.\n\n"
+                    "**Bugaev key**: the plain Gaisser (1990) formula (PDG 2022 Eq. 30.4). "
+                    "Valid only above 100/cosθ GeV; below that it overestimates "
+                    "(×2 at 10 GeV/c vertical, ×12 in the integral above 1 GeV)."
+                )
+            )
+            ffe_acceptance  = _ff3.number_input(
+                "Acceptance A [cm²·sr]", 0.01, 1000.0, 6.0, 0.5, key="ffe_acceptance",
+                help=(
+                    "Geometric acceptance = detector area × effective solid angle.\n\n"
+                    "Single 10×10 cm² panel (full sky): 314 cm²·sr\n"
+                    "Single panel, θ<30° cone: 84 cm²·sr\n"
+                    "Telescope 10×10 cm², d=50 cm: 4 cm²·sr\n"
+                    "MURAVES-style telescope: ~6 cm²·sr (this default)"
+                ))
+            ffe_n_threshold = _ff3.number_input(
+                "Target N for t_exp", 1, 100000, 100, 10, key="ffe_n_thresh",
+                help="Exposure time to collect this many muons: t = N / (I × A).")
+
+            # ── Computed quantities ────────────────────────────────────────────
+            # Path through flat slab is L/cosθ — correct for non-vertical muons
+            _cos_ffe = float(np.cos(np.radians(ffe_theta_deg)))
+            ffe_path_m  = ffe_thickness_m / _cos_ffe if _cos_ffe > 0.01 else ffe_thickness_m
+            ffe_opacity = ffe_rho * ffe_path_m * 100.0   # [g/cm²]
+
+            # ── Contextual warnings based on current inputs ───────────────────
+            _E_min_warn = emin_from_opacity(ffe_opacity)  # None if too deep
+
+            # Validity per the source papers (see fast_flux_estimator.validity_warning).
+            _vw = _ffe_validity_warning(ffe_model, _E_min_warn if _E_min_warn is not None else 0.0,
+                                        float(ffe_theta_deg))
+            if _vw:
+                st.warning(f"⚠️  **{_FFE_MODEL_LABELS[ffe_model].split('[')[0].strip()}**: {_vw}",
+                           icon="⚠️")
+
+            if ffe_theta_deg > 50 and ffe_thickness_m > 0:
+                st.info(
+                    f"ℹ️  θ = {ffe_theta_deg}° > 50°: for real terrain (volcano, glacier) "
+                    f"the flat-slab path L/cosθ = {ffe_path_m:.0f} m overestimates the "
+                    f"true slant path. Use the **Terrain** tab (Advanced mode) with a DEM for accurate results.",
+                    icon="🏔️")
+
+            if ffe_opacity > 100_000:
+                st.warning(
+                    f"⚠️  X = {ffe_opacity:,.0f} g/cm² is very high. "
+                    f"Models diverge by factors of 2–4 at this opacity. "
+                    f"The FFE transmission T is an order-of-magnitude estimate only. "
+                    f"Run MUSIC or PROPOSAL for reliable results.",
+                    icon="⚠️")
+
+            try:
+                I_flux, E_min = integrated_flux(ffe_opacity, ffe_theta_deg,
+                                                model=ffe_model,
+                                                altitude_m=float(ffe_altitude_m))
+                I_open, _     = integrated_flux(0.0, 0.0,
+                                                model=ffe_model,
+                                                altitude_m=float(ffe_altitude_m))
+                I_open_th, _  = integrated_flux(0.0, ffe_theta_deg,
+                                                model=ffe_model,
+                                                altitude_m=float(ffe_altitude_m))
+                transmission  = I_flux / I_open_th if I_open_th > 0 else 0.0
+
+                # Metrics row
+                _ff_m1, _ff_m2, _ff_m3, _ff_m4, _ff_m5 = st.columns(5)
+                _ff_m1.metric("E_min [GeV]",
+                              f"{E_min:.2f}" if E_min else "∞",
+                              help="Min. kinetic energy to traverse X = ρ·L/cosθ (Groom 2001 CSDA).")
+                _ff_m2.metric("I(θ) [cm⁻²sr⁻¹s⁻¹]",
+                              f"{I_flux:.3e}" if I_flux > 0 else "0",
+                              help="Integrated flux per unit solid angle at the detector.")
+                _ff_m3.metric("I(0°) [cm⁻²sr⁻¹s⁻¹]",
+                              f"{I_open:.3e}" if I_open > 0 else "—",
+                              help="Vertical open-sky flux (no rock) for reference.")
+                _ff_m4.metric("Rock transmission T",
+                              f"{transmission:.4f}" if transmission > 0 else "0",
+                              delta=f"path {ffe_path_m:.0f} m  X={ffe_opacity:.0f} g/cm²",
+                              help="I(θ,rock) / I(θ,open). Accounts for L/cosθ path length.")
+                _rate_s  = I_flux * ffe_acceptance
+                _t_exp_s = float(ffe_n_threshold) / _rate_s if _rate_s > 0 else float('inf')
+                _t_str   = (f"{_t_exp_s:.1f} s"             if _t_exp_s < 3600         else
+                            f"{_t_exp_s/3600:.2f} h"         if _t_exp_s < 86400        else
+                            f"{_t_exp_s/86400:.1f} days"     if _t_exp_s < 86400*365    else
+                            f"{_t_exp_s/86400/365.25:.2f} yr")
+                _ff_m5.metric(f"t_exp ({ffe_n_threshold:,} μ)", _t_str,
+                              delta=f"rate {_rate_s*86400:.3g} /day",
+                              help="Time to accumulate target muon count: N / (I·A).")
+
+                st.caption(
+                    f"X = ρ·L/cosθ = {ffe_opacity:.0f} g/cm²  |  "
+                    f"I₀(vertical) = {I_open:.3e} cm⁻²sr⁻¹s⁻¹  |  "
+                    f"Model: {_FFE_MODEL_LABELS[ffe_model].split('←')[0].strip()}"
+                )
+
+                # ── Plots: flux vs depth  +  angular profile side by side ────
+                _BG = "rgb(15,17,23)"
+                _ffe_pl, _ffe_pr = st.columns(2)
+
+                with _ffe_pl:
+                    st.markdown("**I(L) and T vs depth** at θ = {}°".format(ffe_theta_deg))
+                    _depths = np.linspace(0.0, max(ffe_thickness_m * 1.5, 50.0), 120)
+                    try:
+                        # Use L/cosθ path for each depth point
+                        _paths  = _depths / _cos_ffe if _cos_ffe > 0.01 else _depths
+                        _I_arr, _T_arr, _ = flux_vs_depth(
+                            _paths, ffe_rho, ffe_theta_deg,
+                            model=ffe_model, altitude_m=float(ffe_altitude_m))
+                        _fig_ffe = go.Figure()
                         _fig_ffe.add_trace(go.Scatter(
-                            x=[ffe_thickness_m], y=[I_flux],
-                            mode="markers",
-                            marker=dict(size=10, color="rgba(255,80,80,1)",
-                                        symbol="diamond",
-                                        line=dict(color="#fff", width=1)),
+                            x=_depths, y=_I_arr,
+                            name="I(L, θ)  [cm⁻²sr⁻¹s⁻¹]",
+                            mode="lines",
+                            line=dict(color="rgba(0,230,255,0.9)", width=2),
                             yaxis="y1",
-                            name=f"L = {ffe_thickness_m:.0f} m",
                         ))
-                    _fig_ffe.update_layout(
-                        height=300, margin=dict(l=60, r=70, t=10, b=50),
-                        paper_bgcolor=_BG, plot_bgcolor=_BG,
-                        xaxis=dict(title="Vertical depth L [m]", color="white",
-                                   gridcolor="rgba(255,255,255,0.08)"),
-                        yaxis=dict(title="Flux [cm⁻²sr⁻¹s⁻¹]", type="log",
-                                   color="rgba(0,230,255,0.9)",
-                                   gridcolor="rgba(255,255,255,0.08)"),
-                        yaxis2=dict(title="T = I(rock)/I(open)",
-                                    overlaying="y", side="right",
-                                    range=[0, 1],
-                                    color="rgba(255,165,0,0.85)"),
-                        legend=dict(font=dict(color="white", size=9),
-                                    bgcolor="rgba(0,0,0,0.4)"),
-                    )
-                    st.plotly_chart(_fig_ffe,                                         config={"displayModeBar": False})
-                except Exception as _pe:
-                    st.warning(f"Depth plot error: {_pe}")
+                        _fig_ffe.add_trace(go.Scatter(
+                            x=_depths, y=_T_arr,
+                            name="Transmission T",
+                            mode="lines",
+                            line=dict(color="rgba(255,165,0,0.85)", width=2, dash="dash"),
+                            yaxis="y2",
+                        ))
+                        if ffe_thickness_m > 0 and I_flux > 0:
+                            _fig_ffe.add_trace(go.Scatter(
+                                x=[ffe_thickness_m], y=[I_flux],
+                                mode="markers",
+                                marker=dict(size=10, color="rgba(255,80,80,1)",
+                                            symbol="diamond",
+                                            line=dict(color="#fff", width=1)),
+                                yaxis="y1",
+                                name=f"L = {ffe_thickness_m:.0f} m",
+                            ))
+                        _fig_ffe.update_layout(
+                            height=300, margin=dict(l=60, r=70, t=10, b=50),
+                            paper_bgcolor=_BG, plot_bgcolor=_BG,
+                            xaxis=dict(title="Vertical depth L [m]", color="white",
+                                       gridcolor="rgba(255,255,255,0.08)"),
+                            yaxis=dict(title="Flux [cm⁻²sr⁻¹s⁻¹]", type="log",
+                                       color="rgba(0,230,255,0.9)",
+                                       gridcolor="rgba(255,255,255,0.08)"),
+                            yaxis2=dict(title="T = I(rock)/I(open)",
+                                        overlaying="y", side="right",
+                                        range=[0, 1],
+                                        color="rgba(255,165,0,0.85)"),
+                            legend=dict(font=dict(color="white", size=9),
+                                        bgcolor="rgba(0,0,0,0.4)"),
+                        )
+                        st.plotly_chart(_fig_ffe,                                         config={"displayModeBar": False})
+                    except Exception as _pe:
+                        st.warning(f"Depth plot error: {_pe}")
 
-            with _ffe_pr:
-                st.markdown("**Angular profile** I(θ) / I(0°) — surface, L = 0")
-                try:
-                    _th_p = np.arange(0, 90, 2, dtype=float)
-                    _I_ap, _T_ap = angular_profile(
-                        _th_p, E_min_GeV=float(E_min) if E_min else 1.0,
-                        model=ffe_model, altitude_m=float(ffe_altitude_m),
-                    )
-                    _cos2_p = np.cos(np.radians(_th_p))**2
-                    _fig_ap = go.Figure()
-                    _fig_ap.add_trace(go.Scatter(
-                        x=_th_p, y=_T_ap,
-                        name=_FFE_MODEL_LABELS[ffe_model].split("←")[0].split("[")[0].strip(),
-                        mode="lines",
-                        line=dict(color="rgba(56,189,248,0.9)", width=2.5),
-                    ))
-                    _fig_ap.add_trace(go.Scatter(
-                        x=_th_p, y=_cos2_p,
-                        name="cos²θ",
-                        mode="lines",
-                        line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"),
-                    ))
-                    # Mark the currently chosen zenith angle
-                    _I_at, _T_at = angular_profile(
-                        np.array([float(ffe_theta_deg)]),
-                        E_min_GeV=float(E_min) if E_min else 1.0,
-                        model=ffe_model, altitude_m=float(ffe_altitude_m),
-                    )
-                    _fig_ap.add_trace(go.Scatter(
-                        x=[float(ffe_theta_deg)], y=[float(_T_at[0])],
-                        mode="markers",
-                        marker=dict(size=11, color="rgba(251,146,60,1)",
-                                    symbol="diamond",
-                                    line=dict(color="#fff", width=1.5)),
-                        name=f"θ = {ffe_theta_deg}°  ({_T_at[0]:.3f})",
-                    ))
-                    _fig_ap.update_layout(
-                        height=300, margin=dict(l=55, r=10, t=10, b=50),
-                        paper_bgcolor=_BG, plot_bgcolor=_BG,
-                        xaxis=dict(title="θ [°]", range=[0, 89], color="white",
-                                   gridcolor="rgba(255,255,255,0.08)"),
-                        yaxis=dict(title="I(θ) / I(0°)", range=[0, 1.05],
-                                   color="white",
-                                   gridcolor="rgba(255,255,255,0.08)"),
-                        legend=dict(font=dict(color="white", size=9),
-                                    bgcolor="rgba(0,0,0,0.4)"),
-                    )
-                    st.plotly_chart(_fig_ap,                                         config={"displayModeBar": False})
-                except Exception as _pe:
-                    st.warning(f"Angular profile error: {_pe}")
+                with _ffe_pr:
+                    st.markdown("**Angular profile** I(θ) / I(0°) — surface, L = 0")
+                    try:
+                        _th_p = np.arange(0, 90, 2, dtype=float)
+                        _I_ap, _T_ap = angular_profile(
+                            _th_p, E_min_GeV=float(E_min) if E_min else 1.0,
+                            model=ffe_model, altitude_m=float(ffe_altitude_m),
+                        )
+                        _cos2_p = np.cos(np.radians(_th_p))**2
+                        _fig_ap = go.Figure()
+                        _fig_ap.add_trace(go.Scatter(
+                            x=_th_p, y=_T_ap,
+                            name=_FFE_MODEL_LABELS[ffe_model].split("←")[0].split("[")[0].strip(),
+                            mode="lines",
+                            line=dict(color="rgba(56,189,248,0.9)", width=2.5),
+                        ))
+                        _fig_ap.add_trace(go.Scatter(
+                            x=_th_p, y=_cos2_p,
+                            name="cos²θ",
+                            mode="lines",
+                            line=dict(color="rgba(255,255,255,0.3)", width=1.5, dash="dot"),
+                        ))
+                        # Mark the currently chosen zenith angle
+                        _I_at, _T_at = angular_profile(
+                            np.array([float(ffe_theta_deg)]),
+                            E_min_GeV=float(E_min) if E_min else 1.0,
+                            model=ffe_model, altitude_m=float(ffe_altitude_m),
+                        )
+                        _fig_ap.add_trace(go.Scatter(
+                            x=[float(ffe_theta_deg)], y=[float(_T_at[0])],
+                            mode="markers",
+                            marker=dict(size=11, color="rgba(251,146,60,1)",
+                                        symbol="diamond",
+                                        line=dict(color="#fff", width=1.5)),
+                            name=f"θ = {ffe_theta_deg}°  ({_T_at[0]:.3f})",
+                        ))
+                        _fig_ap.update_layout(
+                            height=300, margin=dict(l=55, r=10, t=10, b=50),
+                            paper_bgcolor=_BG, plot_bgcolor=_BG,
+                            xaxis=dict(title="θ [°]", range=[0, 89], color="white",
+                                       gridcolor="rgba(255,255,255,0.08)"),
+                            yaxis=dict(title="I(θ) / I(0°)", range=[0, 1.05],
+                                       color="white",
+                                       gridcolor="rgba(255,255,255,0.08)"),
+                            legend=dict(font=dict(color="white", size=9),
+                                        bgcolor="rgba(0,0,0,0.4)"),
+                        )
+                        st.plotly_chart(_fig_ap,                                         config={"displayModeBar": False})
+                    except Exception as _pe:
+                        st.warning(f"Angular profile error: {_pe}")
 
-        except Exception as _ffe_err:
-            st.error(f"Fast flux estimator error: {_ffe_err}")
-            I_flux = E_min = transmission = 0.0
+            except Exception as _ffe_err:
+                st.error(f"Fast flux estimator error: {_ffe_err}")
+                I_flux = E_min = transmission = 0.0
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 2 — TRANSPORT
@@ -4449,25 +4798,40 @@ with tab_music:
         "PUMAS":                                                              "⑥ PUMAS — backward MC + forward (C)",
     }
 
+    # Basic offers the transport engines only: the Backward MC flux integrator
+    # needs no muon file and is outside the Generator > Transport > Results
+    # flow. A saved Advanced choice of it is not overwritten: Basic then shows
+    # its own selector (not saved) starting on UCMuon-MC.
+    _BMC_ENGINE = "Backward MC Flux Integrator"
+    _engine_opts = (_ENGINE_OPTIONS if _ADV
+                    else [e for e in _ENGINE_OPTIONS if e != _BMC_ENGINE])
+    _engine_help = (
+        "**① UCMuon-MC** (flagship): native stochastic MC — PDG per-process radiative "
+        "sampling + δ-ray straggling + Highland MS + decay. Pure Python, no install needed.\n\n"
+        "**② MUSIC**: Full stochastic MC — Kudryavtsev XS tables. OMP-parallel.\n\n"
+        "**③ Bethe-Bloch**: Analytical a+bE loss + Highland MS. OMP-parallel. No external files.\n\n"
+        "**④ PROPOSAL**: Full stochastic MC (IceCube/KM3NeT). Requires `pip install proposal`.\n\n"
+        "**⑤ Backward MC**: Flux integrator — no muon file needed.\n\n"
+        "**⑥ PUMAS**: True backward MC (Niess 2017). "
+        "Forward or backward mode. No muon file needed in backward mode. Run `make pumas`.\n\n"
+        "📌 For real terrain (volcano, glacier): use the **Terrain** tab (Advanced mode)."
+    )
     _eng1, _eng2 = st.columns([2, 3])
     with _eng1:
-        transport_engine = st.selectbox(
-            "Transport engine",
-            _ENGINE_OPTIONS,
-            format_func=lambda x: _ENGINE_LABELS.get(x, x),
-            key="transport_engine",
-            help=(
-                "**① UCMuon-MC** (flagship): native stochastic MC — PDG per-process radiative "
-                "sampling + δ-ray straggling + Highland MS + decay. Pure Python, no install needed.\n\n"
-                "**② MUSIC**: Full stochastic MC — Kudryavtsev XS tables. OMP-parallel.\n\n"
-                "**③ Bethe-Bloch**: Analytical a+bE loss + Highland MS. OMP-parallel. No external files.\n\n"
-                "**④ PROPOSAL**: Full stochastic MC (IceCube/KM3NeT). Requires `pip install proposal`.\n\n"
-                "**⑤ Backward MC**: Flux integrator — no muon file needed.\n\n"
-                "**⑥ PUMAS**: True backward MC (Niess 2017). "
-                "Forward or backward mode. No muon file needed in backward mode. Run `make pumas`.\n\n"
-                "📌 For real terrain (volcano, glacier): use the **Terrain** tab."
+        if not _ADV and st.session_state.get("transport_engine") == _BMC_ENGINE:
+            transport_engine = st.selectbox(
+                "Transport engine", _engine_opts,
+                format_func=lambda x: _ENGINE_LABELS.get(x, x),
+                key="transport_engine_basic", help=_engine_help,
             )
-        )
+            st.caption("Advanced mode is set to the Backward MC flux integrator, "
+                       "which Basic does not offer; it is kept for Advanced.")
+        else:
+            transport_engine = st.selectbox(
+                "Transport engine", _engine_opts,
+                format_func=lambda x: _ENGINE_LABELS.get(x, x),
+                key="transport_engine", help=_engine_help,
+            )
     _ENGINE_DESC = {
         "MUSIC": (
             "**Full stochastic MC** (Fortran/OMP).  "
@@ -4574,32 +4938,36 @@ with tab_music:
                 st.error("❌ `ucmuon_transport_bb_omp` not compiled. Run `make local`.")
             st.caption("Analytical a+bE energy loss (PDG/Groom) + Highland MS · OMP-parallel · no external files")
 
-    with st.expander("⚛️  Engine comparison — physics & accuracy guide", expanded=False):
-        st.markdown(r"""
-| # | Engine | Physics model | Pros | Cons |
-|---|---|---|---|---|
-| ① | **UCMuon-MC** ★ | PDG per-process radiative MC + δ-ray straggling + Highland MS + decay | **Native flagship**; pure Python; no install; any platform; multiprocess-parallel; mean dE/dx exact by construction | No LPM (minor below 1 TeV) |
-| ② | **MUSIC** | Full stochastic MC (Kudryavtsev 2009) | External reference; Landau fluctuations; OMP | Requires table files; init ~1 min on first run |
-| ③ | **UCMuon CSDA** | Bethe-Bloch $a+bE$ + Highland MS | Fastest; OMP; no files | No Landau fluctuations → overestimates survival by ~5–20% |
-| ④ | **PROPOSAL** | Full stochastic MC (Koehne/Alameddine 2013/2024) | Landau; LPM; 3D MS; independent check | Requires `pip install proposal`; first run ~60 s |
-| ⑤ | **Backward MC** | Flux integrator (CSDA + stochastic) | No muon file needed; gives flux at depth | No individual muon tracking |
-| ⑥ | **PUMAS** | True backward MC (Niess 2017) | No muon file in backward mode; 100% efficiency; CSDA/mixed/straggled | Requires `make pumas`; C binary |
+    if _ADV:
+        with st.expander("⚛️  Engine comparison — physics & accuracy guide", expanded=False):
+            st.markdown(r"""
+    | # | Engine | Physics model | Pros | Cons |
+    |---|---|---|---|---|
+    | ① | **UCMuon-MC** ★ | PDG per-process radiative MC + δ-ray straggling + Highland MS + decay | **Native flagship**; pure Python; no install; any platform; multiprocess-parallel; mean dE/dx exact by construction | No LPM (minor below 1 TeV) |
+    | ② | **MUSIC** | Full stochastic MC (Kudryavtsev 2009) | External reference; Landau fluctuations; OMP | Requires table files; init ~1 min on first run |
+    | ③ | **UCMuon CSDA** | Bethe-Bloch $a+bE$ + Highland MS | Fastest; OMP; no files | No Landau fluctuations → overestimates survival by ~5–20% |
+    | ④ | **PROPOSAL** | Full stochastic MC (Koehne/Alameddine 2013/2024) | Landau; LPM; 3D MS; independent check | Requires `pip install proposal`; first run ~60 s |
+    | ⑤ | **Backward MC** | Flux integrator (CSDA + stochastic) | No muon file needed; gives flux at depth | No individual muon tracking |
+    | ⑥ | **PUMAS** | True backward MC (Niess 2017) | No muon file in backward mode; 100% efficiency; CSDA/mixed/straggled | Requires `make pumas`; C binary |
 
-**Survival fraction ordering** (same input, same geometry):
+    **Survival fraction ordering** (same input, same geometry):
 
-$$\text{MUSIC} \lesssim \text{PROPOSAL} \lesssim \text{UCMuon-MC} < \text{UCMuon CSDA}$$
+    $$\text{MUSIC} \lesssim \text{PROPOSAL} \lesssim \text{UCMuon-MC} < \text{UCMuon CSDA}$$
 
-| Overburden | Recommended engine | Notes |
-|---|---|---|
-| < 200 m.w.e. | **① UCMuon-MC** | All engines agree within ±5% |
-| 200–1000 m.w.e. | **① UCMuon-MC** (cross-check ② MUSIC / ④ PROPOSAL) | Stochastic fluctuations matter; ③ CSDA +10% |
-| > 1000 m.w.e. | ② MUSIC or ④ PROPOSAL (validate ①) | Hard radiative losses dominate; CSDA +20% |
+    | Overburden | Recommended engine | Notes |
+    |---|---|---|
+    | < 200 m.w.e. | **① UCMuon-MC** | All engines agree within ±5% |
+    | 200–1000 m.w.e. | **① UCMuon-MC** (cross-check ② MUSIC / ④ PROPOSAL) | Stochastic fluctuations matter; ③ CSDA +10% |
+    | > 1000 m.w.e. | ② MUSIC or ④ PROPOSAL (validate ①) | Hard radiative losses dominate; CSDA +20% |
 
-UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPOSAL differ by ~10% in bremsstrahlung parametrisation — both physically valid, known inter-code systematic.
-""")
-        st.caption("Kudryavtsev (2009) CPC 180, 339 · Koehne+ (2013) CPC 184, 2070 · Alameddine+ (2024) CPC 302, 109243 · Groom+ (2001) ADNDT 78, 183")
+    UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPOSAL differ by ~10% in bremsstrahlung parametrisation — both physically valid, known inter-code systematic.
+    """)
+            st.caption("Kudryavtsev (2009) CPC 180, 339 · Koehne+ (2013) CPC 184, 2070 · Alameddine+ (2024) CPC 302, 109243 · Groom+ (2001) ADNDT 78, 183")
 
-    st.divider()
+        st.divider()
+
+    else:
+        st.divider()
 
     if transport_engine == "Backward MC Flux Integrator":
         if _STOCHASTIC_GUI_OK and render_backward_mc_tab is not None:
@@ -4649,11 +5017,15 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
                                                 help="Files detected from the Generator tab output.")
             else:
                 _infile_choice = None
-                _mi1.warning("⚠️  No input files found — run the generator first.")
-            _infile_custom = _mi2.text_input("Or custom filename", value="",
+                _mi1.warning("⚠️  No generator output yet: run the Generator tab, "
+                             "or give the path of your own muon file.")
+            _infile_custom = _mi2.text_input("Or your own file (path)", value="",
                                              key="transport_infile_custom",
-                                             placeholder="e.g. muons_step2.dat",
-                                             help="Overrides the dropdown when filled.")
+                                             placeholder="e.g. /data/muons_surface.dat",
+                                             help="Any UCMuon surface-muon file: 13 columns "
+                                                  "(EventID x y z [cm], p px py pz [GeV/c], "
+                                                  "θ φ [rad], E [GeV], charge) or 14 with "
+                                                  "hit_flag. Overrides the dropdown when filled.")
 
             if _infile_custom:
                 m_infile = _infile_custom
@@ -4698,8 +5070,13 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
                 ncols_info, n_transport = probe_music_file(m_infile, transport_all, mtime=_mt2)
                 _label = "all" if transport_all else "hit_flag=1 only"
                 st.info(f"**{n_transport:,}** muons will be transported  ({_label})")
-    
+
         st.divider()
+        # Is the input the last Generator run's output? Only then do its detector
+        # (Basic depth, underground filter) and its rate apply.
+        _gen_out = {_norm_path(f) for f in (st.session_state.get("gen_run_files") or [])}
+        _in_from_gen = _norm_path(m_infile) in _gen_out
+
         st.markdown("##### Medium & Geometry")
         _mat_sect = st.container()
         with _mat_sect:
@@ -4727,107 +5104,153 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
             default_rad = mat["rad"] if mat["rad"] is not None else 26.48
     
             # ── Density input ──────────────────────────────────────────────────────
-            density_mode = st.radio("Density input", ["Fixed", "Gaussian prior", "KDE from samples"],
-                                    horizontal=True, key="density_mode")
-            if density_mode == "Fixed":
+            if _ADV:
+                density_mode = st.radio("Density input", ["Fixed", "Gaussian prior", "KDE from samples"],
+                                        horizontal=True, key="density_mode",
+                                        help="Every engine transports one density, the mean ρ. "
+                                             "The Gaussian σ and the KDE spread are not "
+                                             "propagated: they only give the ± on the opacity "
+                                             "X = ρ·L shown below.")
+                if density_mode != "Fixed":
+                    # Up to v1.2.0 nothing said so, which suggested the
+                    # uncertainty was propagated through the transport.
+                    st.info("ℹ️ Transport uses the **mean ρ only**: σ is not propagated to "
+                            "any engine. It sets the ± on the opacity X = ρ·L below. To see "
+                            "its effect on the result, run the transport at ρ ± σ.")
+                if density_mode == "Fixed":
+                    m_rho = st.number_input("Density ρ [g/cm³]", 0.001, 25.0,
+                                            value=st.session_state.get("music_rho", float(default_rho)),
+                                            step=0.05, key="music_rho")
+                    m_rho_sigma = 0.0
+                    st.session_state["music_rho_sigma"] = 0.0
+    
+                elif density_mode == "Gaussian prior":
+                    # Fixed mode stores σ = 0, below this input's minimum: start
+                    # from 0.10 rather than drawing a zero-width pdf.
+                    if float(st.session_state.get("music_rho_sigma", 0.0) or 0.0) < 0.001:
+                        st.session_state["music_rho_sigma"] = 0.10
+                    _dc1, _dc2 = st.columns([3, 2])
+                    m_rho = _dc1.number_input("Mean ρ [g/cm³]", 0.001, 25.0,
+                                              value=st.session_state.get("music_rho", float(default_rho)),
+                                              step=0.05, key="music_rho")
+                    m_rho_sigma = _dc2.number_input("σ [g/cm³]", 0.001, 5.0,
+                                                    value=max(0.001, float(st.session_state.get("music_rho_sigma", 0.10))),
+                                                    step=0.01, key="music_rho_sigma")
+                    _px  = np.linspace(max(0.001, m_rho-4*m_rho_sigma), m_rho+4*m_rho_sigma, 300)
+                    _py  = _spnorm.pdf(_px, m_rho, m_rho_sigma)
+                    _p1s = np.linspace(max(0.001, m_rho-m_rho_sigma), m_rho+m_rho_sigma, 150)
+                    _fig_g = go.Figure()
+                    _fig_g.add_trace(go.Scatter(x=_px, y=_py, mode="lines", fill="tozeroy",
+                        line=dict(color="#00b4d8", width=2), fillcolor="rgba(0,180,216,0.13)",
+                        hovertemplate="ρ=%{x:.3f}<extra></extra>"))
+                    _fig_g.add_trace(go.Scatter(
+                        x=np.concatenate([_p1s, _p1s[::-1]]),
+                        y=np.concatenate([_spnorm.pdf(_p1s, m_rho, m_rho_sigma), np.zeros(150)]),
+                        fill="toself", fillcolor="rgba(0,180,216,0.30)", line=dict(width=0),
+                        showlegend=False, hoverinfo="skip"))
+                    _fig_g.add_vline(x=m_rho, line=dict(color="#ffd700", width=1.5, dash="dash"),
+                        annotation_text=f"μ={m_rho:.3f}", annotation_font=dict(color="#ffd700", size=11))
+                    _fig_g.update_layout(height=130, margin=dict(l=42,r=10,t=4,b=28),
+                        paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
+                        font=dict(color="white", size=10), showlegend=False,
+                        xaxis=dict(title="ρ [g/cm³]", gridcolor="#2a2a3a", zeroline=False),
+                        yaxis=dict(visible=False))
+                    st.plotly_chart(_fig_g, config={"displayModeBar": False})
+                    st.caption(f"ρ ~ 𝒩({m_rho:.3f}, {m_rho_sigma:.3f}²) g/cm³")
+    
+                else:  # KDE
+                    _dens_file = st.file_uploader("Upload density samples CSV", type=["csv"],
+                                                  key="density_kde_file",
+                                                  help="One density [g/cm³] per row. Column: density/rho/ρ.")
+                    if _dens_file is not None:
+                        try:
+                            _df_k = pd.read_csv(_dens_file)
+                            _cmap = {c.lower().strip(): c for c in _df_k.columns}
+                            _kcol = next((_cmap[k] for k in ("density","rho","ρ","rho_gcm3","rho_gcm") if k in _cmap),
+                                         _df_k.select_dtypes(include="number").columns[0])
+                            _samp = _df_k[_kcol].dropna().values.astype(float)
+                            _samp = _samp[(_samp > 0.1) & (_samp < 20.0)]
+                            if len(_samp) < 3:
+                                st.error("⛔  Need ≥ 3 valid density values.")
+                                m_rho = st.session_state.get("music_rho", float(default_rho))
+                                m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
+                            else:
+                                _kde = _spkde(_samp, bw_method="scott")
+                                m_rho = float(np.mean(_samp)); m_rho_sigma = float(np.std(_samp, ddof=1))
+                                st.session_state["music_rho"] = m_rho
+                                st.session_state["music_rho_sigma"] = m_rho_sigma
+                                _lo, _hi = max(0.1, m_rho-4*m_rho_sigma), m_rho+4*m_rho_sigma
+                                _rx = np.linspace(_lo, _hi, 400)
+                                _fig_k = go.Figure()
+                                _fig_k.add_trace(go.Scatter(x=_rx, y=_kde(_rx), mode="lines", fill="tozeroy",
+                                    line=dict(color="#00b4d8", width=2), fillcolor="rgba(0,180,216,0.10)", name="KDE"))
+                                _fig_k.add_trace(go.Scatter(x=_rx, y=_spnorm.pdf(_rx, m_rho, m_rho_sigma), mode="lines",
+                                    line=dict(color="#ffd700", width=1.5, dash="dot"), name=f"𝒩({m_rho:.3f},{m_rho_sigma:.3f})"))
+                                _fig_k.add_trace(go.Scatter(x=_samp, y=np.zeros(len(_samp)), mode="markers",
+                                    marker=dict(color="#ff6b6b", size=6, symbol="line-ns",
+                                                line=dict(width=1.5, color="#ff6b6b")), name=f"n={len(_samp)}"))
+                                _fig_k.update_layout(height=160, margin=dict(l=42,r=10,t=4,b=28),
+                                    paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
+                                    font=dict(color="white", size=10),
+                                    xaxis=dict(title="ρ [g/cm³]", gridcolor="#2a2a3a", zeroline=False),
+                                    yaxis=dict(visible=False),
+                                    legend=dict(bgcolor="rgba(0,0,0,0.45)", bordercolor="#444",
+                                                borderwidth=1, font=dict(size=9)))
+                                st.plotly_chart(_fig_k, config={"displayModeBar": False})
+                                st.caption(f"n={len(_samp)}  │  μ={m_rho:.4f}  │  σ={m_rho_sigma:.4f} g/cm³")
+                        except Exception as _e:
+                            st.error(f"❌  CSV error: {_e}")
+                            m_rho = st.session_state.get("music_rho", float(default_rho))
+                            m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
+                    else:
+                        st.info("⬆️  Upload CSV of lab density measurements.")
+                        m_rho = st.session_state.get("music_rho", float(default_rho))
+                        m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
+    
+            else:
+                # Basic: one density (the spread inputs are Advanced; none of them
+                # reaches an engine, B9c).
                 m_rho = st.number_input("Density ρ [g/cm³]", 0.001, 25.0,
                                         value=st.session_state.get("music_rho", float(default_rho)),
                                         step=0.05, key="music_rho")
                 m_rho_sigma = 0.0
-                st.session_state["music_rho_sigma"] = 0.0
-    
-            elif density_mode == "Gaussian prior":
-                _dc1, _dc2 = st.columns([3, 2])
-                m_rho = _dc1.number_input("Mean ρ [g/cm³]", 0.001, 25.0,
-                                          value=st.session_state.get("music_rho", float(default_rho)),
-                                          step=0.05, key="music_rho")
-                m_rho_sigma = _dc2.number_input("σ [g/cm³]", 0.001, 5.0,
-                                                value=max(0.001, float(st.session_state.get("music_rho_sigma", 0.10))),
-                                                step=0.01, key="music_rho_sigma")
-                _px  = np.linspace(max(0.001, m_rho-4*m_rho_sigma), m_rho+4*m_rho_sigma, 300)
-                _py  = _spnorm.pdf(_px, m_rho, m_rho_sigma)
-                _p1s = np.linspace(max(0.001, m_rho-m_rho_sigma), m_rho+m_rho_sigma, 150)
-                _fig_g = go.Figure()
-                _fig_g.add_trace(go.Scatter(x=_px, y=_py, mode="lines", fill="tozeroy",
-                    line=dict(color="#00b4d8", width=2), fillcolor="rgba(0,180,216,0.13)",
-                    hovertemplate="ρ=%{x:.3f}<extra></extra>"))
-                _fig_g.add_trace(go.Scatter(
-                    x=np.concatenate([_p1s, _p1s[::-1]]),
-                    y=np.concatenate([_spnorm.pdf(_p1s, m_rho, m_rho_sigma), np.zeros(150)]),
-                    fill="toself", fillcolor="rgba(0,180,216,0.30)", line=dict(width=0),
-                    showlegend=False, hoverinfo="skip"))
-                _fig_g.add_vline(x=m_rho, line=dict(color="#ffd700", width=1.5, dash="dash"),
-                    annotation_text=f"μ={m_rho:.3f}", annotation_font=dict(color="#ffd700", size=11))
-                _fig_g.update_layout(height=130, margin=dict(l=42,r=10,t=4,b=28),
-                    paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
-                    font=dict(color="white", size=10), showlegend=False,
-                    xaxis=dict(title="ρ [g/cm³]", gridcolor="#2a2a3a", zeroline=False),
-                    yaxis=dict(visible=False))
-                st.plotly_chart(_fig_g, config={"displayModeBar": False})
-                st.caption(f"ρ ~ 𝒩({m_rho:.3f}, {m_rho_sigma:.3f}²) g/cm³")
-    
-            else:  # KDE
-                _dens_file = st.file_uploader("Upload density samples CSV", type=["csv"],
-                                              key="density_kde_file",
-                                              help="One density [g/cm³] per row. Column: density/rho/ρ.")
-                if _dens_file is not None:
-                    try:
-                        _df_k = pd.read_csv(_dens_file)
-                        _cmap = {c.lower().strip(): c for c in _df_k.columns}
-                        _kcol = next((_cmap[k] for k in ("density","rho","ρ","rho_gcm3","rho_gcm") if k in _cmap),
-                                     _df_k.select_dtypes(include="number").columns[0])
-                        _samp = _df_k[_kcol].dropna().values.astype(float)
-                        _samp = _samp[(_samp > 0.1) & (_samp < 20.0)]
-                        if len(_samp) < 3:
-                            st.error("⛔  Need ≥ 3 valid density values.")
-                            m_rho = st.session_state.get("music_rho", float(default_rho))
-                            m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
-                        else:
-                            _kde = _spkde(_samp, bw_method="scott")
-                            m_rho = float(np.mean(_samp)); m_rho_sigma = float(np.std(_samp, ddof=1))
-                            st.session_state["music_rho"] = m_rho
-                            st.session_state["music_rho_sigma"] = m_rho_sigma
-                            _lo, _hi = max(0.1, m_rho-4*m_rho_sigma), m_rho+4*m_rho_sigma
-                            _rx = np.linspace(_lo, _hi, 400)
-                            _fig_k = go.Figure()
-                            _fig_k.add_trace(go.Scatter(x=_rx, y=_kde(_rx), mode="lines", fill="tozeroy",
-                                line=dict(color="#00b4d8", width=2), fillcolor="rgba(0,180,216,0.10)", name="KDE"))
-                            _fig_k.add_trace(go.Scatter(x=_rx, y=_spnorm.pdf(_rx, m_rho, m_rho_sigma), mode="lines",
-                                line=dict(color="#ffd700", width=1.5, dash="dot"), name=f"𝒩({m_rho:.3f},{m_rho_sigma:.3f})"))
-                            _fig_k.add_trace(go.Scatter(x=_samp, y=np.zeros(len(_samp)), mode="markers",
-                                marker=dict(color="#ff6b6b", size=6, symbol="line-ns",
-                                            line=dict(width=1.5, color="#ff6b6b")), name=f"n={len(_samp)}"))
-                            _fig_k.update_layout(height=160, margin=dict(l=42,r=10,t=4,b=28),
-                                paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
-                                font=dict(color="white", size=10),
-                                xaxis=dict(title="ρ [g/cm³]", gridcolor="#2a2a3a", zeroline=False),
-                                yaxis=dict(visible=False),
-                                legend=dict(bgcolor="rgba(0,0,0,0.45)", bordercolor="#444",
-                                            borderwidth=1, font=dict(size=9)))
-                            st.plotly_chart(_fig_k, config={"displayModeBar": False})
-                            st.caption(f"n={len(_samp)}  │  μ={m_rho:.4f}  │  σ={m_rho_sigma:.4f} g/cm³")
-                    except Exception as _e:
-                        st.error(f"❌  CSV error: {_e}")
-                        m_rho = st.session_state.get("music_rho", float(default_rho))
-                        m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
-                else:
-                    st.info("⬆️  Upload CSV of lab density measurements.")
-                    m_rho = st.session_state.get("music_rho", float(default_rho))
-                    m_rho_sigma = float(st.session_state.get("music_rho_sigma", 0.0))
-    
+
             # ── Depth + radiation length ───────────────────────────────────────────
-            _geo1, _geo2 = st.columns(2)
-            m_depth = _geo1.number_input("Overburden depth [m]", 1.0, 10000.0,
-                                         st.session_state.get("music_depth_m", 90.0), 5.0,
-                                         key="music_depth_m",
-                                         help="Rock thickness the transport driver integrates through.")
-            m_rad   = _geo2.number_input("Rad. length X₀ [g/cm²]", 0.1, 200.0,
-                                         value=st.session_state.get("music_rad", float(default_rad)),
-                                         step=0.5, key="music_rad",
-                                         help="Radiation length in g/cm² (MUSIC "
-                                              "convention). Standard rock: 26.48; "
-                                              "water/ice: 36.08; iron: 13.84.")
+            if _ADV:
+                _geo1, _geo2 = st.columns(2)
+                m_depth = _geo1.number_input("Overburden depth [m]", 1.0, 10000.0,
+                                             st.session_state.get("music_depth_m", 90.0), 5.0,
+                                             key="music_depth_m",
+                                             help="Rock thickness the transport driver integrates through.")
+                m_rad   = _geo2.number_input("Rad. length X₀ [g/cm²]", 0.1, 200.0,
+                                             value=st.session_state.get("music_rad", float(default_rad)),
+                                             step=0.5, key="music_rad",
+                                             help="Radiation length in g/cm² (MUSIC "
+                                                  "convention). Standard rock: 26.48; "
+                                                  "water/ice: 36.08; iron: 13.84.")
     
+            else:
+                # Basic: the overburden is the rock above the Generator's detector
+                # (its top face; decision 2026-10-05), X0 comes from the preset.
+                _bgd = (st.session_state.get("gen_detectors", [])
+                        if st.session_state.get("gen_use_detector", False) and _in_from_gen
+                        else [])
+                m_rad = float(default_rad)
+                if _bgd:
+                    m_depth = min(_BM.top_depth_m(_d) for _d in _bgd)
+                    st.markdown(f"**Overburden depth:** {m_depth:g} m (top face of the "
+                                "Generator's detector)")
+                    if m_depth < 0.01:
+                        st.warning("⚠️  The detector's top face is at the surface, so there is "
+                                   "no rock above it to transport through. Set its depth in "
+                                   "the Generator tab.")
+                        m_depth = 0.01
+                else:
+                    m_depth = st.number_input("Overburden depth [m]", 1.0, 10000.0,
+                                              st.session_state.get("music_depth_m", 90.0), 5.0,
+                                              key="music_depth_m",
+                                              help="Rock thickness the transport integrates through.")
+
             # ── Opacity metric ─────────────────────────────────────────────────────
             _X_mean  = m_depth * 100.0 * m_rho
             _X_sigma = m_depth * 100.0 * m_rho_sigma
@@ -4861,15 +5284,16 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
             # ── Depth vs detector mismatch warning ────────────────────────────────
             _det_chk = st.session_state.get("gen_detectors", []) if st.session_state.get("gen_use_detector", False) else []
             if _det_chk:
-                _d0 = _det_chk[0]
-                _det_depth_m = abs(min(_d0.get("az",0), _d0.get("bz",0))) / 100.0 \
-                               if _d0["shape"] == 1 \
-                               else abs(min(_d0.get("zmin",0), _d0.get("zmax",0))) / 100.0
+                # The overburden is the rock above the detector, so it ends at
+                # the detector's top face (up to v1.2.0 this asked for the
+                # deepest face, which adds the detector's height as rock).
+                _det_depth_m = min(_BM.top_depth_m(_d) for _d in _det_chk)
                 if abs(m_depth - _det_depth_m) > 1.0:
-                    st.warning(f"⚠️  Overburden ({m_depth:.0f} m) ≠ detector depth ({_det_depth_m:.0f} m). "
-                               f"Set overburden = **{_det_depth_m:.0f} m**.")
+                    st.warning(f"⚠️  Overburden ({m_depth:.0f} m) ≠ depth of the detector's top "
+                               f"face ({_det_depth_m:.0f} m). Set overburden = "
+                               f"**{_det_depth_m:.0f} m** (the rock above the detector).")
                 else:
-                    st.success(f"✅  Overburden matches detector depth ({_det_depth_m:.0f} m)")
+                    st.success(f"✅  Overburden matches the detector's top face ({_det_depth_m:.0f} m)")
     
         # ── BB depth warning ──────────────────────────────────────────────────────
         if (transport_engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS"
@@ -4929,363 +5353,430 @@ UCMuon-MC agrees with MUSIC within 0.6 pp at the 500 m benchmark. MUSIC vs PROPO
                                     f"Suitable for rough estimates only."),
                         "good": None, "exact": None}[_xs_q]
     
-        if transport_engine == "MUSIC":
-            _sc1, _sc2, _sc3 = st.columns(3)
-            with _sc1:
-                m_idim = st.radio("Lateral scattering", [1, 0],
-                                  format_func=lambda x: {1:"3D — full MS (rec.)", 0:"1D — energy only"}[x])
-            with _sc2:
-                m_idim1 = st.radio("Other-process scattering", [1, 0],
-                                   format_func=lambda x: {1:"ON (recommended)", 0:"OFF (cross-check only)"}[x])
-            with _sc3:
-                _init_default = 1 if _files_ok_init1 else 0
-                m_init = st.radio("Cross-section tables", [0, 1], index=_init_default,
-                                  format_func=lambda x: {
-                                      0: "init=0 — recalculate (~1 min)",
-                                      1: "init=1 — load from disk (fast)"}[x])
-                if m_init == 1 and not _files_ok_init1:
-                    st.error("⛔  init=1 requires both computed table files (run init=0 first).")
-                if m_init == 0 and _files_ok:
-                    st.caption("ℹ️  Files exist — will be overwritten.")
+        if _ADV:
+            if transport_engine == "MUSIC":
+                _sc1, _sc2, _sc3 = st.columns(3)
+                with _sc1:
+                    m_idim = st.radio("Lateral scattering", [1, 0],
+                                      format_func=lambda x: {1:"3D — full MS (rec.)", 0:"1D — energy only"}[x])
+                with _sc2:
+                    m_idim1 = st.radio("Other-process scattering", [1, 0],
+                                       format_func=lambda x: {1:"ON (recommended)", 0:"OFF (cross-check only)"}[x])
+                with _sc3:
+                    _init_default = 1 if _files_ok_init1 else 0
+                    m_init = st.radio("Cross-section tables", [0, 1], index=_init_default,
+                                      format_func=lambda x: {
+                                          0: "init=0 — recalculate (~1 min)",
+                                          1: "init=1 — load from disk (fast)"}[x])
+                    if m_init == 1 and not _files_ok_init1:
+                        st.error("⛔  init=1 requires both computed table files (run init=0 first).")
+                    if m_init == 0 and _files_ok:
+                        st.caption("ℹ️  Files exist — will be overwritten.")
     
-            # Table files expander
-            with st.expander("📂  MUSIC table files", expanded=not _files_ok_init1):
-                # Row 1: diff table (input — from Kudryavtsev zip, in data/)
-                # Row 2+3: computed files (generated by init=0 run)
-                _cf1, _cf2, _cf3 = st.columns(3)
-                _diff_name = _diff_table_names.get(_mat_suf_tmp, ["?"])[0]
-                _diff_exists = (_PROJECT_DIR / _diff_name).exists() or                                (_PROJECT_DIR / "data" / _diff_name).exists()
-                with _cf1:
-                    if _diff_exists:
-                        st.success(f"✅ `{_diff_name}`  *(input)*")
+                # Table files expander
+                with st.expander("📂  MUSIC table files", expanded=not _files_ok_init1):
+                    # Row 1: diff table (input — from Kudryavtsev zip, in data/)
+                    # Row 2+3: computed files (generated by init=0 run)
+                    _cf1, _cf2, _cf3 = st.columns(3)
+                    _diff_name = _diff_table_names.get(_mat_suf_tmp, ["?"])[0]
+                    _diff_exists = (_PROJECT_DIR / _diff_name).exists() or                                (_PROJECT_DIR / "data" / _diff_name).exists()
+                    with _cf1:
+                        if _diff_exists:
+                            st.success(f"✅ `{_diff_name}`  *(input)*")
+                        else:
+                            st.error(f"❌ `{_diff_name}`  *(input — copy from Kudryavtsev zip)*")
+                    with _cf2:
+                        if _eloss_ok:
+                            st.success(f"✅ `{_eloss_display_f}`  *(generated)*")
+                        else:
+                            st.warning(f"⏳ `{_eloss_f}`  *(generated by init=0)*")
+                    with _cf3:
+                        if _xsec_ok:
+                            st.success(f"✅ `{_xsec_f}`  *(generated)*")
+                        else:
+                            st.warning(f"⏳ `{_xsec_f}`  *(generated by init=0)*")
+
+                    st.divider()
+
+                    if not _diff_exists:
+                        st.error(
+                            f"**`{_diff_name}` not found.**\n\n"
+                            "This file comes from the Kudryavtsev MUSIC zip and must be present "
+                            "in either the project root or the `data/` folder.\n\n"
+                            "```bash\n"
+                            f"cp path/to/music-double-diff-rock.dat  data/\n"
+                            "# or in project root:\n"
+                            f"cp path/to/music-double-diff-rock.dat  .\n"
+                            "```"
+                        )
+                    elif not _files_ok_init1:
+                        st.info(
+                            "**First-run setup:**\n\n"
+                            f"`{_diff_name}` ✅ is present — "
+                            "the driver can compute the energy-loss and cross-section tables.\n\n"
+                            "1. Select **init=0 — recalculate** above  \n"
+                            "2. Click **▶ Run MUSIC Transport** — the driver will calculate and save "
+                            f"`{_eloss_f}` and `{_xsec_f}` automatically (~1 min)  \n"
+                            "3. After that, always use **init=1 — load from disk** (fast)"
+                        )
                     else:
-                        st.error(f"❌ `{_diff_name}`  *(input — copy from Kudryavtsev zip)*")
-                with _cf2:
-                    if _eloss_ok:
-                        st.success(f"✅ `{_eloss_display_f}`  *(generated)*")
-                    else:
-                        st.warning(f"⏳ `{_eloss_f}`  *(generated by init=0)*")
-                with _cf3:
-                    if _xsec_ok:
-                        st.success(f"✅ `{_xsec_f}`  *(generated)*")
-                    else:
-                        st.warning(f"⏳ `{_xsec_f}`  *(generated by init=0)*")
+                        st.success("All table files present. Use **init=1** for fast startup.")
 
-                st.divider()
-
-                if not _diff_exists:
-                    st.error(
-                        f"**`{_diff_name}` not found.**\n\n"
-                        "This file comes from the Kudryavtsev MUSIC zip and must be present "
-                        "in either the project root or the `data/` folder.\n\n"
-                        "```bash\n"
-                        f"cp path/to/music-double-diff-rock.dat  data/\n"
-                        "# or in project root:\n"
-                        f"cp path/to/music-double-diff-rock.dat  .\n"
-                        "```"
-                    )
-                elif not _files_ok_init1:
-                    st.info(
-                        "**First-run setup:**\n\n"
-                        f"`{_diff_name}` ✅ is present — "
-                        "the driver can compute the energy-loss and cross-section tables.\n\n"
-                        "1. Select **init=0 — recalculate** above  \n"
-                        "2. Click **▶ Run MUSIC Transport** — the driver will calculate and save "
-                        f"`{_eloss_f}` and `{_xsec_f}` automatically (~1 min)  \n"
-                        "3. After that, always use **init=1 — load from disk** (fast)"
-                    )
-                else:
-                    st.success("All table files present. Use **init=1** for fast startup.")
-
-                if _xs_q_note:
-                    st.warning(_xs_q_note)
+                    if _xs_q_note:
+                        st.warning(_xs_q_note)
     
-            with st.expander("⚙️  Expert parameters", expanded=False):
-                st.warning("Do not change minv without expert advice.", icon="⚠️")
-                m_minv = st.number_input("minv  (10^minv = stochastic/continuous loss cut)",
-                                         min_value=-50, max_value=-1, value=-30, step=1)
+                with st.expander("⚙️  Expert parameters", expanded=False):
+                    st.warning("Do not change minv without expert advice.", icon="⚠️")
+                    m_minv = st.number_input("minv  (10^minv = stochastic/continuous loss cut)",
+                                             min_value=-50, max_value=-1, value=-30, step=1)
     
-            phitsxs_ms_enable = True   # unused in MUSIC mode
-            phitsxs_mat_type  = 1
-            phitsxs_custom    = {}
+                phitsxs_ms_enable = True   # unused in MUSIC mode
+                phitsxs_mat_type  = 1
+                phitsxs_custom    = {}
     
-        elif transport_engine == "PROPOSAL":
-            # ── PROPOSAL settings ─────────────────────────────────────────────────
-            _pp1, _pp2, _pp3 = st.columns(3)
-            _proposal_medium_map = {
-                "Standard Rock  (ρ=2.65 g/cm³)": 1,
-                "Water           (ρ=1.00 g/cm³)": 2,
-                "Ice             (ρ=0.917 g/cm³)": 3,
-                "Seawater        (ρ=1.025 g/cm³)": 4,
-                "Custom": 5,
-            }
-            with _pp1:
-                _pp_med_choice = st.selectbox(
-                    "PROPOSAL medium", list(_proposal_medium_map.keys()),
-                    index=0, key="proposal_med_choice",
-                    help="Built-in PROPOSAL media. Custom: define Z, A, ρ, I manually.")
-                proposal_medium_type = _proposal_medium_map[_pp_med_choice]
-            with _pp2:
-                _pp_scat_map = {
-                    "HighlandIntegral (recommended)": 2,
-                    "Highland (Gaussian approx.)":     1,
-                    "Molière (exact)":                 3,
-                    "None":                            0,
-                }
-                _pp_scat_choice = st.selectbox(
-                    "Scattering model", list(_pp_scat_map.keys()),
-                    index=0, key="proposal_scatter_choice",
-                    help=("**HighlandIntegral**: integrated Highland — best accuracy/speed.\n\n"
-                          "**Molière**: exact theory — most accurate, ~2× slower.\n\n"
-                          "**None**: straight-line tracking."))
-                proposal_scatter = _pp_scat_map[_pp_scat_choice]
-            with _pp3:
-                st.caption("⚛️ **PROPOSAL** — full stochastic MC\n"
-                           "ionization · brems · pair · photonuclear · LPM\n"
-                           "Ref: Koehne+ (2013) · Alameddine+ (2024)")
-
-            with st.expander("⚙️  Stochastic energy cuts", expanded=False):
-                st.caption("Losses > max(e_cut, v_cut·E) are sampled stochastically. "
-                           "Defaults (e_cut = 500 MeV, v_cut = 0.001) are conservative; "
-                           "the IceCube standard uses v_cut = 0.05 (faster, slightly coarser).")
-                _ec1, _ec2 = st.columns(2)
-                proposal_e_cut = _ec1.number_input(
-                    "e_cut [MeV]", 1.0, 1e5, 500.0, 50.0, key="proposal_e_cut",
-                    help="Absolute stochastic energy cut [MeV].")
-                proposal_v_cut = _ec2.number_input(
-                    "v_cut [fraction]", 1e-4, 1.0, 0.001, 0.0005,
-                    format="%.4f", key="proposal_v_cut",
-                    help="Fractional stochastic cut v=ΔE/E.")
-
-            with st.expander("📂  Interpolation tables path", expanded=False):
-                proposal_tables = st.text_input(
-                    "Tables directory", value="",
-                    key="proposal_tables_dir",
-                    placeholder="~/.proposal/tables  (default)",
-                    help="Tables built on first run (~60 s), then cached.")
-                if proposal_tables:
-                    _pt = Path(proposal_tables).expanduser()
-                    st.success(f"✅  `{_pt}`") if _pt.exists() else st.info(f"ℹ️  Will create: `{_pt}`")
-                else:
-                    _dp = Path("~/.proposal/tables").expanduser()
-                    st.caption(f"Default `~/.proposal/tables` — {'✅ exists' if _dp.exists() else '⏳ will be created on first run'}")
-
-            proposal_custom = {}
-            if proposal_medium_type == 5:
-                st.markdown("**Custom medium parameters**")
-                _cm1, _cm2 = st.columns(2)
-                proposal_custom["proposal_Z"]    = _cm1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="prop_Z")
-                proposal_custom["proposal_A"]    = _cm2.number_input("A_eff [g/mol]", 1.0, 238.0, 22.0, 1.0, key="prop_A")
-                proposal_custom["proposal_rho"]  = _cm1.number_input("ρ [g/cm³]", 0.01, 20.0, 2.65, 0.01, key="prop_rho")
-                proposal_custom["proposal_I_eV"] = _cm2.number_input("I_mean [eV]", 10.0, 900.0, 136.4, 1.0, key="prop_Iev")
-
-            _prop_ok, _prop_ver = _check_proposal()
-            _driver_src = (_SCRIPT_DIR / "proposal_driver.py").exists()
-            if _prop_ok and _driver_src:
-                st.success(f"✅  PROPOSAL v{_prop_ver} + `proposal_driver.py` ready")
-            elif _driver_src and not _prop_ok:
-                st.error(f"❌  `proposal_driver.py` found but PROPOSAL not importable: {_prop_ver}")
-                st.code("pip install proposal", language="bash")
-            else:
-                st.error("❌  `proposal_driver.py` not found in project directory")
-
-            # Unused BB variables (needed by shared run block)
-            phitsxs_mat_type  = 1
-            phitsxs_ms_enable = True
-            phitsxs_custom    = {}
-            m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
-
-        elif transport_engine == "UCMuon Stochastic (Python)":
-            _stochastic_ok_s, _ = stochastic_available()
-            if not _stochastic_ok_s:
-                st.error("❌ Place `gui_stochastic_engine.py` and `ucmuon_stochastic_driver.py` in `gui/`.")
-            else:
-                stochastic_v_cut, stochastic_n_steps, stochastic_ms_enable, \
-                    stochastic_range_table, stochastic_hard_spectrum, \
-                    stochastic_n_workers, stochastic_delta_rays = render_stochastic_settings()
-            stochastic_mat_id = _STOCHASTIC_MAT_ID.get(mat_choice, 1)
-            stochastic_custom = {}
-            if stochastic_mat_id == 5:
-                _puc1, _puc2 = st.columns(2)
-                stochastic_custom["stochastic_Z"]    = _puc1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="stochastic_Zeff")
-                stochastic_custom["stochastic_A"]    = _puc2.number_input("A_eff", 1.0,238.0, 22.0, 1.0, key="stochastic_Aeff")
-                stochastic_custom["stochastic_I_eV"] = _puc1.number_input("I[eV]",10.0,900.0,136.4, 1.0, key="stochastic_Iev")
-                stochastic_custom["stochastic_b_rad"]= _puc2.number_input("b_rad",1e-7, 1e-4,3.475e-6,1e-7,format="%.3e",key="stochastic_brad")
-            phitsxs_mat_type=1; phitsxs_ms_enable=True; phitsxs_custom={}
-            m_idim=1; m_idim1=1; m_init=0; m_minv=-30
-        elif transport_engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":
-            # ── Bethe-Bloch settings ──────────────────────────────────────────────
-            _px1, _px2, _px3 = st.columns(3)
-            with _px1:
-                # Must match the material table of both drivers
-                # (gui/ucmuon_bb_driver.py _BB_MAT, ucmuon_transport_bb_omp.f90).
-                # Up to v1.2.0 the labels said Limestone / Water-Ice / Iron for
-                # 2 / 3 / 4, which the drivers run as Ice / Water / Concrete.
-                _pxs_mat_map = {
-                    "Standard Rock  (Z=11, A=22, ρ=2.65)": 1,
-                    "Ice            (Z=7.42, A=14.99, ρ=0.917)": 2,
-                    "Water          (Z=7.42, A=14.99, ρ=1.00)": 3,
-                    "Concrete       (Z=11.11, A=22.08, ρ=2.30)": 4,
+            elif transport_engine == "PROPOSAL":
+                # ── PROPOSAL settings ─────────────────────────────────────────────────
+                _pp1, _pp2, _pp3 = st.columns(3)
+                # The medium sets the composition only; the density is the shared
+                # ρ of Medium & Geometry (up to v1.2.0 PROPOSAL ran at the
+                # built-in density shown in these labels, whatever ρ said).
+                _proposal_medium_map = {
+                    "Standard Rock": 1,
+                    "Water": 2,
+                    "Ice": 3,
+                    "Seawater": 4,
                     "Custom": 5,
                 }
-                _pxs_choice = st.selectbox("Bethe-Bloch material", list(_pxs_mat_map.keys()),
-                                           index=0, key="phitsxs_mat_choice")
-                phitsxs_mat_type = _pxs_mat_map[_pxs_choice]
-            with _px2:
-                phitsxs_ms_enable = st.checkbox(
-                    "🔀  Multiple scattering (Highland)", value=True,
-                    key="phitsxs_ms_enable",
-                    help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(t/X₀)]. "
-                         "Box-Muller sampling of projected angles. ~10% CPU overhead.")
-            with _px3:
-                st.caption("💡 Bethe-Bloch (PDG) + Groom radiative b·E.\nNo external table files needed.")
+                _pp_old = st.session_state.get("proposal_med_choice")
+                if _pp_old is not None and _pp_old not in _proposal_medium_map:
+                    # autosave from v1.2.0 or earlier: "Standard Rock  (ρ=2.65 g/cm³)"
+                    _pp_old = _pp_old.split("(")[0].strip()
+                    st.session_state["proposal_med_choice"] = (
+                        _pp_old if _pp_old in _proposal_medium_map else "Standard Rock")
+                with _pp1:
+                    _pp_med_choice = st.selectbox(
+                        "PROPOSAL medium (composition)", list(_proposal_medium_map.keys()),
+                        index=0, key="proposal_med_choice",
+                        help="Built-in PROPOSAL media. Custom: define Z, A, I manually. "
+                             "The density is ρ from Medium & Geometry.")
+                    proposal_medium_type = _proposal_medium_map[_pp_med_choice]
+                    st.caption(f"Density: ρ = {m_rho:.3f} g/cm³ from Medium & Geometry.")
+                with _pp2:
+                    _pp_scat_map = {
+                        "HighlandIntegral (recommended)": 2,
+                        "Highland (Gaussian approx.)":     1,
+                        "Molière (exact)":                 3,
+                        "None":                            0,
+                    }
+                    _pp_scat_choice = st.selectbox(
+                        "Scattering model", list(_pp_scat_map.keys()),
+                        index=0, key="proposal_scatter_choice",
+                        help=("**HighlandIntegral**: integrated Highland — best accuracy/speed.\n\n"
+                              "**Molière**: exact theory — most accurate, ~2× slower.\n\n"
+                              "**None**: straight-line tracking."))
+                    proposal_scatter = _pp_scat_map[_pp_scat_choice]
+                with _pp3:
+                    st.caption("⚛️ **PROPOSAL** — full stochastic MC\n"
+                               "ionization · brems · pair · photonuclear · LPM\n"
+                               "Ref: Koehne+ (2013) · Alameddine+ (2024)")
+
+                with st.expander("⚙️  Stochastic energy cuts", expanded=False):
+                    st.caption("Losses > max(e_cut, v_cut·E) are sampled stochastically. "
+                               "Defaults (e_cut = 500 MeV, v_cut = 0.001) are conservative; "
+                               "the IceCube standard uses v_cut = 0.05 (faster, slightly coarser).")
+                    _ec1, _ec2 = st.columns(2)
+                    proposal_e_cut = _ec1.number_input(
+                        "e_cut [MeV]", 1.0, 1e5, 500.0, 50.0, key="proposal_e_cut",
+                        help="Absolute stochastic energy cut [MeV].")
+                    proposal_v_cut = _ec2.number_input(
+                        "v_cut [fraction]", 1e-4, 1.0, 0.001, 0.0005,
+                        format="%.4f", key="proposal_v_cut",
+                        help="Fractional stochastic cut v=ΔE/E.")
+
+                with st.expander("📂  Interpolation tables path", expanded=False):
+                    proposal_tables = st.text_input(
+                        "Tables directory", value="",
+                        key="proposal_tables_dir",
+                        placeholder="~/.proposal/tables  (default)",
+                        help="Tables built on first run (~60 s), then cached.")
+                    if proposal_tables:
+                        _pt = Path(proposal_tables).expanduser()
+                        st.success(f"✅  `{_pt}`") if _pt.exists() else st.info(f"ℹ️  Will create: `{_pt}`")
+                    else:
+                        _dp = Path("~/.proposal/tables").expanduser()
+                        st.caption(f"Default `~/.proposal/tables` — {'✅ exists' if _dp.exists() else '⏳ will be created on first run'}")
+
+                proposal_custom = {}
+                if proposal_medium_type == 5:
+                    st.markdown("**Custom medium parameters**")
+                    _cm1, _cm2 = st.columns(2)
+                    proposal_custom["proposal_Z"]    = _cm1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="prop_Z")
+                    proposal_custom["proposal_A"]    = _cm2.number_input("A_eff [g/mol]", 1.0, 238.0, 22.0, 1.0, key="prop_A")
+                    proposal_custom["proposal_I_eV"] = _cm2.number_input("I_mean [eV]", 10.0, 900.0, 136.4, 1.0, key="prop_Iev")
+                    _cm1.caption(f"ρ = {m_rho:.3f} g/cm³ (Medium & Geometry)")
+
+                _prop_ok, _prop_ver = _check_proposal()
+                _driver_src = (_SCRIPT_DIR / "proposal_driver.py").exists()
+                if _prop_ok and _driver_src:
+                    st.success(f"✅  PROPOSAL v{_prop_ver} + `proposal_driver.py` ready")
+                elif _driver_src and not _prop_ok:
+                    st.error(f"❌  `proposal_driver.py` found but PROPOSAL not importable: {_prop_ver}")
+                    st.code("pip install proposal", language="bash")
+                else:
+                    st.error("❌  `proposal_driver.py` not found in project directory")
+
+                # Unused BB variables (needed by shared run block)
+                phitsxs_mat_type  = 1
+                phitsxs_ms_enable = True
+                phitsxs_custom    = {}
+                m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
+
+            elif transport_engine == "UCMuon Stochastic (Python)":
+                _stochastic_ok_s, _ = stochastic_available()
+                if not _stochastic_ok_s:
+                    st.error("❌ Place `gui_stochastic_engine.py` and `ucmuon_stochastic_driver.py` in `gui/`.")
+                else:
+                    stochastic_v_cut, stochastic_n_steps, stochastic_ms_enable, \
+                        stochastic_range_table, stochastic_hard_spectrum, \
+                        stochastic_n_workers, stochastic_delta_rays = render_stochastic_settings()
+                stochastic_mat_id = _STOCHASTIC_MAT_ID.get(mat_choice, 1)
+                stochastic_custom = {}
+                if stochastic_mat_id == 5:
+                    _puc1, _puc2 = st.columns(2)
+                    stochastic_custom["stochastic_Z"]    = _puc1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="stochastic_Zeff")
+                    stochastic_custom["stochastic_A"]    = _puc2.number_input("A_eff", 1.0,238.0, 22.0, 1.0, key="stochastic_Aeff")
+                    stochastic_custom["stochastic_I_eV"] = _puc1.number_input("I[eV]",10.0,900.0,136.4, 1.0, key="stochastic_Iev")
+                    stochastic_custom["stochastic_b_rad"]= _puc2.number_input("b_rad",1e-7, 1e-4,3.475e-6,1e-7,format="%.3e",key="stochastic_brad")
+                phitsxs_mat_type=1; phitsxs_ms_enable=True; phitsxs_custom={}
+                m_idim=1; m_idim1=1; m_init=0; m_minv=-30
+            elif transport_engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":
+                # ── Bethe-Bloch settings ──────────────────────────────────────────────
+                _px1, _px2, _px3 = st.columns(3)
+                with _px1:
+                    # Must match the material table of both drivers
+                    # (gui/ucmuon_bb_driver.py _BB_MAT, ucmuon_transport_bb_omp.f90).
+                    # Up to v1.2.0 the labels said Limestone / Water-Ice / Iron for
+                    # 2 / 3 / 4, which the drivers run as Ice / Water / Concrete.
+                    # The menu sets the composition only; the density is the shared
+                    # ρ of Medium & Geometry (up to v1.2.0 the drivers used the
+                    # table density shown here, whatever ρ said).
+                    _pxs_mat_map = {
+                        "Standard Rock  (Z=11, A=22)": 1,
+                        "Ice            (Z=7.42, A=14.99)": 2,
+                        "Water          (Z=7.42, A=14.99)": 3,
+                        "Concrete       (Z=11.11, A=22.08)": 4,
+                        "Custom": 5,
+                    }
+                    if st.session_state.get("phitsxs_mat_choice") not in _pxs_mat_map:
+                        st.session_state.pop("phitsxs_mat_choice", None)   # pre-v1.3 label
+                    _pxs_choice = st.selectbox("Bethe-Bloch composition", list(_pxs_mat_map.keys()),
+                                               index=0, key="phitsxs_mat_choice")
+                    phitsxs_mat_type = _pxs_mat_map[_pxs_choice]
+                    st.caption(f"Density: ρ = {m_rho:.3f} g/cm³ from Medium & Geometry.")
+                with _px2:
+                    phitsxs_ms_enable = st.checkbox(
+                        "🔀  Multiple scattering (Highland)", value=True,
+                        key="phitsxs_ms_enable",
+                        help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(t/X₀)]. "
+                             "Box-Muller sampling of projected angles. ~10% CPU overhead.")
+                with _px3:
+                    st.caption("💡 Bethe-Bloch (PDG) + Groom radiative b·E.\nNo external table files needed.")
     
-            # ── Engine comparison info ─────────────────────────────────────────────
-            with st.expander("📐  Bethe-Bloch engine — physics details", expanded=False):
-                st.markdown(r"""
-**② Bethe-Bloch + Highland MS (this engine)**
+                # ── Engine comparison info ─────────────────────────────────────────────
+                with st.expander("📐  Bethe-Bloch engine — physics details", expanded=False):
+                    st.markdown(r"""
+    **② Bethe-Bloch + Highland MS (this engine)**
 
-**Energy loss:** $dE/dx = a + b\cdot E_{\rm total}$ · CSDA range: $R = \frac{1}{b}\ln(1+\frac{b}{a}E_0)$
+    **Energy loss:** $dE/dx = a + b\cdot E_{\rm total}$ · CSDA range: $R = \frac{1}{b}\ln(1+\frac{b}{a}E_0)$
 
-| Parameter | Standard Rock | Physical meaning |
-|---|---|---|
-| $a$ = 1.96 MeV cm²/g | ionisation (Bethe-Bloch plateau) | ≈ constant at muography energies |
-| $b$ = 3.64×10⁻⁶ cm²/g | radiative total (brems + pair + photonuclear) | grows linearly with $E$ |
+    | Parameter | Standard Rock | Physical meaning |
+    |---|---|---|
+    | $a$ = 1.96 MeV cm²/g | ionisation (Bethe-Bloch plateau) | ≈ constant at muography energies |
+    | $b$ = 3.64×10⁻⁶ cm²/g | radiative total (brems + pair + photonuclear) | grows linearly with $E$ |
 
-**Multiple scattering (Highland 1975):** applied per step.
-$\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln(x/X_0)\right]$
+    **Multiple scattering (Highland 1975):** applied per step.
+    $\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln(x/X_0)\right]$
 
-**Accuracy:** good for 50 GeV – 3 TeV in rock-like media.
+    **Accuracy:** good for 50 GeV – 3 TeV in rock-like media.
 
-**vs MUSIC / PROPOSAL:** BB+MS overestimates survival because it has no Landau/Vavilov
-fluctuations — hard stochastic radiative events (which can stop a muon even when mean
-$dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 1500 m.w.e.
+    **vs MUSIC / PROPOSAL:** BB+MS overestimates survival because it has no Landau/Vavilov
+    fluctuations — hard stochastic radiative events (which can stop a muon even when mean
+    $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 1500 m.w.e.
 
-**Use for:** fast scans, parameter studies, upper-bound estimates.
-""")
-                st.caption("PDG 2022 §34 · Groom et al. (2001) ADNDT 78, 183 · Highland (1975) NIM 129, 497")
+    **Use for:** fast scans, parameter studies, upper-bound estimates.
+    """)
+                    st.caption("PDG 2022 §34 · Groom et al. (2001) ADNDT 78, 183 · Highland (1975) NIM 129, 497")
     
-            phitsxs_custom = {}
-            if phitsxs_mat_type == 5:
-                _cx1, _cx2 = st.columns(2)
-                phitsxs_custom["phitsxs_Zeff"] = _cx1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="px_zeff")
-                phitsxs_custom["phitsxs_Aeff"] = _cx2.number_input("A_eff", 1.0, 238.0, 22.0, 1.0, key="px_aeff")
-                phitsxs_custom["phitsxs_rho"]  = _cx1.number_input("ρ [g/cm³]", 0.01, 20.0, 2.65, 0.01, key="px_rho")
-                phitsxs_custom["phitsxs_I_eV"] = _cx2.number_input("I_mean [eV]", 10.0, 900.0, 136.4, 1.0, key="px_Iev")
+                phitsxs_custom = {}
+                if phitsxs_mat_type == 5:
+                    _cx1, _cx2 = st.columns(2)
+                    phitsxs_custom["phitsxs_Zeff"] = _cx1.number_input("Z_eff", 1.0, 92.0, 11.0, 0.5, key="px_zeff")
+                    phitsxs_custom["phitsxs_Aeff"] = _cx2.number_input("A_eff", 1.0, 238.0, 22.0, 1.0, key="px_aeff")
+                    phitsxs_custom["phitsxs_I_eV"] = _cx2.number_input("I_mean [eV]", 10.0, 900.0, 136.4, 1.0, key="px_Iev")
+                    _cx1.caption(f"ρ = {m_rho:.3f} g/cm³ (Medium & Geometry)")
 
-            m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
+                m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
 
-        elif transport_engine == "PUMAS":
-            # ── PUMAS sub-mode ────────────────────────────────────────────────────
-            _pm1, _pm2 = st.columns([2, 3])
-            with _pm1:
+            elif transport_engine == "PUMAS":
+                # ── PUMAS sub-mode ────────────────────────────────────────────────────
+                _pm1, _pm2 = st.columns([2, 3])
+                with _pm1:
+                    pumas_mode = st.radio(
+                        "Transport mode", ["forward", "backward"],
+                        format_func=lambda x: {"backward": "⬅ Backward MC (no muon file)",
+                                               "forward":  "➡ Forward transport"}[x],
+                        key="pumas_mode",
+                        help="**Backward**: start from detector, propagate backward — 100% efficiency, "
+                             "no surface muon file needed.\n\n"
+                             "**Forward**: read surface muon file, transport to depth — same as MUSIC/BB.")
+                with _pm2:
+                    if pumas_mode == "backward":
+                        st.info("No surface muon file needed — PUMAS samples at the detector "
+                                "and propagates backward through rock.")
+                    else:
+                        st.info("Reads the surface muon file selected above. "
+                                "Output: standard 18-column underground file.")
+
+                # ── Physics settings ──────────────────────────────────────────────────
+                _pl1, _pl2 = st.columns(2)
+                with _pl1:
+                    pumas_energy_loss = st.radio(
+                        "Energy-loss mode",
+                        [0, 1, 2],
+                        format_func=lambda x: {0: "CSDA — deterministic",
+                                               1: "Mixed — soft+hard",
+                                               2: "Straggled — soft+hard+δe"}[x],
+                        key="pumas_energy_loss",
+                        help="**CSDA**: fastest, no fluctuations (same as BB engine).\n\n"
+                             "**Mixed**: stochastic hard losses above v_cut (Geant4-like).\n\n"
+                             "**Straggled**: as Mixed + electronic straggling.")
+                with _pl2:
+                    pumas_scattering = st.radio(
+                        "Multiple scattering",
+                        [0, 1],
+                        format_func=lambda x: {0: "Disabled", 1: "Mixed (Molière)"}[x],
+                        key="pumas_scattering",
+                        help="Enable Molière / Highland multiple Coulomb scattering. "
+                             "Adds lateral displacement to the transported muon.")
+
+                # ── Backward-specific settings ────────────────────────────────────────
+                pumas_E_min = pumas_E_max = pumas_theta_max = 85.0
+                pumas_n_events = 50000
+                pumas_spectrum_id = 0
+                pumas_seed = 0
+                pumas_outfile = st.session_state.get("pumas_outfile", "output/pumas_flux.dat")
+
+                if pumas_mode == "backward":
+                    st.markdown("**Backward MC sampling range**")
+                    _pb1, _pb2, _pb3 = st.columns(3)
+                    pumas_E_min = _pb1.number_input(
+                        "E_det min [GeV]", 0.01, 1e5,
+                        float(st.session_state.get("pumas_E_min", 1.0)),
+                        step=0.5, key="pumas_E_min",
+                        help="Minimum detector kinetic energy sampled.")
+                    pumas_E_max = _pb2.number_input(
+                        "E_det max [GeV]", 0.1, 1e6,
+                        float(st.session_state.get("pumas_E_max", 1000.0)),
+                        step=10.0, key="pumas_E_max",
+                        help="Maximum detector kinetic energy sampled.")
+                    pumas_theta_max = _pb3.number_input(
+                        "θ_max [deg]", 1.0, 89.9,
+                        float(st.session_state.get("pumas_theta_max", 85.0)),
+                        step=1.0, key="pumas_theta_max",
+                        help="Maximum zenith angle (0° = vertical, 90° = horizontal).")
+
+                    _pb4, _pb5, _pb6 = st.columns(3)
+                    pumas_n_events = int(_pb4.number_input(
+                        "N events", 100, 10_000_000,
+                        int(st.session_state.get("pumas_n_events", 50000)),
+                        step=1000, key="pumas_n_events",
+                        help="Number of backward MC events. 50000 gives ~1% statistical error."))
+                    pumas_spectrum_id = _pb5.selectbox(
+                        "Surface spectrum",
+                        [0, 1],
+                        format_func=lambda x: {0: "GCCLY (Guan et al. 2015)", 1: "Gaisser (PDG)"}[x],
+                        key="pumas_spectrum_id",
+                        help="Atmospheric muon flux model used to weight the backward-transported muons.")
+                    pumas_seed = int(_pb6.number_input(
+                        "RNG seed (0=random)", 0, 2**31 - 1,
+                        int(st.session_state.get("pumas_seed", 0)),
+                        step=1, key="pumas_seed",
+                        help="0 = time-based seed (different each run)."))
+
+                    pumas_outfile = st.text_input(
+                        "Flux output file", pumas_outfile, key="pumas_outfile",
+                        help="Binned flux spectrum written here. "
+                             "Per-event file saved alongside as `<stem>_bwd_events.dat`.")
+
+                # PUMAS material mapping (mat_name for PUMAS MDF)
+                _PUMAS_MAT_ID = {
+                    "Standard Rock": 1, "Limestone": 1, "Rock Salt": 1, "Iron": 1, "Custom": 1,
+                    "Water": 2, "Ice": 4, "Seawater": 3,
+                }
+                pumas_mat_id = _PUMAS_MAT_ID.get(mat_choice, 1)
+
+                # Unused variables needed by shared run block
+                phitsxs_mat_type = 1; phitsxs_ms_enable = True; phitsxs_custom = {}
+                m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
+
+                _pumas_bin_ok2 = _bin_path("ucmuon_transport_pumas") is not None
+                _pumas_drv_ok2 = (_SCRIPT_DIR / "ucmuon_pumas_driver.py").exists()
+                if _pumas_bin_ok2 and _pumas_drv_ok2:
+                    st.success("✅  `ucmuon_transport_pumas` + `ucmuon_pumas_driver.py` ready")
+                elif not _pumas_bin_ok2:
+                    st.error("❌  Binary not found — run `make pumas`")
+                else:
+                    st.error("❌  `ucmuon_pumas_driver.py` not found in `gui/`")
+    
+        else:
+            # Basic: every engine at its defaults, the composition from the material
+            # preset (Custom runs as rock at the chosen ρ; its composition inputs are
+            # Advanced). Only what an engine needs to run is shown.
+            _bpre = mat_choice
+            m_idim, m_idim1, m_minv = 1, 1, -30
+            m_init = 1 if _files_ok_init1 else 0
+            phitsxs_mat_type = {"Water": 3, "Seawater": 3, "Ice": 2}.get(_bpre, 1)
+            phitsxs_ms_enable, phitsxs_custom = True, {}
+            proposal_medium_type = {"Water": 2, "Ice": 3, "Seawater": 4}.get(_bpre, 1)
+            proposal_custom = {}
+            stochastic_mat_id = _STOCHASTIC_MAT_ID.get(_bpre, 1)
+            if stochastic_mat_id == 5:
+                stochastic_mat_id = 1
+            stochastic_custom = {}
+            pumas_mode = "forward"
+            pumas_energy_loss, pumas_scattering = 2, 1     # straggled losses, Molière MS
+            pumas_E_min, pumas_E_max, pumas_theta_max = 1.0, 1000.0, 85.0
+            pumas_n_events, pumas_spectrum_id, pumas_seed = 50000, 0, 0
+            pumas_outfile = "output/pumas_flux.dat"
+            pumas_mat_id = {"Water": 2, "Ice": 4, "Seawater": 3}.get(_bpre, 1)
+            if transport_engine == "MUSIC":
+                if not _diff_ok and not _files_ok_init1:
+                    st.error("❌  MUSIC needs its cross-section table "
+                             f"`{_diff_table_names.get(_mat_suf_tmp, ['?'])[0]}` (Kudryavtsev zip) in "
+                             "`data/` or the project root: see Advanced mode → MUSIC table files.")
+                elif not _files_ok_init1:
+                    st.info("ℹ️  First MUSIC run: the energy-loss and cross-section tables are "
+                            "computed (~1 min), then loaded on later runs.")
+                if _xs_q_note:
+                    st.warning(_xs_q_note)
+            elif transport_engine == "PUMAS":
                 pumas_mode = st.radio(
                     "Transport mode", ["forward", "backward"],
                     format_func=lambda x: {"backward": "⬅ Backward MC (no muon file)",
                                            "forward":  "➡ Forward transport"}[x],
-                    key="pumas_mode",
-                    help="**Backward**: start from detector, propagate backward — 100% efficiency, "
-                         "no surface muon file needed.\n\n"
-                         "**Forward**: read surface muon file, transport to depth — same as MUSIC/BB.")
-            with _pm2:
-                if pumas_mode == "backward":
-                    st.info("No surface muon file needed — PUMAS samples at the detector "
-                            "and propagates backward through rock.")
-                else:
-                    st.info("Reads the surface muon file selected above. "
-                            "Output: standard 18-column underground file.")
+                    key="pumas_mode", horizontal=True,
+                    help="**Backward**: from the detector back to the surface, no muon file "
+                         "needed. **Forward**: transports the Generator's muons.")
+                if not (_bin_path("ucmuon_transport_pumas") is not None
+                        and (_SCRIPT_DIR / "ucmuon_pumas_driver.py").exists()):
+                    st.error("❌  PUMAS is not built: run `make pumas`.")
+            elif transport_engine == "UCMuon Stochastic (Python)":
+                if not stochastic_available()[0]:
+                    st.error("❌ Place `gui_stochastic_engine.py` and `ucmuon_stochastic_driver.py` in `gui/`.")
+            if _bpre == "Custom":
+                st.caption("Custom material: rock composition at your ρ (composition inputs in Advanced mode).")
+            st.caption("Engine settings at their defaults; Advanced mode shows them.")
 
-            # ── Physics settings ──────────────────────────────────────────────────
-            _pl1, _pl2 = st.columns(2)
-            with _pl1:
-                pumas_energy_loss = st.radio(
-                    "Energy-loss mode",
-                    [0, 1, 2],
-                    format_func=lambda x: {0: "CSDA — deterministic",
-                                           1: "Mixed — soft+hard",
-                                           2: "Straggled — soft+hard+δe"}[x],
-                    key="pumas_energy_loss",
-                    help="**CSDA**: fastest, no fluctuations (same as BB engine).\n\n"
-                         "**Mixed**: stochastic hard losses above v_cut (Geant4-like).\n\n"
-                         "**Straggled**: as Mixed + electronic straggling.")
-            with _pl2:
-                pumas_scattering = st.radio(
-                    "Multiple scattering",
-                    [0, 1],
-                    format_func=lambda x: {0: "Disabled", 1: "Mixed (Molière)"}[x],
-                    key="pumas_scattering",
-                    help="Enable Molière / Highland multiple Coulomb scattering. "
-                         "Adds lateral displacement to the transported muon.")
-
-            # ── Backward-specific settings ────────────────────────────────────────
-            pumas_E_min = pumas_E_max = pumas_theta_max = 85.0
-            pumas_n_events = 50000
-            pumas_spectrum_id = 0
-            pumas_seed = 0
-            pumas_outfile = st.session_state.get("pumas_outfile", "output/pumas_flux.dat")
-
-            if pumas_mode == "backward":
-                st.markdown("**Backward MC sampling range**")
-                _pb1, _pb2, _pb3 = st.columns(3)
-                pumas_E_min = _pb1.number_input(
-                    "E_det min [GeV]", 0.01, 1e5,
-                    float(st.session_state.get("pumas_E_min", 1.0)),
-                    step=0.5, key="pumas_E_min",
-                    help="Minimum detector kinetic energy sampled.")
-                pumas_E_max = _pb2.number_input(
-                    "E_det max [GeV]", 0.1, 1e6,
-                    float(st.session_state.get("pumas_E_max", 1000.0)),
-                    step=10.0, key="pumas_E_max",
-                    help="Maximum detector kinetic energy sampled.")
-                pumas_theta_max = _pb3.number_input(
-                    "θ_max [deg]", 1.0, 89.9,
-                    float(st.session_state.get("pumas_theta_max", 85.0)),
-                    step=1.0, key="pumas_theta_max",
-                    help="Maximum zenith angle (0° = vertical, 90° = horizontal).")
-
-                _pb4, _pb5, _pb6 = st.columns(3)
-                pumas_n_events = int(_pb4.number_input(
-                    "N events", 100, 10_000_000,
-                    int(st.session_state.get("pumas_n_events", 50000)),
-                    step=1000, key="pumas_n_events",
-                    help="Number of backward MC events. 50000 gives ~1% statistical error."))
-                pumas_spectrum_id = _pb5.selectbox(
-                    "Surface spectrum",
-                    [0, 1],
-                    format_func=lambda x: {0: "GCCLY (Guan et al. 2015)", 1: "Gaisser (PDG)"}[x],
-                    key="pumas_spectrum_id",
-                    help="Atmospheric muon flux model used to weight the backward-transported muons.")
-                pumas_seed = int(_pb6.number_input(
-                    "RNG seed (0=random)", 0, 2**31 - 1,
-                    int(st.session_state.get("pumas_seed", 0)),
-                    step=1, key="pumas_seed",
-                    help="0 = time-based seed (different each run)."))
-
-                pumas_outfile = st.text_input(
-                    "Flux output file", pumas_outfile, key="pumas_outfile",
-                    help="Binned flux spectrum written here. "
-                         "Per-event file saved alongside as `<stem>_bwd_events.dat`.")
-
-            # PUMAS material mapping (mat_name for PUMAS MDF)
-            _PUMAS_MAT_ID = {
-                "Standard Rock": 1, "Limestone": 1, "Rock Salt": 1, "Iron": 1, "Custom": 1,
-                "Water": 2, "Ice": 4, "Seawater": 3,
-            }
-            pumas_mat_id = _PUMAS_MAT_ID.get(mat_choice, 1)
-
-            # Unused variables needed by shared run block
-            phitsxs_mat_type = 1; phitsxs_ms_enable = True; phitsxs_custom = {}
-            m_idim = 1; m_idim1 = 1; m_init = 0; m_minv = -30
-
-            _pumas_bin_ok2 = _bin_path("ucmuon_transport_pumas") is not None
-            _pumas_drv_ok2 = (_SCRIPT_DIR / "ucmuon_pumas_driver.py").exists()
-            if _pumas_bin_ok2 and _pumas_drv_ok2:
-                st.success("✅  `ucmuon_transport_pumas` + `ucmuon_pumas_driver.py` ready")
-            elif not _pumas_bin_ok2:
-                st.error("❌  Binary not found — run `make pumas`")
-            else:
-                st.error("❌  `ucmuon_pumas_driver.py` not found in `gui/`")
-    
         # ── Underground detector filter ───────────────────────────────────────────
         # Not shown for PUMAS backward mode: its output is a weighted flux
         # spectrum, not a per-muon underground file, so there is nothing to filter.
@@ -5297,13 +5788,23 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
         if _pumas_bwd:
             ug_use_filter  = False
             ug_filter_file = "output/muons_ug_selected.dat"
-        elif _det_ug:
-            ug_use_filter = st.checkbox(
-                f"🔍  Filter survived muons by detector  ({len(_det_ug)} detector(s) from the Generator tab)",
-                value=True)
+        elif _det_ug and not _ADV and not _in_from_gen:
+            ug_use_filter  = False
             ug_filter_file = "output/muons_ug_selected.dat"
-            if ug_use_filter:
+            st.caption("The input is not from the last Generator run, so the survivors "
+                       "are not filtered by that run's detector.")
+        elif _det_ug:
+            # Basic: always on, default file.
+            ug_use_filter = (st.checkbox(
+                f"🔍  Filter survived muons by detector  ({len(_det_ug)} detector(s) from the Generator tab)",
+                value=True) if _ADV else True)
+            ug_filter_file = "output/muons_ug_selected.dat"
+            if ug_use_filter and _ADV:
                 ug_filter_file = st.text_input("Underground selected file", "output/muons_ug_selected.dat")
+            elif ug_use_filter:
+                st.caption("🔍  After the run, the survivors are filtered by the Generator's "
+                           "detector.")
+            if ug_use_filter:
                 for _di, _det in enumerate(_det_ug):
                     _sn = "Cylinder" if _det["shape"] == 1 else "Box"
                     st.caption(f"  Detector {_di+1}: {_sn}, margin {_det.get('margin',0):.0f} cm")
@@ -5317,11 +5818,22 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
         st.divider()
         st.markdown("##### Run")
         _mc1, _mc2 = st.columns([3, 2])
+        # OMP_NUM_THREADS reaches only the Fortran drivers: MUSIC, and BB when
+        # its Python driver is missing. Up to v1.2.0 the slider was shown for
+        # every engine and did nothing for the others (UCMuon-MC parallelism
+        # is its own "CPU workers" setting).
+        _omp_used = (transport_engine == "MUSIC"
+                     or (transport_engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS"
+                         and not (_SCRIPT_DIR / "ucmuon_bb_driver.py").exists()))
         with _mc1:
-            n_threads_music = st.slider(
-                "⚡  OpenMP threads", 1, min(64, os.cpu_count() or 8),
-                min(4, os.cpu_count() or 4), 1, key="music_omp_threads",
-                help="N muons transported in parallel. Each thread has private RANLUX/RANMAR stream.")
+            if _omp_used:
+                n_threads_music = st.slider(
+                    "⚡  OpenMP threads", 1, min(64, os.cpu_count() or 8),
+                    min(4, os.cpu_count() or 4), 1, key="music_omp_threads",
+                    help="N muons transported in parallel. Each thread has private RANLUX/RANMAR stream.")
+            else:
+                n_threads_music = int(st.session_state.get("music_omp_threads",
+                                                           min(4, os.cpu_count() or 4)))
         with _mc2:
             _omp_bin     = _bin_path("ucmuon_transport_music_omp") is not None
             _serial_bin  = _bin_path("ucmuon_transport_music") is not None
@@ -5343,7 +5855,17 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                     st.error("❌  `proposal_driver.py` not found")
                 st.caption("⏳ First run builds tables (~60 s).\nSubsequent runs: < 5 s.")
             elif transport_engine == "UCMuon Stochastic (Python)":
-                st.metric("Mode", "Single-thread Python")
+                # Same rule as the driver: 0 = auto, one worker per ~20k muons,
+                # up to all cores (up to v1.2.0 this said "Single-thread").
+                _nw = int(stochastic_n_workers or 0)
+                if _nw == 0:
+                    _nw = min(os.cpu_count() or 1, max(1, int(n_transport or 0) // 20000))
+                _nw = max(1, _nw)
+                st.metric("Mode", ("Serial Python" if _nw == 1
+                                   else f"{_nw} worker processes")
+                          + (" (auto)" if not stochastic_n_workers else ""),
+                          help="Auto: one worker process per ~20 000 muons, up to "
+                               "all cores.")
                 _p_ok3, _p_ver3 = stochastic_available()
                 if _p_ok3: st.success(f"✅  UCMuon-MC v{_p_ver3}")
                 else:      st.error(f"❌  {_p_ver3}")
@@ -5503,6 +6025,10 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
                     "ug_filter_file":    ug_filter_file,
                     "ug_filter_done":    False,
                     "music_last_mat_id": MUSIC_MATERIALS[mat_choice].get("mat_id", 1),
+                    # what this transport ran with (in Basic the depth comes from
+                    # the detector, not from the music_depth_m input)
+                    "ug_depth_m": float(m_depth), "ug_rho": float(m_rho),
+                    "ug_engine": _btn_short,
                 })
                 save_settings()
                 st.rerun()
@@ -5514,51 +6040,52 @@ $dE/dx$ says it survives) are absent. Typical bias: ~10% at 500 m.w.e., ~20% at 
     
         # ── Post-processing ────────────────────────────────────────────────────
         st.divider()
-        st.markdown("##### 🔧  Post-processing")
-        with st.expander("🔄  Convert output → input for chained transport", expanded=False):
-            st.caption("Convert the underground output file to a 13-col input for a second transport stage.")
-            _conv1, _conv2 = st.columns(2)
-            _conv_src = _conv1.text_input("Underground output file", value=m_outfile, key="conv_src")
-            _conv_dst = _conv2.text_input("New input filename", "muons_step2_input.dat", key="conv_dst")
-            _conv_all = st.checkbox("Include all muons (not just survived)", value=False, key="conv_all")
-            if st.button("Convert", key="btn_conv", width='stretch'):
-                if not Path(_conv_src).exists():
-                    st.error(f"❌  File not found: `{_conv_src}`")
-                else:
-                    try:
-                        def _progress(n_read, n_written):
-                            pass
-                        convert_ug_to_music_input(_conv_src, _conv_dst,
-                                                  survived_only=not _conv_all,
-                                                  progress_cb=_progress)
-                        st.success(f"✅  Written: `{_conv_dst}`")
-                    except Exception as _e:
-                        st.error(f"❌  Conversion failed: {_e}")
+        if _ADV:
+            st.markdown("##### 🔧  Post-processing")
+            with st.expander("🔄  Convert output → input for chained transport", expanded=False):
+                st.caption("Convert the underground output file to a 13-col input for a second transport stage.")
+                _conv1, _conv2 = st.columns(2)
+                _conv_src = _conv1.text_input("Underground output file", value=m_outfile, key="conv_src")
+                _conv_dst = _conv2.text_input("New input filename", "muons_step2_input.dat", key="conv_dst")
+                _conv_all = st.checkbox("Include all muons (not just survived)", value=False, key="conv_all")
+                if st.button("Convert", key="btn_conv", width='stretch'):
+                    if not Path(_conv_src).exists():
+                        st.error(f"❌  File not found: `{_conv_src}`")
+                    else:
+                        try:
+                            def _progress(n_read, n_written):
+                                pass
+                            convert_ug_to_music_input(_conv_src, _conv_dst,
+                                                      survived_only=not _conv_all,
+                                                      progress_cb=_progress)
+                            st.success(f"✅  Written: `{_conv_dst}`")
+                        except Exception as _e:
+                            st.error(f"❌  Conversion failed: {_e}")
     
-        # ── PHITS underground export ───────────────────────────────────────────────
-        with st.expander("⚛️  Export underground muons as PHITS source", expanded=False):
-            _pu1, _pu2 = st.columns(2)
-            _phits_ug_src = _pu1.text_input("Underground file", value=m_outfile, key="phits_ug_src")
-            _phits_ug_out = _pu2.text_input("PHITS output", "output/muons_underground_phits.dat", key="phits_ug_out")
-            _phits_ug_all = st.checkbox("Include stopped muons", value=False, key="phits_ug_all")
-            if st.button("Convert → PHITS underground", key="btn_phits_ug", width='stretch'):
-                if not Path(_phits_ug_src).exists():
-                    st.error(f"❌  File not found: `{_phits_ug_src}`")
-                else:
-                    try:
-                        def _phits_progress(n_read, n_written): pass
-                        write_phits_underground(_phits_ug_src, _phits_ug_out,
-                                               survived_only=not _phits_ug_all,
-                                               progress_cb=_phits_progress)
-                        st.success(f"✅  Written: `{_phits_ug_out}`")
-                        if Path(_phits_ug_out).exists():
-                            with open(_phits_ug_out, "rb") as _fh:
-                                st.download_button(f"⬇️  Download {_phits_ug_out}", data=_fh,
-                                                   file_name=_phits_ug_out, mime="text/plain",
-                                                   width='stretch', key="dl_phits_ug")
-                        st.code(f"[Source]\n  s-type = 17\n  file   = {_phits_ug_out}\n  dump   = -10\n  1 2 3 4 5 6 7 8 9 10", language="text")
-                    except Exception as _e:
-                        st.error(f"❌  Failed: {_e}")
+            # ── PHITS underground export ───────────────────────────────────────────────
+            with st.expander("⚛️  Export underground muons as PHITS source", expanded=False):
+                _pu1, _pu2 = st.columns(2)
+                _phits_ug_src = _pu1.text_input("Underground file", value=m_outfile, key="phits_ug_src")
+                _phits_ug_out = _pu2.text_input("PHITS output", "output/muons_underground_phits.dat", key="phits_ug_out")
+                _phits_ug_all = st.checkbox("Include stopped muons", value=False, key="phits_ug_all")
+                if st.button("Convert → PHITS underground", key="btn_phits_ug", width='stretch'):
+                    if not Path(_phits_ug_src).exists():
+                        st.error(f"❌  File not found: `{_phits_ug_src}`")
+                    else:
+                        try:
+                            def _phits_progress(n_read, n_written): pass
+                            write_phits_underground(_phits_ug_src, _phits_ug_out,
+                                                   survived_only=not _phits_ug_all,
+                                                   progress_cb=_phits_progress)
+                            st.success(f"✅  Written: `{_phits_ug_out}`")
+                            if Path(_phits_ug_out).exists():
+                                with open(_phits_ug_out, "rb") as _fh:
+                                    st.download_button(f"⬇️  Download {_phits_ug_out}", data=_fh,
+                                                       file_name=_phits_ug_out, mime="text/plain",
+                                                       width='stretch', key="dl_phits_ug")
+                            st.code(f"[Source]\n  s-type = 17\n  file   = {_phits_ug_out}\n  dump   = -10\n  1 2 3 4 5 6 7 8 9 10", language="text")
+                        except Exception as _e:
+                            st.error(f"❌  Failed: {_e}")
     
         _auto_ug_filter()
     
@@ -5582,16 +6109,32 @@ def _render_results_tab():
         st.session_state["surface_file"], st.session_state["selected_file"],
         st.session_state["ug_file"], st.session_state.get("ug_filtered_file", ""),
     ]
-    available = list(dict.fromkeys(f for f in _candidates if Path(f).exists()))
+    # is_file, not exists: an unset session path is "" and Path("") is ".",
+    # which exists.
+    available = list(dict.fromkeys(f for f in _candidates if f and Path(f).is_file()))
 
     _prefer_selected = (
         st.session_state.get("gen_use_detector", False)
         and st.session_state.get("selected_file", "") in available
     )
 
-    if _prefer_selected:
-        _default_file = st.session_state["selected_file"]          # ✅ fix 1: was session_state["muons_surface.dat"]
-    elif "output/muons_surface.dat" in available:                  # ✅ fix 2: explicit surface priority
+    # Open on the newest output of this session's runs: after a transport run
+    # that is the underground (or detector-hit) file, not the surface file it
+    # came from (up to v1.2.0 the surface or selected file always won).
+    # Only files that belong to the last generator run, directly or through a
+    # transport of one of its files: the session's file names have defaults
+    # even when that run did not write them.
+    _session_out = [f for f in (st.session_state.get("ug_filtered_file", ""),
+                                st.session_state["ug_file"],
+                                st.session_state["selected_file"],
+                                st.session_state["surface_file"])
+                    if f in available and _file_from_last_run(f)]
+    if _session_out:
+        # newest first; at equal mtime the order above (detector hits first) wins
+        _default_file = max(_session_out, key=lambda f: Path(f).stat().st_mtime)
+    elif _prefer_selected:
+        _default_file = st.session_state["selected_file"]
+    elif "output/muons_surface.dat" in available:
         _default_file = "output/muons_surface.dat"
     elif available:
         _default_file = max(available, key=lambda f: Path(f).stat().st_mtime)
@@ -5599,14 +6142,29 @@ def _render_results_tab():
         _default_file = None
 
     _rfs1, _rfs2 = st.columns([3, 2])
+
+    # Basic: what each file is, then its name (computed here: format_func may
+    # be called outside a script run, where session state is not available).
+    _kinds = {}
+    for _path, _kind in ((st.session_state.get("surface_file", ""), "Surface muons (generator)"),
+                         (st.session_state.get("selected_file", ""), "Detector hits (generator)"),
+                         (st.session_state.get("ug_file", ""), "Underground muons (transport)"),
+                         (st.session_state.get("ug_filtered_file", ""), "Detector hits underground")):
+        if _path:
+            _kinds[_norm_path(_path)] = _kind
+    _file_labels = {f: (f"{_kinds[_norm_path(f)]}: {f}" if _norm_path(f) in _kinds else f)
+                    for f in available}
+
     if available:
         chosen_auto = _rfs1.selectbox("Data file", available,
-                                      index=available.index(_default_file) if _default_file in available else 0)
+                                      index=available.index(_default_file) if _default_file in available else 0,
+                                      format_func=(lambda f: f) if _ADV else (lambda f: _file_labels.get(f, f)))
     else:
         chosen_auto = None
         _rfs1.info("ℹ️  No output files found yet. Run the generator →")
     manual_file = _rfs2.text_input("Load any file", value="", placeholder="e.g. muon_rok.dat",
-                                   help="Overrides dropdown when filled.")
+                                   help="Path of any UCMuon surface or underground file. "
+                                        "Overrides the dropdown when filled.")
 
     if manual_file:
         if Path(manual_file).exists():
@@ -5642,7 +6200,13 @@ def _render_results_tab():
     if _has_charge:
         _np_c = int((df["charge"] == 1).sum())
         _nm_c = int((df["charge"] == -1).sum())
-    rate_per_s, live_time_s, flux_ok, _rate_note, _rate_sigma = _compute_flux(df, is_underground, chosen)
+    rate_per_s, live_time_s, flux_ok, _rate_note, _rate_sigma, _row_w = _compute_flux(
+        df, is_underground, chosen)
+    # Legacy angular modes (1-5) sample p and θ independently: their raw
+    # counts are the sampling distribution. Plots use the flux weights when
+    # they are known.
+    _hist_w   = _row_w
+    _ylab_cnt = "Counts (weighted to the true flux)" if _hist_w is not None else "Counts"
     _det_t3 = (st.session_state.get("gen_detectors", [])
                if st.session_state.get("gen_use_detector", False) else [])
 
@@ -5676,6 +6240,13 @@ def _render_results_tab():
         elif flux_ok and rate_per_s is not None:
             _qb3.metric("Rate [/s]",   f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
             _qb4.metric("Live time",   _fmt_time(live_time_s))
+    if flux_ok and rate_per_s is not None and (is_underground or is_det_hits):
+        # Underground and detector-hit files: their rate and live time are
+        # headline numbers too (up to v1.2.0 only a caption had them).
+        _qr1, _qr2, _qr3, _qr4 = st.columns(4)
+        _qr1.metric("Rate at depth [/s]" if is_underground else "Hit rate [/s]",
+                    f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
+        _qr2.metric("Live time", _fmt_time(live_time_s))
     if flux_ok and rate_per_s is not None and not (is_pumas_flux or is_pumas_events):
         st.caption(
             f"Live time T = N_tried / R = {st.session_state.get('gen_ntry', 0):,} / "
@@ -5799,36 +6370,45 @@ def _render_results_tab():
         _pe_l, _pe_r = st.columns(2)
 
         with _pe_l:
-            _e_vals = df["E_det_GeV"].values
-            _e_vals = _e_vals[(_e_vals > 0) & np.isfinite(_e_vals)]
+            # Backward events are drawn from a sampling pdf; their raw counts
+            # show that pdf. Weighted by flux_contribution (PUMAS weight x
+            # surface flux) the histograms show the flux shape (up to v1.2.0
+            # they were raw counts). Scaled to a maximum of 1.
+            _pe_w   = df["flux_contribution"].to_numpy(float)
+            _e_vals = df["E_det_GeV"].to_numpy(float)
+            _e_ok   = (_e_vals > 0) & np.isfinite(_e_vals) & np.isfinite(_pe_w)
+            _e_vals = _e_vals[_e_ok]
             _fig_pe = go.Figure()
             if len(_e_vals):
-                _eh, _eb = np.histogram(np.log10(_e_vals), bins=50)
+                _eh, _eb = np.histogram(np.log10(_e_vals), bins=50, weights=_pe_w[_e_ok])
+                _eh = _eh / max(float(np.max(_eh)), 1e-300)
                 _ec = 0.5 * (_eb[:-1] + _eb[1:])
                 _fig_pe.add_trace(go.Bar(x=(10**_ec).tolist(), y=_eh.tolist(),
                                          marker_color="#00b4d8", name="E_det"))
             _fig_pe.update_layout(
                 xaxis=dict(title="E_det [GeV]", type="log", gridcolor="#2a2a3a"),
-                yaxis=dict(title="Counts", gridcolor="#2a2a3a"),
+                yaxis=dict(title="Relative flux (weighted)", gridcolor="#2a2a3a"),
                 paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
                 font=dict(color="white"), margin=dict(l=60,r=20,t=30,b=50), height=280,
-                title=dict(text="E_det distribution", font=dict(color="white")),
+                title=dict(text="E_det, flux-weighted", font=dict(color="white")),
             )
             st.plotly_chart(_fig_pe)
 
         with _pe_r:
-            _ct_vals = df["cos_theta"].values
+            _ct_vals = df["cos_theta"].to_numpy(float)
+            _ct_ok   = np.isfinite(_ct_vals) & np.isfinite(_pe_w)
             _fig_ct = go.Figure()
-            _cth, _ctb = np.histogram(_ct_vals[np.isfinite(_ct_vals)], bins=40)
+            _cth, _ctb = np.histogram(_ct_vals[_ct_ok], bins=40, weights=_pe_w[_ct_ok])
+            _cth = _cth / max(float(np.max(_cth)) if len(_cth) else 0.0, 1e-300)
             _ctc = 0.5 * (_ctb[:-1] + _ctb[1:])
             _fig_ct.add_trace(go.Bar(x=_ctc.tolist(), y=_cth.tolist(),
                                      marker_color="#ff6b6b", name="cos_theta"))
             _fig_ct.update_layout(
                 xaxis=dict(title="cos θ", gridcolor="#2a2a3a"),
-                yaxis=dict(title="Counts", gridcolor="#2a2a3a"),
+                yaxis=dict(title="Relative flux (weighted)", gridcolor="#2a2a3a"),
                 paper_bgcolor="rgb(15,17,23)", plot_bgcolor="rgb(20,22,30)",
                 font=dict(color="white"), margin=dict(l=60,r=20,t=30,b=50), height=280,
-                title=dict(text="cos θ distribution", font=dict(color="white")),
+                title=dict(text="cos θ, flux-weighted", font=dict(color="white")),
             )
             st.plotly_chart(_fig_ct)
 
@@ -5851,8 +6431,8 @@ def _render_results_tab():
             if not ncols_list:
                 st.warning("⚠️  No plottable columns.")
             else:
-                pc = st.selectbox("Variable", ncols_list,
-                                  index=ncols_list.index("theta") if "theta" in ncols_list else 0)
+                _pc_def = next((c for c in ("theta", "theta_s") if c in ncols_list), ncols_list[0])
+                pc = st.selectbox("Variable", ncols_list, index=ncols_list.index(_pc_def))
                 if pc and pc in df.columns:
                     _has_ecol = ecol in df.columns
                     _ncols_fig = 2 if _has_ecol else 1
@@ -5865,28 +6445,34 @@ def _render_results_tab():
                         ax.title.set_color("white")
                         for sp in ax.spines.values(): sp.set_edgecolor("#444")
                     if _has_ecol:
-                        _evals = df[ecol].values
-                        _evals = _evals[(_evals > 0) & np.isfinite(_evals)]
+                        _evals = df[ecol].to_numpy(float)
+                        _emask = (_evals > 0) & np.isfinite(_evals)
+                        _evals = _evals[_emask]
                         if len(_evals):
                             _le = np.log10(_evals)
-                            _eh, _eb = np.histogram(_le, bins=60)
+                            _eh, _eb = np.histogram(
+                                _le, bins=60,
+                                weights=None if _hist_w is None else _hist_w[_emask])
                             axes[0].bar(_eb[:-1], _eh, width=np.diff(_eb),
                                         color="#00b4d8", edgecolor="none", alpha=0.85, align="edge")
                         axes[0].set_xlabel("log₁₀(E [GeV])", color="white")
-                        axes[0].set_ylabel("Counts", color="white")
+                        axes[0].set_ylabel(_ylab_cnt, color="white")
                         axes[0].set_title("Energy spectrum", color="white")
-                    _raw = df[pc].dropna().values
+                    _vmask = df[pc].notna().to_numpy()
+                    _raw = df[pc].to_numpy()[_vmask]
                     _xlabel = pc
                     if pc in ("theta","theta_s","phi","phi_s"):
                         _raw = np.degrees(_raw); _xlabel = f"{pc} [deg]"
                     elif pc in ("x","y","z","xs","ys","zs"):
                         _raw = _raw / 100.0; _xlabel = f"{pc} [m]"
                     if len(_raw):
-                        _dh, _db = np.histogram(_raw, bins=60)
+                        _dh, _db = np.histogram(
+                            _raw, bins=60,
+                            weights=None if _hist_w is None else _hist_w[_vmask])
                         axes[1].bar(_db[:-1], _dh, width=np.diff(_db),
                                     color="#ff6b6b", edgecolor="none", alpha=0.85, align="edge")
                     axes[1].set_xlabel(_xlabel, color="white")
-                    axes[1].set_ylabel("Counts", color="white")
+                    axes[1].set_ylabel(_ylab_cnt, color="white")
                     axes[1].set_title(f"Distribution: {pc}", color="white")
                     if pc in ("theta","theta_s") and len(_raw) > 0:
                         axes[1].set_xlim(left=0)
@@ -5895,15 +6481,24 @@ def _render_results_tab():
                         axes[1].legend(fontsize=8, facecolor="#1c1e26", labelcolor="white", framealpha=0.7)
                     plt.tight_layout()
                     st.pyplot(fig2); plt.close(fig2)
+                    _amode_run = int(st.session_state.get("gen_angular_mode", 6) or 6)
+                    if _hist_w is not None:
+                        st.caption(f"Angular mode {_amode_run} (legacy): counts are weighted "
+                                   "to the true flux, so these are physical distributions.")
+                    elif _amode_run != 6 and not flux_ok:
+                        st.caption("ℹ️ If this file comes from a legacy angular mode (1-5), "
+                                   "these raw counts are the sampling distribution, not the "
+                                   "flux: no flux weights are known for it.")
 
         # ── Angular acceptance map ─────────────────────────────────────────────
         if _show_generic and "theta" in df.columns and "phi" in df.columns:
             with st.expander("🧭  Angular acceptance map  (θ vs φ)", expanded=False):
-                _theta_deg = np.degrees(df["theta"].dropna().values)
+                _tp_mask   = (df["theta"].notna() & df["phi"].notna()).to_numpy()
+                _theta_deg = np.degrees(df["theta"].to_numpy(float)[_tp_mask])
                 # Wrap phi into [-180, 180): the Fortran generator and MUSIC
                 # write phi in [0, 2pi), the Python engines in [-pi, pi] —
                 # without the wrap, half the muons fall outside the histogram.
-                _phi_deg   = (np.degrees(df["phi"].dropna().values)
+                _phi_deg   = (np.degrees(df["phi"].to_numpy(float)[_tp_mask])
                               + 180.0) % 360.0 - 180.0
                 # Pre-compute 2D histogram server-side: sends 36×18 bin counts
                 # instead of 10M raw data points — avoids websocket size limit.
@@ -5911,6 +6506,7 @@ def _render_results_tab():
                     _phi_deg, _theta_deg,
                     bins=[36, 18],
                     range=[[-180, 180], [0, 90]],
+                    weights=None if _hist_w is None else _hist_w[_tp_mask],
                 )
                 _phi_centres = 0.5 * (_phi_edges[:-1] + _phi_edges[1:])
                 _th_centres  = 0.5 * (_th_edges[:-1]  + _th_edges[1:])
@@ -5918,7 +6514,7 @@ def _render_results_tab():
                     x=_phi_centres.tolist(), y=_th_centres.tolist(),
                     z=_H.T.tolist(),
                     colorscale="Plasma",
-                    colorbar=dict(title=dict(text="Counts", font=dict(color="white")),
+                    colorbar=dict(title=dict(text=_ylab_cnt.split(" (")[0] + (" (weighted)" if _hist_w is not None else ""), font=dict(color="white")),
                                   tickfont=dict(color="white"))))
                 _fig_ang.update_layout(
                     xaxis_title="φ [deg]", yaxis_title="θ [deg]",
@@ -5938,14 +6534,39 @@ def _render_results_tab():
         # ── Survival rate vs depth ─────────────────────────────────────────────
         if "alive" in df.columns and "Es" in df.columns:
             st.markdown("##### Survival rate vs depth")
-            _sd1, _sd2 = st.columns(2)
-            _depth_m_val = _sd1.number_input("Overburden depth [m]", 1.0, 10000.0,
-                                             float(st.session_state.get("music_depth_m", 90.0)),
-                                             5.0, key="res_depth")
-            _rho_val     = _sd2.number_input("Rock density [g/cm³]", 0.1, 10.0,
-                                             float(st.session_state.get("music_rho", 2.65)),
-                                             0.05, key="res_rho")
-            st.plotly_chart(plot_survival_vs_depth(df, _depth_m_val, _rho_val))
+            _depth_run = float(st.session_state.get("ug_depth_m", st.session_state.get("music_depth_m", 90.0)))
+            _rho_run   = float(st.session_state.get("ug_rho", st.session_state.get("music_rho", 2.65)))
+            _from_last_ug = _norm_path(chosen) in {
+                _norm_path(f) for f in (st.session_state.get("ug_file", ""),
+                                        st.session_state.get("ug_filtered_file", "")) if f}
+            if _ADV or not _from_last_ug:
+                _sd1, _sd2 = st.columns(2)
+                _depth_m_val = _sd1.number_input("Overburden depth [m]", 1.0, 10000.0,
+                                                 min(max(_depth_run, 1.0), 10000.0), 5.0, key="res_depth")
+                _rho_val     = _sd2.number_input("Rock density [g/cm³]", 0.1, 10.0,
+                                                 min(max(_rho_run, 0.1), 10.0), 0.05, key="res_rho")
+            else:
+                # Basic: the depth and density the last transport ran with.
+                _depth_m_val, _rho_val = max(_depth_run, 1.0), _rho_run
+                st.caption(f"Depth {_depth_run:g} m, ρ = {_rho_run:.2f} g/cm³ (the last transport).")
+            # The curve needs every transported muon: for the detector-hit file
+            # (survivors that reach the detector) use the full transport output.
+            # The transport's own survival count applies only to its files.
+            _df_curve, _surv_mc = df, None
+            _ug_full = st.session_state.get("ug_file", "")
+            if _from_last_ug:
+                if (_norm_path(chosen) != _norm_path(_ug_full) and _ug_full
+                        and Path(_ug_full).exists()):
+                    try:
+                        _df_curve = load_file(_ug_full, mtime=Path(_ug_full).stat().st_mtime)
+                    except Exception:
+                        _df_curve = df
+                if "alive" in _df_curve.columns and len(_df_curve):
+                    _surv_mc = 100.0 * float((_df_curve["alive"] == 1).mean())
+            st.plotly_chart(plot_survival_vs_depth(
+                _df_curve, _depth_m_val, _rho_val, actual_rate=_surv_mc,
+                engine=(st.session_state.get("ug_engine", "transport")
+                        if _from_last_ug else "transport")))
             st.caption(
                 "**Blue curve** — analytical CSDA (Groom 2001). "
                 "**◆ Diamond** — transport MC survival rate. "
@@ -5964,45 +6585,46 @@ def _render_results_tab():
                      else min(_d0.get("zmin",0), _d0.get("zmax",0))
         auto_depth = abs(_z_min_det) / 100.0
     else:
-        auto_depth = float(st.session_state.get("music_depth_m", 90.0))
+        auto_depth = float(st.session_state.get("ug_depth_m", st.session_state.get("music_depth_m", 90.0)))
 
     with st.expander("🧊  3D Muon Trajectories", expanded=False):
         if "alive" in df.columns and "xs" in df.columns:
             _n_traj = st.slider("Trajectories per class", 10, 500, 100, 10,
                                 help="N survived + N stopped. Higher = slower browser.")
-            with st.expander("🔴  Overlay detector geometry", expanded=False):
-                if len(_det_3d) > 0:
-                    st.success(f"✅  {len(_det_3d)} detector(s) from the Generator tab.")
-                else:
-                    st.info("No detector from the Generator tab — define one here for overlay.")
-                    _ov_shape = st.selectbox("Shape", [1,2], key="ov_sh",
-                                             format_func=lambda x: "Cylinder" if x==1 else "Box")
-                    _ov_det = {"shape": _ov_shape, "margin": 0.0}
-                    if _ov_shape == 1:
-                        _oc1, _oc2 = st.columns(2)
-                        with _oc1:
-                            _ov_det["ax"]=st.number_input("Ax",value=0.0,key="ov_ax")
-                            _ov_det["ay"]=st.number_input("Ay",value=0.0,key="ov_ay")
-                            _ov_det["az"]=st.number_input("Az",value=-float(auto_depth*100),key="ov_az")
-                        with _oc2:
-                            _ov_det["bx"]=st.number_input("Bx",value=0.0,key="ov_bx")
-                            _ov_det["by"]=st.number_input("By",value=0.0,key="ov_by")
-                            _ov_det["bz"]=st.number_input("Bz",value=0.0,key="ov_bz")
-                        _ov_det["r"]=st.number_input("Radius [cm]",0.1,1e4,5.0,key="ov_r")
+            if _ADV:
+                with st.expander("🔴  Overlay detector geometry", expanded=False):
+                    if len(_det_3d) > 0:
+                        st.success(f"✅  {len(_det_3d)} detector(s) from the Generator tab.")
                     else:
-                        _oc1, _oc2 = st.columns(2)
-                        with _oc1:
-                            _ov_det["xmin"]=st.number_input("Xmin",value=-100.0,key="ov_xn")
-                            _ov_det["ymin"]=st.number_input("Ymin",value=-100.0,key="ov_yn")
-                            _ov_det["zmin"]=st.number_input("Zmin",value=-float(auto_depth*100),key="ov_zn")
-                        with _oc2:
-                            _ov_det["xmax"]=st.number_input("Xmax",value=100.0,key="ov_xx")
-                            _ov_det["ymax"]=st.number_input("Ymax",value=100.0,key="ov_yx")
-                            _ov_det["zmax"]=st.number_input("Zmax",value=0.0,key="ov_zx")
-                    if st.button("Apply overlay", key="ov_apply"):
-                        _det_3d = [_ov_det]
-                        st.session_state["gen_detectors"] = _det_3d
-                        st.session_state["gen_use_detector"] = True
+                        st.info("No detector from the Generator tab — define one here for overlay.")
+                        _ov_shape = st.selectbox("Shape", [1,2], key="ov_sh",
+                                                 format_func=lambda x: "Cylinder" if x==1 else "Box")
+                        _ov_det = {"shape": _ov_shape, "margin": 0.0}
+                        if _ov_shape == 1:
+                            _oc1, _oc2 = st.columns(2)
+                            with _oc1:
+                                _ov_det["ax"]=st.number_input("Ax",value=0.0,key="ov_ax")
+                                _ov_det["ay"]=st.number_input("Ay",value=0.0,key="ov_ay")
+                                _ov_det["az"]=st.number_input("Az",value=-float(auto_depth*100),key="ov_az")
+                            with _oc2:
+                                _ov_det["bx"]=st.number_input("Bx",value=0.0,key="ov_bx")
+                                _ov_det["by"]=st.number_input("By",value=0.0,key="ov_by")
+                                _ov_det["bz"]=st.number_input("Bz",value=0.0,key="ov_bz")
+                            _ov_det["r"]=st.number_input("Radius [cm]",0.1,1e4,5.0,key="ov_r")
+                        else:
+                            _oc1, _oc2 = st.columns(2)
+                            with _oc1:
+                                _ov_det["xmin"]=st.number_input("Xmin",value=-100.0,key="ov_xn")
+                                _ov_det["ymin"]=st.number_input("Ymin",value=-100.0,key="ov_yn")
+                                _ov_det["zmin"]=st.number_input("Zmin",value=-float(auto_depth*100),key="ov_zn")
+                            with _oc2:
+                                _ov_det["xmax"]=st.number_input("Xmax",value=100.0,key="ov_xx")
+                                _ov_det["ymax"]=st.number_input("Ymax",value=100.0,key="ov_yx")
+                                _ov_det["zmax"]=st.number_input("Zmax",value=0.0,key="ov_zx")
+                        if st.button("Apply overlay", key="ov_apply"):
+                            _det_3d = [_ov_det]
+                            st.session_state["gen_detectors"] = _det_3d
+                            st.session_state["gen_use_detector"] = True
             st.plotly_chart(plot_3d_trajectories(df, _n_traj, auto_depth,
                                                   detectors=_det_3d, radius_m=_radius_3d))
             st.caption("🟢 Generation surface  🔵 Survived  🔴 Stopped  🟡 Detector")
@@ -6034,8 +6656,8 @@ def _render_results_tab():
             "file_visualised": chosen, "N_muons": len(df),
             "N_generated":     st.session_state.get("gen_nmuons_done",   "—"),
             "gen_radius_m":    st.session_state.get("gen_radius",        "—"),
-            "overburden_m":    st.session_state.get("music_depth_m",     "—"),
-            "rock_density":    st.session_state.get("music_rho",         "—"),
+            "overburden_m":    st.session_state.get("ug_depth_m", st.session_state.get("music_depth_m", "—")),
+            "rock_density":    st.session_state.get("ug_rho", st.session_state.get("music_rho", "—")),
             "N_survived":      st.session_state.get("music_nmuons_survived","—"),
             "rate_per_s":      f"{rate_per_s:.6g}" if flux_ok else "—",
             "live_time_s":     f"{live_time_s:.6g}" if live_time_s else "—",
@@ -6064,180 +6686,206 @@ with tab_results:
     _render_results_tab()
 
 
-with tab_config:
-    # ── Autosave status ───────────────────────────────────────────────────────
-    import datetime as _dt
-    if Path(AUTOSAVE_FILE).exists():
-        _mtime = Path(AUTOSAVE_FILE).stat().st_mtime
-        _saved_at = _dt.datetime.fromtimestamp(_mtime).strftime("%Y-%m-%d  %H:%M:%S")
-        st.success(f"🕒  Last autosave: `{AUTOSAVE_FILE}`  —  {_saved_at}")
-    else:
-        st.info("ℹ️  No autosave file found yet — run the generator to create one.")
-    st.caption(
-        "💾  Settings are auto-saved to `ucmuon_autosave.json` on every run.  "
-        "Upload a saved JSON below to restore a previous session."
-    )
-
-    st.divider()
-
-    # ── Upload / Restore ──────────────────────────────────────────────────────
-    with st.expander("🔄  Restore from JSON", expanded=False):
-        _up = st.file_uploader(
-            "Upload `ucmuon_config.json` or `ucmuon_autosave.json`",
-            type=["json"], key="config_upload",
-        )
-        if _up is not None:
-            # Widget keys cannot be written after their widgets rendered this
-            # run (StreamlitAPIException), so stash the values and rerun —
-            # _apply_pending_restore() applies them before any widget exists.
-            _up_id = getattr(_up, "file_id", None) or f"{_up.name}:{getattr(_up, 'size', 0)}"
-            if st.session_state.get("_cfg_restored_id") != _up_id:
-                try:
-                    _data = json.load(_up)
-                    # Only restore scalar / list values; skip non-serialisable objects
-                    _restored = {k: v for k, v in _data.items()
-                                 if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
-                    st.session_state["_cfg_restore_pending"] = _restored
-                    st.session_state["_cfg_restored_id"]     = _up_id
-                    st.rerun()
-                except Exception as _ex:
-                    st.error(f"❌  Could not parse JSON: {_ex}")
-            else:
-                _n_restored = st.session_state.get("_cfg_restore_msg")
-                if _n_restored is not None:
-                    st.success(
-                        f"✅  Restored **{_n_restored}** settings from `{_up.name}` — "
-                        "widgets now reflect the restored values."
-                    )
-
-    st.divider()
-
-    # ── Live settings snapshot ────────────────────────────────────────────────
-    gen_detectors = (st.session_state.get("gen_detectors", [])
-                     if st.session_state.get("gen_use_detector", False) else [])
-    cfg_display = {
-        "generator": {
-            "e_min_GeV":       st.session_state.get("gen_emin",           "— run generator first"),
-            "e_max_GeV":       st.session_state.get("gen_emax",           "— run generator first"),
-            "spectrum_mode":   st.session_state.get("gen_spectrum_mode",  "— run generator first"),
-            "radius_m":        st.session_state.get("gen_radius",         "— run generator first"),
-            "n_muons_saved":   st.session_state.get("gen_nmuons_done",    "— run generator first"),
-            "theta_max_deg":   st.session_state.get("gen_theta_max",      "— run generator first"),
-            "angular_mode":    st.session_state.get("gen_angular_mode",   "— run generator first"),
-            "use_detector":    st.session_state.get("gen_use_detector",   False),
-            "surface_file":    st.session_state.get("surface_file",       "—"),
-            "selected_file":   st.session_state.get("selected_file",      "—"),
-            "integrated_flux": st.session_state.get("gen_integrated_flux","— run generator first"),
-        },
-        "transport": {
-            "engine":           st.session_state.get("transport_engine",         "MUSIC"),
-            "overburden_m":     st.session_state.get("music_depth_m",            "— run transport first"),
-            "rock_density":     st.session_state.get("music_rho",                "— run transport first"),
-            "radiation_length": st.session_state.get("music_rad",                "— run transport first"),
-            "output_file":      st.session_state.get("ug_file",                  "—"),
-            "n_transported":    st.session_state.get("music_nmuons_transported", "— run transport first"),
-            "n_survived":       st.session_state.get("music_nmuons_survived",    "— run transport first"),
-            "ug_filtered_file": st.session_state.get("ug_filtered_file",         "—"),
-        },
-        "detectors": gen_detectors,
-    }
-
-    _cc1, _cc2 = st.columns([2, 1])
-    with _cc1:
-        st.json(cfg_display)
-    with _cc2:
-        st.markdown("**Quick stats**")
-        if st.session_state.get("gen_nmuons_done"):
-            st.metric("Generated",   f"{st.session_state['gen_nmuons_done']:,}")
-        if st.session_state.get("music_nmuons_transported"):
-            st.metric("Transported", f"{st.session_state['music_nmuons_transported']:,}")
-        if st.session_state.get("music_nmuons_survived"):
-            _ntr = st.session_state.get("music_nmuons_transported", 1)
-            _ns  = st.session_state["music_nmuons_survived"]
-            st.metric("Survived",    f"{_ns:,}", delta=f"{100*_ns/max(_ntr,1):.1f}%")
-        st.divider()
-        config_str = json.dumps(cfg_display, indent=2, default=str)
-        st.download_button("⬇️  Download config JSON", data=config_str,
-                           file_name="ucmuon_config.json", mime="application/json",
-                           width='stretch')
+if _ADV:            # Basic shows Generator, Transport and Results only
+    with tab_config:
+        # ── Autosave status ───────────────────────────────────────────────────────
+        import datetime as _dt
         if Path(AUTOSAVE_FILE).exists():
-            with open(AUTOSAVE_FILE, "rb") as _fh:
-                st.download_button("💾  Download autosave", data=_fh,
-                                   file_name=AUTOSAVE_FILE, mime="application/json",
-                                   width='stretch', key="dl_autosave")
+            _mtime = Path(AUTOSAVE_FILE).stat().st_mtime
+            _saved_at = _dt.datetime.fromtimestamp(_mtime).strftime("%Y-%m-%d  %H:%M:%S")
+            st.success(f"🕒  Last autosave: `{AUTOSAVE_FILE}`  —  {_saved_at}")
+        else:
+            st.info("ℹ️  No autosave file yet: it is written at the end of every page update.")
+        st.caption(
+            "💾  Settings are auto-saved to `ucmuon_autosave.json` on every run.  "
+            "Upload a saved JSON below to restore a previous session."
+        )
+
         st.divider()
-        if st.button("🗑️  Reset autosave", width='stretch',
-                     help="Delete the autosave file so the app starts fresh next time."):
-            # Deleting the file is not enough: save_settings() at the end of
-            # this run would write the current values straight back (as it did
-            # up to v1.2.0). Drop the saved values from the session too, and
-            # rerun, so the app comes back on its defaults.
-            try:
-                _saved = {}
-                try:                       # a corrupt file is still deleted
-                    with open(AUTOSAVE_FILE) as _fh:
-                        _saved = json.load(_fh)
-                except (OSError, ValueError):
-                    pass
-                Path(AUTOSAVE_FILE).unlink(missing_ok=True)
-                for _k in list(_saved):
-                    st.session_state.pop(_k, None)
-                st.session_state["_autosave_reset_done"] = True
-            except Exception as _ex:
-                st.error(f"Could not delete: {_ex}")
+
+        # ── Upload / Restore ──────────────────────────────────────────────────────
+        with st.expander("🔄  Restore from JSON", expanded=False):
+            _up = st.file_uploader(
+                "Upload `ucmuon_config.json` or `ucmuon_autosave.json`",
+                type=["json"], key="config_upload",
+            )
+            if _up is not None:
+                # Widget keys cannot be written after their widgets rendered this
+                # run (StreamlitAPIException), so stash the values and rerun —
+                # _apply_pending_restore() applies them before any widget exists.
+                _up_id = getattr(_up, "file_id", None) or f"{_up.name}:{getattr(_up, 'size', 0)}"
+                if st.session_state.get("_cfg_restored_id") != _up_id:
+                    try:
+                        _data = json.load(_up)
+                        # The config JSON (v1.3+) holds the settings under
+                        # "settings"; an autosave file is the settings dict itself.
+                        if isinstance(_data.get("settings"), dict):
+                            _data = _data["settings"]
+                        if set(_data) <= {"generator", "transport", "detectors"}:
+                            # Up to v1.2.0 the config JSON was only this summary;
+                            # restoring it reported "Restored 3 settings" and
+                            # changed nothing.
+                            st.session_state["_cfg_restored_id"] = _up_id
+                            st.session_state["_cfg_restore_msg"] = "summary-only"
+                        else:
+                            # Only restore scalar / list values; skip non-serialisable objects
+                            _restored = {k: v for k, v in _data.items()
+                                         if isinstance(v, (str, int, float, bool, list, dict, type(None)))}
+                            st.session_state["_cfg_restore_pending"] = _restored
+                            st.session_state["_cfg_restored_id"]     = _up_id
+                            st.rerun()
+                    except Exception as _ex:
+                        st.error(f"❌  Could not parse JSON: {_ex}")
+                else:
+                    _n_restored = st.session_state.get("_cfg_restore_msg")
+                    if _n_restored == "summary-only":
+                        st.error("❌  This file is a run summary (config JSON from "
+                                 "v1.2.0 or earlier) and holds no restorable settings. "
+                                 "Upload `ucmuon_autosave.json` or a config JSON "
+                                 "downloaded from v1.3 or later.")
+                    elif _n_restored is not None:
+                        st.success(
+                            f"✅  Restored **{_n_restored}** settings from `{_up.name}` — "
+                            "widgets now reflect the restored values."
+                        )
+
+        st.divider()
+
+        # ── Live settings snapshot ────────────────────────────────────────────────
+        gen_detectors = (st.session_state.get("gen_detectors", [])
+                         if st.session_state.get("gen_use_detector", False) else [])
+        cfg_display = {
+            "generator": {
+                "e_min_GeV":       st.session_state.get("gen_emin",           "— run generator first"),
+                "e_max_GeV":       st.session_state.get("gen_emax",           "— run generator first"),
+                "spectrum_mode":   st.session_state.get("gen_spectrum_mode",  "— run generator first"),
+                "radius_m":        st.session_state.get("gen_radius",         "— run generator first"),
+                "n_muons_saved":   st.session_state.get("gen_nmuons_done",    "— run generator first"),
+                "theta_max_deg":   st.session_state.get("gen_theta_max",      "— run generator first"),
+                "angular_mode":    st.session_state.get("gen_angular_mode",   "— run generator first"),
+                "use_detector":    st.session_state.get("gen_use_detector",   False),
+                "surface_file":    st.session_state.get("surface_file",       "—"),
+                "selected_file":   st.session_state.get("selected_file",      "—"),
+                "integrated_flux": st.session_state.get("gen_integrated_flux","— run generator first"),
+            },
+            "transport": {
+                "engine":           st.session_state.get("transport_engine",         "MUSIC"),
+                "overburden_m":     st.session_state.get("ug_depth_m", st.session_state.get("music_depth_m", "— run transport first")),
+                "rock_density":     st.session_state.get("ug_rho", st.session_state.get("music_rho", "— run transport first")),
+                "radiation_length": st.session_state.get("music_rad",                "— run transport first"),
+                "output_file":      st.session_state.get("ug_file",                  "—"),
+                "n_transported":    st.session_state.get("music_nmuons_transported", "— run transport first"),
+                "n_survived":       st.session_state.get("music_nmuons_survived",    "— run transport first"),
+                "ug_filtered_file": st.session_state.get("ug_filtered_file",         "—"),
+            },
+            "detectors": gen_detectors,
+        }
+
+        _cc1, _cc2 = st.columns([2, 1])
+        with _cc1:
+            if _ADV:
+                st.json(cfg_display)
             else:
-                st.rerun()
+                st.caption("The full settings snapshot is shown in Advanced mode.")
+        with _cc2:
+            st.markdown("**Quick stats**")
+            if st.session_state.get("gen_nmuons_done"):
+                st.metric("Generated",   f"{st.session_state['gen_nmuons_done']:,}")
+            if st.session_state.get("music_nmuons_transported"):
+                st.metric("Transported", f"{st.session_state['music_nmuons_transported']:,}")
+            if st.session_state.get("music_nmuons_survived"):
+                _ntr = st.session_state.get("music_nmuons_transported", 1)
+                _ns  = st.session_state["music_nmuons_survived"]
+                st.metric("Survived",    f"{_ns:,}", delta=f"{100*_ns/max(_ntr,1):.1f}%")
+            st.divider()
+            # "settings" is what Restore reads back; "summary" is for reading.
+            config_str = json.dumps({"settings": _settings_snapshot(), "summary": cfg_display},
+                                    indent=2, default=str)
+            if _ADV:
+                st.download_button("⬇️  Download config JSON", data=config_str,
+                                   file_name="ucmuon_config.json", mime="application/json",
+                                   width='stretch')
+            if Path(AUTOSAVE_FILE).exists():
+                with open(AUTOSAVE_FILE, "rb") as _fh:
+                    st.download_button("💾  Download autosave", data=_fh,
+                                       file_name=AUTOSAVE_FILE, mime="application/json",
+                                       width='stretch', key="dl_autosave")
+            st.divider()
+            if st.button("🗑️  Reset autosave", width='stretch',
+                         help="Delete the autosave file so the app starts fresh next time."):
+                # Deleting the file is not enough: save_settings() at the end of
+                # this run would write the current values straight back (as it did
+                # up to v1.2.0). Drop the saved values from the session too, and
+                # rerun, so the app comes back on its defaults.
+                try:
+                    _saved = {}
+                    try:                       # a corrupt file is still deleted
+                        with open(AUTOSAVE_FILE) as _fh:
+                            _saved = json.load(_fh)
+                    except (OSError, ValueError):
+                        pass
+                    Path(AUTOSAVE_FILE).unlink(missing_ok=True)
+                    for _k in list(_saved):
+                        st.session_state.pop(_k, None)
+                    _UIS.forget_all()
+                    st.session_state["_autosave_reset_done"] = True
+                except Exception as _ex:
+                    st.error(f"Could not delete: {_ex}")
+                else:
+                    st.rerun()
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 5 — TERRAIN (DEM-AWARE TRANSPORT)
 # Note: save_settings() is called AFTER this block so terrain widget states
 # are saved correctly (they render inside this block and claim their keys here).
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_terrain:
-    if _TERRAIN_GUI_OK and render_terrain_tab is not None:
-        try:
-            render_terrain_tab(
-                script_dir              = _SCRIPT_DIR,
-                project_dir             = _PROJECT_DIR,
-                build_music_input_fn    = build_music_input,
-                build_phitsxs_input_fn  = build_phitsxs_input,
-                build_proposal_input_fn = build_proposal_input,
-                music_materials         = MUSIC_MATERIALS,
-                probe_music_file_fn     = probe_music_file,
-                load_file_fn            = load_file,
-            )
-        except Exception as _terrain_exc:
-            import traceback as _terrain_tb
+if _ADV:            # Basic shows Generator, Transport and Results only
+    with tab_terrain:
+        if _TERRAIN_GUI_OK and render_terrain_tab is not None:
+            try:
+                render_terrain_tab(
+                    script_dir              = _SCRIPT_DIR,
+                    project_dir             = _PROJECT_DIR,
+                    build_music_input_fn    = build_music_input,
+                    build_phitsxs_input_fn  = build_phitsxs_input,
+                    build_proposal_input_fn = build_proposal_input,
+                    music_materials         = MUSIC_MATERIALS,
+                    probe_music_file_fn     = probe_music_file,
+                    load_file_fn            = load_file,
+                )
+            except Exception as _terrain_exc:
+                import traceback as _terrain_tb
+                st.error(
+                    f"❌  Terrain tab error: `{_terrain_exc}`\n\n"
+                    "Full traceback shown below — please report this.",
+                    icon="❌"
+                )
+                st.code(_terrain_tb.format_exc())
+        elif _TERRAIN_IMPORT_ERROR:
             st.error(
-                f"❌  Terrain tab error: `{_terrain_exc}`\n\n"
-                "Full traceback shown below — please report this.",
+                f"❌  Failed to import gui_terrain_engine:\n\n`{_TERRAIN_IMPORT_ERROR}`",
                 icon="❌"
             )
-            st.code(_terrain_tb.format_exc())
-    elif _TERRAIN_IMPORT_ERROR:
-        st.error(
-            f"❌  Failed to import gui_terrain_engine:\n\n`{_TERRAIN_IMPORT_ERROR}`",
-            icon="❌"
-        )
-        st.code("pip install rasterio", language="bash")
-    else:
-        _terr_ok, _terr_msg = terrain_available()
-        st.error(f"❌  UCMuon Terrain not ready: {_terr_msg}")
-        st.code("pip install rasterio", language="bash")
+            st.code("pip install rasterio", language="bash")
+        else:
+            _terr_ok, _terr_msg = terrain_available()
+            st.error(f"❌  UCMuon Terrain not ready: {_terr_msg}")
+            st.code("pip install rasterio", language="bash")
 
 
 # ══════════════════════════════════════════════════════════════════════════════
 # TAB 6 — DENSITY ANALYSIS
 # ══════════════════════════════════════════════════════════════════════════════
-with tab_density:
-    if _DENSITY_GUI_OK and render_density_analysis_tab is not None:
-        try:
-            render_density_analysis_tab()
-        except Exception as _dens_exc:
-            import traceback as _dens_tb
-            st.error(f"❌  Density Analysis tab error: `{_dens_exc}`", icon="❌")
-            st.code(_dens_tb.format_exc())
-    else:
-        st.error("❌  gui_density_analysis.py failed to import.", icon="❌")
+if _ADV:            # Basic shows Generator, Transport and Results only
+    with tab_density:
+        if _DENSITY_GUI_OK and render_density_analysis_tab is not None:
+            try:
+                render_density_analysis_tab()
+            except Exception as _dens_exc:
+                import traceback as _dens_tb
+                st.error(f"❌  Density Analysis tab error: `{_dens_exc}`", icon="❌")
+                st.code(_dens_tb.format_exc())
+        else:
+            st.error("❌  gui_density_analysis.py failed to import.", icon="❌")
 
 
 # ── Autosave — runs AFTER all tabs so terrain widget keys are already claimed ──

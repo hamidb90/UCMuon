@@ -1,5 +1,120 @@
 # Changelog
 
+## [1.3.0] — 2026-10-06
+
+The GUI gets a **Basic / Advanced** switch; before it, the GUI bugs found by an
+inventory of every GUI control (B9-B15, and two found while checking them) are
+fixed.
+
+### Added
+- **Basic / Advanced mode** (an "Advanced mode" toggle at the right of the
+  page title). Basic has the Generator, Transport and Results tabs (Terrain,
+  Density and Config are Advanced only) and the essential inputs: spectrum
+  (all eight; PARMA with its site and date), energy range (choosing a
+  spectrum fills in its recommended range, also θ_max 60° for Gaisser, and a
+  button restores it), angular distribution (all six modes, ⑥ by default) and
+  θ_max, source type, an optional detector (on by default), the output file
+  names with the PHITS (s-type=17) and Geant4 (ASCII or HEPEvt) exports, the
+  OpenMP threads, the transport input (the generator's output or the path of
+  any muon file) and output, the transport engine (not the Backward MC flux
+  integrator, which needs no muon file) and the overburden material; Results
+  has every plot including the 3D trajectories (the overlay editor, which
+  rewrites the run's detector record, stays Advanced). With the detector on, Basic derives and shows the
+  safety margin (2σ_r of multiple scattering at the detector's deepest
+  point), the source size (just large enough for every straight path at
+  θ ≤ θ_max; measured: the hit rate does not change when it is doubled) and
+  the overburden from the detector's top face (when the transport input is
+  that run's output); with it off, or for any other input file, the user
+  gives the source size and the overburden depth. Basic does not change the
+  Advanced-only settings: the autosaved ones come back when switching (and
+  after a restart), and after a Basic run Advanced shows the values it used,
+  with a button to copy them. A fresh install opens in Basic, an existing
+  autosave in Advanced.
+- Terrain: "Bundled Mt. Vesuvius" DEM source (also sets the detector site),
+  the default for a fresh session; "Altitude from the DEM" button. Density:
+  the shipped Vesuvius T_sim library is the default when the project root has
+  none of its own.
+- `tests/gui/` (pytest + Streamlit AppTest) and the `GUI` CI workflow: Basic and
+  Advanced mode, hidden settings surviving, the bug fixes below; latest
+  Streamlit without rasterio, and Python 3.9 + Streamlit 1.49 (the minimum)
+  with rasterio.
+
+### Changed
+- **Streamlit 1.49 or newer** (`requirements.txt` said 1.35): the GUI uses
+  `width="stretch"` on buttons and tables: up to 1.47 `st.button` rejects
+  it, 1.48 fails on it in `st.dataframe`. Measured by running `tests/gui`
+  against 1.36, 1.40, 1.44, 1.46, 1.47, 1.48 (all fail) and 1.49 (passes).
+- Terrain is one page: sections 1-7 from top to bottom (surface muon file,
+  geometry, detector, DEM check, engine and material, overburden preview,
+  run), then the results; up to v1.2.0 they were split over three sub-tabs
+  (Setup, Overburden map, Run & Results) that referred to each other. The
+  overburden preview and the DEM check's elevation profile and 3D view are
+  collapsed; the DEM check's position and altitude verdict stays visible.
+- Fresh sessions start on Guan 2015 over 1-2500 GeV (was CosmoALEPH from
+  100 GeV, which drops every muon below 100 GeV).
+- The Transport depth check (and the warning after the underground filter)
+  compares the overburden with the detector's top face (the rock above it);
+  it asked for the deepest face, which adds the detector's height as rock.
+- Settings hidden by a condition (for example the PARMA site while another
+  spectrum is chosen) keep their values; Streamlit used to drop them, and the
+  autosave with them. Some settings that were never autosaved now are
+  (transport output file, Bethe-Bloch menu, Geant4 options, custom
+  compositions).
+
+### ⚠ Changes results
+- **PARMA (spectrum 3), solar modulation from the date**: the generators read
+  the W index of the date (`getHP`) and discarded it, so every PARMA run used
+  the typed W (GUI default 0, solar minimum) whatever its date. The GUI now
+  sends "W from the date" by default (an explicit W behaves as before). After
+  the end of PARMA's neutron-monitor table (2026-03-26) the latest earlier day
+  is used, with a warning, instead of a silent W = 0. Measured at sea level
+  (50.7°N, 4.4°E, 1-1000 GeV, θ ≤ 85°): R −5.0 % at 2024-10-01 (W 100.5),
+  −5.6 % for dates after the table (W 107.4). UCMuGen's
+  `parma::w_index_from_date` is the stock JAEA routine and returns 0 after the
+  table end.
+- **Bethe-Bloch and PROPOSAL density**: both ran at the table density of their
+  own material menu (Bethe-Bloch 2.65 / 0.917 / 1.00 / 2.30, PROPOSAL its
+  built-in medium) and ignored the Transport tab's ρ, and the Terrain tab's,
+  which converts each bin's opacity to a depth with it. The material line of
+  both stdin protocols takes an optional density (`1 2.71`); without it the
+  output is unchanged (checked bit-identical).
+- **Results plots for legacy angular modes 1-5**: energy, variable and θ-φ
+  histograms were raw counts (the sampling distribution); they are now
+  weighted to the true flux. PUMAS backward-event histograms are weighted by
+  `flux_contribution`.
+
+### Fixed
+- Density σ (Gaussian prior, KDE) reaches no engine; the tab now says that
+  only the mean ρ is transported. Switching to Gaussian no longer draws a
+  zero-width pdf.
+- Terrain: the "Surface muon file" choice was ignored (the run took the first
+  candidate); a synthetic or CSG geometry kept overriding the DEM after
+  switching mode or pressing Clear, and CSG Clear reset the DEM path; result
+  captions named Puy de Dôme and "CosmoALEPH, 1293 m" for every site.
+- Transport and Terrain preselected a remembered input file over the newest
+  generator output.
+- Results: underground and detector-hit files show rate and live time as
+  headline metrics; the tab opens on the newest output of the session (the
+  underground file after a transport run); the detector-hit file from the
+  underground filter always said "No rate" (its source was not recorded);
+  an unset session path could appear as an empty file choice.
+- Results, survival vs depth: for the detector-hit underground file the
+  CSDA curve was drawn from those hits only (all above threshold, so near
+  100 %) and the plot said "MUSIC" for every engine; it now uses every
+  transported muon and names the engine. The transport's own survival count
+  is used only for that transport's files.
+- Generator: the "Will write" line also names the PHITS and Geant4 files.
+- Config: the downloaded config JSON restored nothing ("Restored 3
+  settings"); it now carries the settings Restore reads, and an old
+  summary-only file gets a clear message.
+- Density: the plain Gaisser formula is no longer offered for the direct and
+  two-flux inversions (it integrates from 0.5 GeV, ×12 high there); measured
+  T_data without a `# Density:` header can be loaded; measured data can get
+  σ_T from counting statistics, so the σ_ρ map and χ² work for them.
+- Transport: the OpenMP slider is shown only for the engines it reaches
+  (MUSIC, Fortran Bethe-Bloch), and is autosaved; UCMuon-MC's mode shows its
+  worker processes, not "Single-thread".
+
 ## [1.2.0] — 2026-10-01
 
 Flux-normalisation audit: every surface spectrum in every code path checked

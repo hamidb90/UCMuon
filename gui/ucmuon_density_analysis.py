@@ -56,9 +56,13 @@ _GRADIENT_THRESHOLD = 1e-6   # |dT/dρ| below this → low-sensitivity flag
 # File I/O
 # ─────────────────────────────────────────────────────────────────────────────
 
-def load_transmission_map(filepath):
+def load_transmission_map(filepath, require_density=True):
     """
     Parse a terrain_transmission.dat file into arrays and metadata.
+
+    require_density: a T_sim library file must state its density in a
+    "# Density:" header; measured data (require_density=False) need not, and
+    then metadata['density'] is None.
 
     Returns (az_c, el_c, T_2d, metadata_dict).
       az_c         : 1-D float64 array (n_az,) — azimuth bin centres [deg]
@@ -137,7 +141,7 @@ def load_transmission_map(filepath):
     if metadata["n_el"] is None:
         metadata["n_el"] = n_el
 
-    if metadata["density"] is None:
+    if require_density and metadata["density"] is None:
         raise ValueError(
             f"Could not parse density from header in {filepath}. "
             "Expected a line like:  # Density: 2.65 g/cm3"

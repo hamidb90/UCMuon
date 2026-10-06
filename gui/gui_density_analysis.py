@@ -160,6 +160,12 @@ def _chi2_line_plot(rho_fine, chi2_curve, rho_hat, title="χ²(ρ) landscape"):
 # Tab 1 — T_sim library
 # ─────────────────────────────────────────────────────────────────────────────
 
+# The shipped Vesuvius T_sim library (Guan 2015, 5 densities), the default
+# when the project root has no terrain_transmission*.dat of its own (up to
+# v1.2.0 the box then started empty).
+_SHIPPED_LIBRARY = Path("examples/vesuvius/tsim_library")
+
+
 def _tab_library(da):
     st.caption(
         "Run the Terrain engine at **3–5 different densities** (same DEM and az/el grid each time).  "
@@ -186,8 +192,9 @@ def _tab_library(da):
             st.rerun()
 
     # ── File path text area ───────────────────────────────────────────────────
+    _own = sorted(Path(".").glob("terrain_transmission*.dat"))
     default_paths = "\n".join(
-        str(p) for p in sorted(Path(".").glob("terrain_transmission*.dat"))
+        str(p) for p in (_own or sorted(_SHIPPED_LIBRARY.glob("terrain_transmission_*.dat")))
     )
     file_text = st.text_area(
         "T_sim files — one path per line",
@@ -344,10 +351,15 @@ def _tab_tdata(da):
                     with tempfile.NamedTemporaryFile(mode="wb", suffix=suffix, delete=False) as tmp:
                         tmp.write(uploaded.read())
                         tmp_path = tmp.name
-                    az_c_d, el_c_d, T_2d, meta = da.load_transmission_map(tmp_path)
+                    # Measured data have no known density, so the
+                    # "# Density:" header is optional here (up to v1.2.0 a file
+                    # without one could not be loaded).
+                    az_c_d, el_c_d, T_2d, meta = da.load_transmission_map(
+                        tmp_path, require_density=False)
                     os.unlink(tmp_path)
                 elif tdata_path:
-                    az_c_d, el_c_d, T_2d, meta = da.load_transmission_map(tdata_path)
+                    az_c_d, el_c_d, T_2d, meta = da.load_transmission_map(
+                        tdata_path, require_density=False)
                 else:
                     st.warning("Provide a file path or upload a file.")
                     return
@@ -363,13 +375,16 @@ def _tab_tdata(da):
 
                 st.session_state["da_T_data"]   = T_2d
                 st.session_state["da_sigma_T"]  = None
+                st.session_state["da_T_data_measured"] = True
                 st.session_state["da_lib_az_c"] = az_c_d
                 st.session_state["da_lib_el_c"] = el_c_d
+                _rho_txt = (f"ρ_file = {meta['density']:.3f} g/cm³"
+                            if meta.get("density") is not None else "no density in header")
                 st.success(
                     f"✅  T_data loaded — "
                     f"grid {len(az_c_d)} az × {len(el_c_d)} el  |  "
                     f"T ∈ [{float(np.nanmin(T_2d)):.4f}, {float(np.nanmax(T_2d)):.4f}]  |  "
-                    f"ρ_file = {meta['density']:.3f} g/cm³"
+                    f"{_rho_txt}"
                 )
 
             except Exception as _e:
@@ -397,7 +412,8 @@ def _tab_tdata(da):
             "Muon statistics N",
             min_value=100, max_value=1_000_000, value=10_000, step=1_000,
             key="da_synth_nevents",
-            help="Higher N → smaller Poisson noise → tighter σ_ρ.",
+            help="Open-sky counts per direction bin. Higher N → smaller Poisson "
+                 "noise → tighter σ_ρ.",
         )
 
         if st.button("Generate synthetic T_data", key="da_gen_synth_btn", type="primary"):
@@ -408,6 +424,7 @@ def _tab_tdata(da):
                     )
                     st.session_state["da_T_data"]         = T_data
                     st.session_state["da_sigma_T"]        = sigma_T
+                    st.session_state["da_T_data_measured"] = False
                     st.session_state["da_synth_rho_used"] = rho_true
                     st.success(
                         f"✅  Synthetic T_data generated — ρ_true = {rho_true:.2f} g/cm³  |  "
@@ -417,6 +434,24 @@ def _tab_tdata(da):
                     import traceback
                     st.error(f"Synthetic generation failed: {_e}")
                     st.code(traceback.format_exc())
+
+    # ── σ_T for measured data (counting statistics) ──────────────────────────
+    # Up to v1.2.0 measured data always had σ_T = None, so no σ_ρ map and no
+    # χ²; the direct method already offered this estimate.
+    _T_meas = st.session_state.get("da_T_data")
+    if _T_meas is not None and st.session_state.get("da_T_data_measured"):
+        with st.expander("σ_T — uncertainty from counting statistics (optional)"):
+            _use_sig = st.checkbox("Estimate σ_T ≈ √[T(1−T)/N]", key="da_use_sig",
+                                   help="Enables the σ_ρ map and the χ² landscape. "
+                                        "N = open-sky counts per bin.")
+            if _use_sig:
+                _N = st.number_input("Open-sky counts N per bin", 10, 10_000_000,
+                                     10_000, 100, key="da_sig_N")
+                with np.errstate(invalid="ignore"):
+                    st.session_state["da_sigma_T"] = np.sqrt(
+                        np.clip(_T_meas * (1.0 - _T_meas), 0.0, None) / float(_N))
+            else:
+                st.session_state["da_sigma_T"] = None
 
     # ── T_data preview ────────────────────────────────────────────────────────
     T_data = st.session_state.get("da_T_data")
@@ -644,8 +679,8 @@ def _tab_results(da):
         if sigma_T is None or lib is None:
             st.info(
                 "Chi-squared landscape requires σ_T.  "
-                "Use the synthetic mode (**② Measured Data**) to produce σ_T automatically, "
-                "or supply a sigma file.",
+                "The synthetic mode (**② Measured Data**) produces σ_T automatically; "
+                "for measured data, tick *Estimate σ_T* under **② Measured Data**.",
                 icon="ℹ️",
             )
         else:
@@ -1091,7 +1126,10 @@ def _render_direct_workflow(da, method_key):
     # Flux-model config (shared, sticky across steps)
     _f1, _f2 = st.columns([3, 1])
     labels = da.flux_model_labels()
-    keys   = list(labels.keys())
+    # Not the plain Gaisser (1990) formula: valid only for E > 100/cosθ GeV,
+    # while T(ϱ) integrates the flux from 0.5 GeV, where it overestimates
+    # ×12 (up to v1.2.0 it was offered here with no warning).
+    keys   = [k for k in labels if k != "bugaev"]
     sel    = _f1.selectbox("Sea-level flux model", keys,
                            index=keys.index(st.session_state.get("di_model", keys[0]))
                                  if st.session_state.get("di_model", keys[0]) in keys else 0,

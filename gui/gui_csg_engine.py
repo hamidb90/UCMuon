@@ -1322,7 +1322,9 @@ def render_csg_builder() -> Optional[CSGGeometry]:
     load_col, clear_col = st.columns([3, 1])
     with clear_col:
         if st.button("🗑 Clear", key="csg_clear", width='stretch'):
-            for k in ("_csg_geom", "terrain_dem_path"):
+            # Only the CSG geometry: up to v1.2.0 this also dropped the
+            # Terrain tab's DEM path, silently resetting the DEM.
+            for k in ("_csg_geom", "_terrain_csg_geom"):
                 st.session_state.pop(k, None)
             st.rerun()
     with load_col:

@@ -26,6 +26,8 @@ Stdin (drop-in for ucmuon_transport_bb_omp — same parameter order)
   4  ncols_hint      ignored (auto-detected from file)
   5  depth_m         vertical depth [m]
   6  mat_type        1=StdRock  2=Ice  3=Water  4=Concrete  5=Custom
+                     [optional 2nd value on the same line: density in g/cm³,
+                      replaces the table density of types 1-4, e.g. "1 2.71"]
   [mat_type=5 only — four extra lines: Zeff  Aeff  rho_gcm3  I_eV]
   7  ms_enable       0=OFF  1=Highland ON
   8  range_table     0=Groom2001  1=PDG2024 (default 1)
@@ -279,7 +281,11 @@ def main():
     transport_all = bool(_rd(2, 0,     int))
     _ncols_hint   = _rd(3, 13,        int)   # consumed, not used
     depth_m       = _rd(4, 500.0,     float)
-    mat_type      = _rd(5, 1,         int)
+    _mat_tok      = (lines[5].split() if len(lines) > 5 else [])
+    try:    mat_type = int(_mat_tok[0])
+    except (IndexError, ValueError): mat_type = 1
+    try:    rho_override = float(_mat_tok[1])
+    except (IndexError, ValueError): rho_override = None
 
     # For mat_type=5 (custom), four extra lines shift ms_enable and later params
     if mat_type == 5:
@@ -295,6 +301,10 @@ def main():
         base = 10
     else:
         mat  = dict(_BB_MAT.get(mat_type, _BB_MAT[1]))
+        # Composition from the type, density from the GUI's shared density
+        # input (up to v1.2.0 it was always the table value).
+        if rho_override is not None and rho_override > 0.0:
+            mat["rho"] = rho_override
         base = 6
 
     ms_enable    = bool(_rd(base,     1, int))

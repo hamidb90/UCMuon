@@ -1,0 +1,76 @@
+name: GUI
+
+# Headless tests of the Streamlit GUI (tests/gui/, Streamlit AppTest): Basic and
+# Advanced mode, hidden settings surviving a mode switch and a restart, and the
+# GUI bugs fixed before v1.3.0. The tests copy the repository to a temporary
+# directory first, because the GUI writes ucmuon_autosave.json where it runs.
+#
+# Two environments, the two the GUI is checked in before a release:
+#   latest  : newest Streamlit from requirements.txt, no rasterio (what a new
+#             user gets from setup.sh), Linux with the Fortran generator built
+#             (one test runs it) and macOS without it;
+#   oldest  : Python 3.9 + Streamlit 1.49, the minimum in requirements.txt
+#             (1.48 fails on st.dataframe(width="stretch")), with rasterio
+#             (the Terrain DEM tests).
+
+on:
+  push:
+    paths:
+      - 'gui/**'
+      - 'tests/gui/**'
+      - 'requirements.txt'
+      - '.streamlit/**'
+      - 'examples/vesuvius/**'
+      - 'src/generator/**'
+      - '.github/workflows/gui.yml'
+  pull_request:
+    paths:
+      - 'gui/**'
+      - 'tests/gui/**'
+      - 'requirements.txt'
+      - '.streamlit/**'
+      - 'examples/vesuvius/**'
+      - 'src/generator/**'
+      - '.github/workflows/gui.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  latest:
+    name: ${{ matrix.os }} / latest Streamlit, no rasterio
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Install
+        run: python3 -m pip install -r requirements.txt pytest
+      - name: Build the surface generator (Linux)
+        if: runner.os == 'Linux'
+        run: make ucmuon_gen_omp && test -x bin/ucmuon_gen_omp
+      - name: No rasterio (the default install)
+        run: python3 -c "import importlib.util, sys; sys.exit(importlib.util.find_spec('rasterio') is not None)"
+      - name: Test
+        run: python3 -m pytest tests/gui -v -p no:cacheprovider
+
+  oldest:
+    name: ubuntu-latest / Python 3.9, Streamlit 1.49, rasterio
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.9'
+      - name: Install
+        run: python3 -m pip install -r requirements.txt "streamlit==1.49.0" rasterio pytest
+      - name: Test
+        run: python3 -m pytest tests/gui -v -p no:cacheprovider

@@ -33,6 +33,7 @@ import subprocess
 import importlib.util
 import tempfile
 import numpy as np
+import ui_state as _UIS
 import plotly.graph_objects as go
 import streamlit as st
 from pathlib import Path
@@ -1354,6 +1355,33 @@ def plt_colors_norm(vmin, vmax, Z, colorscale_name):
     return None  # placeholder used by colorscale logic above
 
 
+_DEM_BUNDLED_OPT = "🌋 Bundled Mt. Vesuvius (MURAVES site)"
+# Detector = MURAVES site, SW flank (examples/vesuvius/MURAVES_GUIDE.md)
+_MURAVES_SITE = {"terrain_lat": 40.8271, "terrain_lon": 14.4006, "terrain_alt": 608.0}
+
+
+def _on_dem_mode_change():
+    """Choosing the bundled DEM also puts the detector on its MURAVES site."""
+    if st.session_state.get("terrain_dem_mode") == _DEM_BUNDLED_OPT:
+        st.session_state.update(_MURAVES_SITE)
+        if _BUNDLED_VESUVIUS_DEM.exists():
+            st.session_state["terrain_dem_path"] = str(_BUNDLED_VESUVIUS_DEM)
+
+
+def _set_alt_from_dem(dem_path, script_dir):
+    """on_click: detector altitude = DEM elevation at its latitude/longitude."""
+    try:
+        drv = _load_terrain_driver(script_dir)
+        elev, tfm = drv.load_dem(dem_path)
+        z = drv.dem_elevation_at(elev.astype(np.float32), tfm,
+                                 float(st.session_state["terrain_lat"]),
+                                 float(st.session_state["terrain_lon"]))
+        if z is not None and np.isfinite(z):
+            st.session_state["terrain_alt"] = round(float(z), 1)
+    except Exception:
+        pass
+
+
 def render_terrain_tab(script_dir, project_dir,
                        build_music_input_fn, build_phitsxs_input_fn,
                        build_proposal_input_fn,
@@ -1388,13 +1416,21 @@ def render_terrain_tab(script_dir, project_dir,
         # can see the settings and understand what is needed.
 
     st.caption(
-        "**Workflow:** 📋 Setup → 🗺️ Overburden map → ▶️ Run & Results"
+        "**Steps:** 1 – 5 set up the run · 6 previews the overburden map "
+        "(optional) · 7 runs the transport; the results appear below it."
     )
 
-    # ── Snapshot persistent state BEFORE creating sub-tabs ───────────────────
+    # (Advanced only: Basic mode shows no Terrain tab.)
+    if ("terrain_lat" not in st.session_state and _BUNDLED_VESUVIUS_DEM.exists()
+            and st.session_state.get("terrain_dem_mode", _DEM_BUNDLED_OPT) == _DEM_BUNDLED_OPT):
+        # Fresh session on the bundled DEM: put the detector on it (up to
+        # v1.2.0 it defaulted to the Generator's site in Belgium, outside it).
+        st.session_state.update(_MURAVES_SITE)
+
+    # ── Snapshot persistent state BEFORE the sections render ─────────────────
     # These reflect values from the PREVIOUS render (set via widget key= or
-    # explicit session_state writes).  Sub-tabs cannot share local Python vars,
-    # so all complex objects are stored in / read from session_state.
+    # explicit session_state writes). The three parts below (set-up, overburden
+    # preview, run) exchange their complex objects through session_state.
     _ss_lat        = st.session_state.get("terrain_lat")
     _ss_lon        = st.session_state.get("terrain_lon")
     _ss_alt        = st.session_state.get("terrain_alt")
@@ -1408,15 +1444,12 @@ def render_terrain_tab(script_dir, project_dir,
     _ss_synth_dem  = st.session_state.get("_terrain_synth_dem")
     _ss_csg_geom   = st.session_state.get("_terrain_csg_geom")
 
-    # ── Create the 3 inner sub-tabs ───────────────────────────────────────────
-    _ts_setup, _ts_ob, _ts_run = st.tabs([
-        "📋  Setup",
-        "🗺️  Overburden map",
-        "▶️  Run & Results",
-    ])
+    # ── One page, top to bottom (up to v1.2.0 three sub-tabs: Setup,
+    #    Overburden map, Run & Results) ─────────────────────────────────────────
+    _ts_setup, _ts_ob, _ts_run = st.container(), st.container(), st.container()
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 1 — SETUP  (Sections 1-5)
+    # SET-UP  (Sections 1-5)
     # ══════════════════════════════════════════════════════════════════════════
     with _ts_setup:
         st.divider()
@@ -1437,9 +1470,13 @@ def render_terrain_tab(script_dir, project_dir,
 
         _s1, _s2 = st.columns([3, 2])
         if _surf_cands:
-            # No key= on this selectbox — avoids StreamlitAPIException when autosave
-            # has a stale path that is no longer in the options list.
-            t_infile = _s1.selectbox("Surface muon file", _surf_cands)
+            # Keyed so the Run tab can read the choice (up to v1.2.0 it had no
+            # key and the run always took the first candidate). The key is not
+            # autosaved, and a stale value is dropped before the widget renders.
+            if st.session_state.get("terrain_infile_select") not in _surf_cands:
+                st.session_state.pop("terrain_infile_select", None)
+            t_infile = _s1.selectbox("Surface muon file", _surf_cands,
+                                     key="terrain_infile_select")
         else:
             t_infile = None
             _s1.info(
@@ -1494,12 +1531,20 @@ def render_terrain_tab(script_dir, project_dir,
         # DEM MODE
         # ════════════════════════════════════════════════════════════════════
         if _geom_mode.startswith("🗺️"):
-            _dem_sub_opts = ["📁 Upload GeoTIFF", "⬇️ Auto-download (OpenTopography)"]
+            _dem_sub_opts = [_DEM_BUNDLED_OPT, "📁 Upload GeoTIFF",
+                             "⬇️ Auto-download (OpenTopography)"]
+            if st.session_state.get("terrain_dem_mode") not in _dem_sub_opts:
+                st.session_state.pop("terrain_dem_mode", None)
             _dem_sub = st.radio(
                 "DEM source",
                 _dem_sub_opts,
                 horizontal=True, key="terrain_dem_mode",
+                on_change=_on_dem_mode_change,
+                help="The bundled DEM (SRTM GL1, 30 m) also puts the detector on the "
+                     "MURAVES site; then set your own position below if you like.",
             )
+            if _dem_sub == _DEM_BUNDLED_OPT and _BUNDLED_VESUVIUS_DEM.exists():
+                st.session_state["terrain_dem_path"] = str(_BUNDLED_VESUVIUS_DEM)
 
             if _dem_sub == "📁 Upload GeoTIFF":
                 st.caption(
@@ -1533,7 +1578,7 @@ def render_terrain_tab(script_dir, project_dir,
                         f"({Path(_up_saved).stat().st_size / 1e6:.1f} MB)"
                     )
 
-            else:  # Auto-download
+            elif _dem_sub != _DEM_BUNDLED_OPT:  # Auto-download (not for the bundled DEM)
                 _dl1, _dl2 = st.columns(2)
                 # Use terrain detector position as centre (falls back to PARMA position)
                 _def_lat = _sf(
@@ -1646,11 +1691,11 @@ def render_terrain_tab(script_dir, project_dir,
                     "Please upload or download the DEM again.",
                     icon="⚠️"
                 )
-                st.session_state.pop("terrain_dem_path", None)
+                _UIS.forget("terrain_dem_path")
                 _dem_ss = ""
 
             # No DEM selected yet — fall back to the bundled Vesuvius sample.
-            # Written to session_state so the Overburden-map and Run sub-tabs
+            # Written to session_state so the overburden preview and the run
             # (which read terrain_dem_path) see it too.
             if not _dem_ss and _BUNDLED_VESUVIUS_DEM.exists():
                 _dem_ss = str(_BUNDLED_VESUVIUS_DEM)
@@ -1681,11 +1726,17 @@ def render_terrain_tab(script_dir, project_dir,
                 else:
                     dem_path = None
 
-        # ── Persist complex objects to session_state so other tabs can read them
-        if synth_dem is not None:
-            st.session_state["_terrain_synth_dem"] = synth_dem
-        if csg_geom is not None:
-            st.session_state["_terrain_csg_geom"] = csg_geom
+        # ── Persist complex objects to session_state so other tabs can read them.
+        # They follow the selected mode: the Overburden and Run tabs give a
+        # CSG or synthetic geometry priority over the DEM, so one left over from
+        # another mode, or after its Clear button, must not stay (up to v1.2.0
+        # it did, and kept overriding the DEM). The builders keep their own
+        # copies (_synth_dem, _csg_geom), so switching back restores them.
+        for _gk, _gv in (("_terrain_synth_dem", synth_dem), ("_terrain_csg_geom", csg_geom)):
+            if _gv is not None:
+                st.session_state[_gk] = _gv
+            else:
+                st.session_state.pop(_gk, None)
 
         st.divider()
 
@@ -1701,7 +1752,6 @@ def render_terrain_tab(script_dir, project_dir,
 
         if _is_csg_mode:
             # ── PHITS / STL: detector defined by cell selection only ──────────
-            st.divider()
             st.markdown("### 3 — Detector Cell")
             st.caption(
                 "Pick the geometry cell that acts as the detector volume.  "
@@ -1719,7 +1769,6 @@ def render_terrain_tab(script_dir, project_dir,
 
         else:
             # ── DEM / Synthetic: show GPS + underground checkbox ───────────────
-            st.divider()
             st.markdown("### 3 — Detector GPS position")
             st.caption(
                 "Enter the detector location as GPS coordinates.  "
@@ -1760,6 +1809,10 @@ def render_terrain_tab(script_dir, project_dir,
                 1.0, key="terrain_alt",
             )
 
+            if dem_path and synth_dem is None:
+                st.button("⛰  Altitude from the DEM", key="terrain_alt_from_dem",
+                          on_click=_set_alt_from_dem, args=(dem_path, script_dir),
+                          help="Set the altitude to the DEM's elevation at this position.")
             underground = st.checkbox(
                 "🔽  Underground detector",
                 value=st.session_state.get("terrain_underground", False),
@@ -1841,67 +1894,68 @@ def render_terrain_tab(script_dir, project_dir,
                             f"Download a DEM centred on your detector coordinates."
                         )
 
-                    # N–S elevation profile
-                    if synth_dem is None:
-                        _lats_c = np.linspace(_lat_min_c, _lat_max_c, 250)
-                        _elvs_c = np.array([
-                            _drv_c.dem_elevation_at(_ec.astype(np.float32), _tc, la, det_lon)
-                            for la in _lats_c
-                        ], dtype=float)
-                        _fig_p = _go_chk.Figure()
-                        _fig_p.add_trace(_go_chk.Scatter(
-                            x=_lats_c, y=_elvs_c, mode="lines",
-                            line=dict(color="#00b4d8", width=2),
-                            name=f"Elevation at lon={det_lon:.3f}°",
-                        ))
-                        _fig_p.add_vline(x=det_lat,
-                                         line=dict(color="#ffd700", width=2, dash="dash"),
-                                         annotation_text=f"Detector {det_lat:.3f}°N",
-                                         annotation_font=dict(color="#ffd700"))
-                        _fig_p.add_hline(y=det_alt,
-                                         line=dict(color="#ff6b6b", width=1.5, dash="dot"),
-                                         annotation_text=f"Alt {det_alt:.0f} m",
-                                         annotation_font=dict(color="#ff6b6b"))
-                        _fig_p.update_layout(
-                            **DARK, height=260,
-                            xaxis=dict(title="Latitude [°N]", gridcolor="#2a2a3a"),
-                            yaxis=dict(title="Elevation [m a.s.l.]", gridcolor="#2a2a3a"),
-                            title=dict(
-                                text=f"N–S elevation profile at lon={det_lon:.3f}°",
-                                font=dict(size=12),
-                            ),
-                            margin=dict(l=60, r=20, t=45, b=45),
-                        )
-                        st.plotly_chart(_fig_p,                                         config={"displayModeBar": False},
-                                        key="terrain_setup_profile")
-                        st.caption(
-                            "The summit should appear as a peak in the target direction.  "
-                            "If the profile is flat the DEM does not cover the target."
-                        )
+                    with st.expander("📈  N–S elevation profile", expanded=False):
+                        # N–S elevation profile
+                        if synth_dem is None:
+                            _lats_c = np.linspace(_lat_min_c, _lat_max_c, 250)
+                            _elvs_c = np.array([
+                                _drv_c.dem_elevation_at(_ec.astype(np.float32), _tc, la, det_lon)
+                                for la in _lats_c
+                            ], dtype=float)
+                            _fig_p = _go_chk.Figure()
+                            _fig_p.add_trace(_go_chk.Scatter(
+                                x=_lats_c, y=_elvs_c, mode="lines",
+                                line=dict(color="#00b4d8", width=2),
+                                name=f"Elevation at lon={det_lon:.3f}°",
+                            ))
+                            _fig_p.add_vline(x=det_lat,
+                                             line=dict(color="#ffd700", width=2, dash="dash"),
+                                             annotation_text=f"Detector {det_lat:.3f}°N",
+                                             annotation_font=dict(color="#ffd700"))
+                            _fig_p.add_hline(y=det_alt,
+                                             line=dict(color="#ff6b6b", width=1.5, dash="dot"),
+                                             annotation_text=f"Alt {det_alt:.0f} m",
+                                             annotation_font=dict(color="#ff6b6b"))
+                            _fig_p.update_layout(
+                                **DARK, height=260,
+                                xaxis=dict(title="Latitude [°N]", gridcolor="#2a2a3a"),
+                                yaxis=dict(title="Elevation [m a.s.l.]", gridcolor="#2a2a3a"),
+                                title=dict(
+                                    text=f"N–S elevation profile at lon={det_lon:.3f}°",
+                                    font=dict(size=12),
+                                ),
+                                margin=dict(l=60, r=20, t=45, b=45),
+                            )
+                            st.plotly_chart(_fig_p,                                         config={"displayModeBar": False},
+                                            key="terrain_setup_profile")
+                            st.caption(
+                                "The summit should appear as a peak in the target direction.  "
+                                "If the profile is flat the DEM does not cover the target."
+                            )
 
                 except Exception as _ce:
                     st.warning(f"DEM check failed: {_ce}")
 
-                # ── 3D terrain view ────────────────────────────────────────────
-                st.markdown("**3D terrain view**")
-                _r3d_col1, _r3d_col2 = st.columns([4, 1])
-                _r3d_km = _r3d_col2.slider(
-                    "Radius [km]", 1, 30, 10, 1, key="terrain_setup_3d_radius"
-                )
-                _r3d_deg = _r3d_km / 111.0
-                _ea3 = synth_dem.elev if synth_dem is not None else None
-                _ta3 = synth_dem.transform if synth_dem is not None else None
-                _fig3 = _dem_3d_plot(
-                    dem_path, det_lat, det_lon, det_alt, script_dir,
-                    radius_deg=_r3d_deg,
-                    elev_arr=_ea3, tfm_arr=_ta3,
-                )
-                if isinstance(_fig3, tuple) and _fig3[0] == "ERROR":
-                    st.warning(f"3D terrain: {_fig3[1]}")
-                elif _fig3 is not None:
-                    with _r3d_col1:
-                        st.plotly_chart(_fig3,                                         config={"displayModeBar": True},
-                                        key="terrain_setup_3d")
+                with st.expander("🏔️  3D terrain view", expanded=False):
+                    # ── 3D terrain view ────────────────────────────────────────────
+                    _r3d_col1, _r3d_col2 = st.columns([4, 1])
+                    _r3d_km = _r3d_col2.slider(
+                        "Radius [km]", 1, 30, 10, 1, key="terrain_setup_3d_radius"
+                    )
+                    _r3d_deg = _r3d_km / 111.0
+                    _ea3 = synth_dem.elev if synth_dem is not None else None
+                    _ta3 = synth_dem.transform if synth_dem is not None else None
+                    _fig3 = _dem_3d_plot(
+                        dem_path, det_lat, det_lon, det_alt, script_dir,
+                        radius_deg=_r3d_deg,
+                        elev_arr=_ea3, tfm_arr=_ta3,
+                    )
+                    if isinstance(_fig3, tuple) and _fig3[0] == "ERROR":
+                        st.warning(f"3D terrain: {_fig3[1]}")
+                    elif _fig3 is not None:
+                        with _r3d_col1:
+                            st.plotly_chart(_fig3,                                         config={"displayModeBar": True},
+                                            key="terrain_setup_3d")
 
         st.divider()
 
@@ -1937,7 +1991,7 @@ def render_terrain_tab(script_dir, project_dir,
 
         # Migrate sessions saved before the UCMuon-MC rename (old label string)
         if st.session_state.get("terrain_engine_choice") not in _ENGINE_OPTIONS:
-            st.session_state.pop("terrain_engine_choice", None)
+            _UIS.forget("terrain_engine_choice")
 
         _ph1, _ph2 = st.columns(2)
         terrain_engine_label = _ph1.radio(
@@ -2072,10 +2126,10 @@ def render_terrain_tab(script_dir, project_dir,
     # end with _ts_setup
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 2 — OVERBURDEN MAP  (Section 3b DEM validation + overburden preview)
+    # SECTION 6 — OVERBURDEN MAP PREVIEW (optional, collapsed)
     # ══════════════════════════════════════════════════════════════════════════
     with _ts_ob:
-        # Read geometry state from session_state (set by Setup tab)
+        # Read geometry state from session_state (set by sections 1-5)
         _ob_dem_path  = st.session_state.get("terrain_dem_path", "")
         _ob_synth_dem = st.session_state.get("_terrain_synth_dem")
         _ob_csg_geom  = st.session_state.get("_terrain_csg_geom")
@@ -2090,106 +2144,102 @@ def render_terrain_tab(script_dir, project_dir,
         _ob_underground = bool(st.session_state.get("terrain_underground", False))
 
         st.divider()
-        st.info(
-            "ℹ️  Elevation profile and 3D terrain view are in the **📋 Setup** tab "
-            "(section 4 — DEM check), so you can validate and adjust before computing here.",
-            icon="🔍",
-        )
-
-        # ── Overburden preview button ─────────────────────────────────────────
-        if _ob_dem_path or (_ob_synth_dem is not None) or (_ob_csg_geom is not None):
-            if _ob_csg_geom is not None:
-                _prev_label = "👁️  Compute overburden map (CSG preview)"
-            elif _ob_synth_dem is not None:
-                _prev_label = "👁️  Compute overburden map (synthetic DEM preview, ~30s)"
-            else:
-                _prev_label = "👁️  Compute overburden map (DEM preview, ~30s)"
-            if st.button(_prev_label, key="terrain_preview_btn", width='stretch'):
-                with st.spinner("Ray tracing overburden map…"):
-                    try:
-                        if _ob_csg_geom is not None:
-                            _csg_det_p = st.session_state.get("_csg_det_pos", np.array([0.,0.,0.]))
-                            az_c, ze_c, ob_map, sky_map = _ob_csg_geom.compute_overburden_map(
-                                det_pos_m  = _csg_det_p,
-                                n_az       = _ob_naz,    n_ze       = _ob_nze,
-                                ze_max_deg = _ob_zemax,  step_m     = float(st.session_state.get("_csg_step", 0.5)),
-                                max_dist_m = float(st.session_state.get("_csg_maxdist", 5000.0)),
-                            )
-                        else:
-                            drv = _load_terrain_driver(script_dir)
-                            if _ob_synth_dem is not None:
-                                elev, transform = _ob_synth_dem.elev, _ob_synth_dem.transform
+        st.markdown("### 6 — Overburden map (optional)")
+        with st.expander("🗺️  Preview the rock overburden per direction before running",
+                         expanded="terrain_preview" in st.session_state):
+            # ── Overburden preview button ─────────────────────────────────────────
+            if _ob_dem_path or (_ob_synth_dem is not None) or (_ob_csg_geom is not None):
+                if _ob_csg_geom is not None:
+                    _prev_label = "👁️  Compute overburden map (CSG preview)"
+                elif _ob_synth_dem is not None:
+                    _prev_label = "👁️  Compute overburden map (synthetic DEM preview, ~30s)"
+                else:
+                    _prev_label = "👁️  Compute overburden map (DEM preview, ~30s)"
+                if st.button(_prev_label, key="terrain_preview_btn", width='stretch'):
+                    with st.spinner("Ray tracing overburden map…"):
+                        try:
+                            if _ob_csg_geom is not None:
+                                _csg_det_p = st.session_state.get("_csg_det_pos", np.array([0.,0.,0.]))
+                                az_c, ze_c, ob_map, sky_map = _ob_csg_geom.compute_overburden_map(
+                                    det_pos_m  = _csg_det_p,
+                                    n_az       = _ob_naz,    n_ze       = _ob_nze,
+                                    ze_max_deg = _ob_zemax,  step_m     = float(st.session_state.get("_csg_step", 0.5)),
+                                    max_dist_m = float(st.session_state.get("_csg_maxdist", 5000.0)),
+                                )
                             else:
-                                elev, transform = drv.load_dem(_ob_dem_path)
-                            az_c, ze_c, ob_map, sky_map = drv.compute_overburden_map(
-                                elev, transform, _ob_lat, _ob_lon, _ob_alt,
-                                _ob_rho, _ob_naz, _ob_nze, _ob_zemax, _ob_step,
-                                underground=_ob_underground,
-                            )
-                        st.session_state["terrain_preview"] = (az_c, ze_c, ob_map, sky_map)
-                        st.success("✅  Overburden map computed.")
-                    except Exception as _e:
-                        st.error(f"❌  Preview failed: {_e}")
-                        import traceback; st.code(traceback.format_exc())
-        else:
-            st.info(
-                "ℹ️  Configure geometry in the **📋 Setup** tab first, "
-                "then return here to compute the overburden map.",
-                icon="ℹ️"
-            )
+                                drv = _load_terrain_driver(script_dir)
+                                if _ob_synth_dem is not None:
+                                    elev, transform = _ob_synth_dem.elev, _ob_synth_dem.transform
+                                else:
+                                    elev, transform = drv.load_dem(_ob_dem_path)
+                                az_c, ze_c, ob_map, sky_map = drv.compute_overburden_map(
+                                    elev, transform, _ob_lat, _ob_lon, _ob_alt,
+                                    _ob_rho, _ob_naz, _ob_nze, _ob_zemax, _ob_step,
+                                    underground=_ob_underground,
+                                )
+                            st.session_state["terrain_preview"] = (az_c, ze_c, ob_map, sky_map)
+                            st.success("✅  Overburden map computed.")
+                        except Exception as _e:
+                            st.error(f"❌  Preview failed: {_e}")
+                            import traceback; st.code(traceback.format_exc())
+            else:
+                st.info(
+                    "ℹ️  Choose a geometry in section 2 first.",
+                    icon="ℹ️"
+                )
 
-        if "terrain_preview" in st.session_state:
-            _prev_az_c, _prev_ze_c, ob_p, sky_p = st.session_state["terrain_preview"]
-            ob_rock = ob_p[~sky_p]
-            _v1, _v2, _v3, _v4 = st.columns(4)
-            _v1.metric("Rock directions",  f"{(~sky_p).sum()}/{sky_p.size}")
-            _v2.metric("Open sky",         f"{sky_p.sum()}/{sky_p.size}")
-            _v3.metric("Max overburden",   f"{float(ob_p.max()):.0f} g/cm²")
-            _v4.metric("Median overburden",f"{float(np.median(ob_rock)):.0f} g/cm²" if ob_rock.size else "—")
-            if (~sky_p).sum() == 0:
-                _ze_last = float(_prev_ze_c[-1]) if len(_prev_ze_c) else 0.0
-                st.warning(
-                    f"All {sky_p.size} direction bins show open sky — no terrain blocking detected.  "
-                    f"The zenith grid only reaches **{_ze_last:.1f}°** (last bin centre).  "
-                    f"**Fix:** increase Max zenith to **85°** and recompute.",
-                    icon="⚠️"
+            if "terrain_preview" in st.session_state:
+                _prev_az_c, _prev_ze_c, ob_p, sky_p = st.session_state["terrain_preview"]
+                ob_rock = ob_p[~sky_p]
+                _v1, _v2, _v3, _v4 = st.columns(4)
+                _v1.metric("Rock directions",  f"{(~sky_p).sum()}/{sky_p.size}")
+                _v2.metric("Open sky",         f"{sky_p.sum()}/{sky_p.size}")
+                _v3.metric("Max overburden",   f"{float(ob_p.max()):.0f} g/cm²")
+                _v4.metric("Median overburden",f"{float(np.median(ob_rock)):.0f} g/cm²" if ob_rock.size else "—")
+                if (~sky_p).sum() == 0:
+                    _ze_last = float(_prev_ze_c[-1]) if len(_prev_ze_c) else 0.0
+                    st.warning(
+                        f"All {sky_p.size} direction bins show open sky — no terrain blocking detected.  "
+                        f"The zenith grid only reaches **{_ze_last:.1f}°** (last bin centre).  "
+                        f"**Fix:** increase Max zenith to **85°** and recompute.",
+                        icon="⚠️"
+                    )
+                if ob_rock.size > 0:
+                    _pv1b, _pv2b = st.columns(2)
+                    _pv1b.caption(
+                        f"Blocked bin range:  "
+                        f"{float(ob_rock.min()):.0f} – {float(ob_rock.max()):.0f} g/cm²  "
+                        f"({float(ob_rock.min())/(_ob_rho*100):.0f} – "
+                        f"{float(ob_rock.max())/(_ob_rho*100):.0f} m vertical equiv.)"
+                    )
+                    _pv2b.caption(
+                        "How overburden is computed: for each (azimuth, zenith) bin the DEM "
+                        "ray tracer shoots a ray from the detector in that direction and "
+                        "integrates the column of rock it crosses until reaching open sky.  "
+                        "Result: overburden in g/cm² = path length [cm] × density [g/cm³]."
+                    )
+                st.plotly_chart(
+                    _polar_heatmap(_prev_az_c, _prev_ze_c, ob_p,
+                                   "Rock overburden — log scale [g/cm²]",
+                                   "g/cm²", colorscale="Jet", mask=sky_p, log_scale=True),
+                    config={"displayModeBar": False},
+                    key="terrain_ob_preview"
                 )
-            if ob_rock.size > 0:
-                _pv1b, _pv2b = st.columns(2)
-                _pv1b.caption(
-                    f"Blocked bin range:  "
-                    f"{float(ob_rock.min()):.0f} – {float(ob_rock.max()):.0f} g/cm²  "
-                    f"({float(ob_rock.min())/(_ob_rho*100):.0f} – "
-                    f"{float(ob_rock.max())/(_ob_rho*100):.0f} m vertical equiv.)"
+                _ob_min_prev = float(ob_rock.min()) if ob_rock.size > 0 else 1.0
+                _ob_max_prev = float(ob_p.max())
+                _slant_prev  = _ob_max_prev / (_ob_rho * 100.0) if _ob_rho > 0 else 0
+                _dec_prev    = np.log10(max(_ob_max_prev, 1.0) / max(_ob_min_prev, 1.0)) if _ob_min_prev > 0 else 0
+                st.caption(
+                    f"Colour = log₁₀(overburden g/cm²). Hover for actual value.  "
+                    f"Gray = open sky. Red = max blocking "
+                    f"({_ob_max_prev:,.0f} g/cm² = {_slant_prev:.0f} m slant).  "
+                    f"Log scale spans {_dec_prev:.1f} orders of magnitude."
                 )
-                _pv2b.caption(
-                    "How overburden is computed: for each (azimuth, zenith) bin the DEM "
-                    "ray tracer shoots a ray from the detector in that direction and "
-                    "integrates the column of rock it crosses until reaching open sky.  "
-                    "Result: overburden in g/cm² = path length [cm] × density [g/cm³]."
-                )
-            st.plotly_chart(
-                _polar_heatmap(_prev_az_c, _prev_ze_c, ob_p,
-                               "Rock overburden — log scale [g/cm²]",
-                               "g/cm²", colorscale="Jet", mask=sky_p, log_scale=True),
-                config={"displayModeBar": False},
-                key="terrain_ob_preview"
-            )
-            _ob_min_prev = float(ob_rock.min()) if ob_rock.size > 0 else 1.0
-            _ob_max_prev = float(ob_p.max())
-            _slant_prev  = _ob_max_prev / (_ob_rho * 100.0) if _ob_rho > 0 else 0
-            _dec_prev    = np.log10(max(_ob_max_prev, 1.0) / max(_ob_min_prev, 1.0)) if _ob_min_prev > 0 else 0
-            st.caption(
-                f"Colour = log₁₀(overburden g/cm²). Hover for actual value.  "
-                f"Gray = open sky. Red = max blocking "
-                f"({_ob_max_prev:,.0f} g/cm² = {_slant_prev:.0f} m slant).  "
-                f"Log scale spans {_dec_prev:.1f} orders of magnitude."
-            )
 
     # end with _ts_ob
 
     # ══════════════════════════════════════════════════════════════════════════
-    # TAB 3 — RUN & RESULTS  (readiness check + run button + all results)
+    # SECTION 7 — RUN, THEN RESULTS  (readiness check + run button + all results)
     # ══════════════════════════════════════════════════════════════════════════
     with _ts_run:
         # Read all needed variables from session_state
@@ -2219,7 +2269,9 @@ def render_terrain_tab(script_dir, project_dir,
             st.session_state.get("surface_file",     ""),
             "muons_selected.dat", "muons_surface.dat",
         ] if f and Path(f).exists()))
-        _run_infile = _run_surf_cands[0] if _run_surf_cands else None
+        _run_infile = st.session_state.get("terrain_infile_select")
+        if _run_infile not in _run_surf_cands:
+            _run_infile = _run_surf_cands[0] if _run_surf_cands else None
         if _run_infile and Path(_run_infile).exists():
             _mt_r = Path(_run_infile).stat().st_mtime
             _run_ncols, _run_n = probe_music_file_fn(_run_infile, False, mtime=_mt_r)
@@ -2233,7 +2285,7 @@ def render_terrain_tab(script_dir, project_dir,
         st.divider()
 
         # ── SECTION 6: Run ────────────────────────────────────────────────────
-        st.markdown("### 6 — Run terrain transport")
+        st.markdown("### 7 — Run terrain transport")
 
         # Retrieve the full list of selected detector cells (multi-detector)
         if _run_is_csg and _run_det_cell_id is not None and not _run_selected_det_cells:
@@ -2245,10 +2297,10 @@ def render_terrain_tab(script_dir, project_dir,
         ready = _dem_ready and _cell_ready and _muons_ready
         if not ready:
             missing_items = []
-            if not _dem_ready:   missing_items.append("geometry — upload a DEM, Synthetic, or PHITS (📋 Setup tab)")
-            if not _cell_ready:  missing_items.append("detector cell — select one in 📋 Setup tab")
+            if not _dem_ready:   missing_items.append("geometry — a DEM, Synthetic, or PHITS (section 2)")
+            if not _cell_ready:  missing_items.append("detector cell — select one in section 3")
             if not _muons_ready and _run_csg_geom is None:
-                missing_items.append("surface muon file (📋 Setup tab)")
+                missing_items.append("surface muon file (section 1)")
             st.warning("⚠️  Not ready — missing: " + ", ".join(missing_items))
 
         if _run_csg_geom is not None and _run_selected_det_cells:
@@ -2523,7 +2575,7 @@ def render_terrain_tab(script_dir, project_dir,
                         st.session_state["terrain_result_elev"]  = synth_dem.elev
                         st.session_state["terrain_result_tfm"]   = synth_dem.transform
                         st.session_state.pop("terrain_result_csg", None)
-                        st.session_state.pop("terrain_dem_path", None)
+                        _UIS.forget("terrain_dem_path")
                     else:
                         st.session_state.pop("terrain_result_elev", None)
                         st.session_state.pop("terrain_result_tfm",  None)
@@ -2556,7 +2608,7 @@ def render_terrain_tab(script_dir, project_dir,
         if "terrain_result_df" not in st.session_state:
             st.divider()
             st.info(
-                "▶  Configure the 📋 Setup tab, then click **Run terrain transport** to "
+                "▶  Fill in sections 1 – 5 above, then click **Run terrain transport** to "
                 "compute per-direction survival rates and flux maps.  "
                 "Results will appear here after the run completes.",
                 icon="ℹ️"
@@ -2755,11 +2807,12 @@ def render_terrain_tab(script_dir, project_dir,
                     _mm1.metric("Visible blocking bins", str(_n_sig_bins))
                     _mm2.metric("Max overburden", f"{_ob_max_val:.0f} g/cm2")
                     st.info(
-                        "Red patch (az=0, el=7-16 deg): Puy de Dome lava dome - the main muographic target.  "
-                        "Other coloured patches: secondary volcanic cones of the Chaine des Puys "
-                        "(80+ cones in this volcanic chain - all visible when threshold is low).  "
-                        "Increase the threshold slider to 1000-10000 g/cm2 to isolate only "
-                        "the dominant geological signal from background terrain.",
+                        "Coloured bins are directions where the muon path crosses rock, "
+                        "brighter = more rock (log10 of the opacity in g/cm2). The target is "
+                        "usually the largest connected patch; smaller patches are nearby "
+                        "relief, which is real topography, not a simulation artefact.  "
+                        "Increase the threshold slider to 1000-10000 g/cm2 to keep only "
+                        "the thickest paths.",
                         icon="🌋"
                     )
     
@@ -2821,9 +2874,8 @@ def render_terrain_tab(script_dir, project_dir,
                             _tm3.metric("Mean transmission (blocked)", f"{float(_t_blocked.mean()):.1f}%")
                         st.caption(
                             "T=0% = fully blocked by rock.  T=100% = open sky.  "
-                            "Main signal (az near 0, el 7-16 deg): Puy de Dome lava dome.  "
-                            "Secondary patches (az near 150 deg): other Chaine des Puys cones - "
-                            "real geology, not simulation artefacts.  "
+                            "Low-T patches are directions through rock; secondary patches "
+                            "are nearby relief (real topography, not simulation artefacts).  "
                             "The ratio T_blocked/T_open gives the muographic opacity per direction."
                         )
                     else:
@@ -2870,7 +2922,7 @@ def render_terrain_tab(script_dir, project_dir,
                                 st.session_state["da_lib_paths_pending"] = _pending
                                 st.success(
                                     f"✅ Saved `{_tsim_fname}` (ρ = {_rho_curr_ts:.2f} g/cm³).  "
-                                    "Now change density in Section 2 and run again.  "
+                                    "Now change density in Section 5 and run again.  "
                                     "Once you have ≥3 files, go to the **Density Analysis** tab."
                                 )
                             except Exception as _tsim_err:
@@ -2923,8 +2975,9 @@ def render_terrain_tab(script_dir, project_dir,
                         st.caption(
                             f"Blue = surface spectrum.  Orange = all survived.  "
                             f"Green = survived through terrain ({_n_tr:,} muons, blocked dirs only).  "
-                            "Green is nearly invisible on linear scale: only ~5% of CosmoALEPH muons "
-                            "exceed the ~400 GeV CSDA threshold for 1293 m of rock.  "
+                            f"Green can be nearly invisible on a linear scale: only muons above the "
+                            f"CSDA threshold of the blocked paths get through (up to "
+                            f"{float(np.nanmax(ob_map)):,.0f} g/cm2 here).  "
                             "Enable log Y to reveal the hardened green spectrum."
                         )
     

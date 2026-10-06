@@ -76,6 +76,8 @@ program ucmuon_gen_omp
   real(8)       :: parma_rc_GV
   real(8)       :: parma_s_W
   real(8)       :: parma_ffp_MV
+  real(8)       :: w_back         ! W of the latest day with data
+  integer       :: wy, wm, wd, k_back, ic_back
   integer       :: parma_ic
   real(8)       :: parma_ratio_plus = 1.0d0   ! overwritten in PARMA init; default silences -Wmaybe-uninitialized
 
@@ -242,7 +244,7 @@ program ucmuon_gen_omp
       write(*,*) ' Path to PARMA data directory:'
       read(*,'(A)') parma_datapath
       if (len_trim(parma_datapath) == 0) parma_datapath = '.'
-      write(*,*) ' W (Wolf/sunspot) index (0=solar min, ~150=solar max):'
+      write(*,*) ' W index (0=solar min, ~150=solar max; <= -999 = from the date):'
       read(*,*) parma_s_W
       write(*,*)
     end if
@@ -433,13 +435,50 @@ program ucmuon_gen_omp
 
     parma_d_gcm2 = getd(parma_alt_km, parma_lat)
     parma_rc_GV  = getr(parma_lat, parma_lon)
+    ! getHP returns the solar-modulation W index of the date (JAEA's own
+    ! main.f90 and main-generator.f90 pass it to getSpec as s). Up to v1.2.0
+    ! it was only printed (labelled FFP) and the typed W was always used, so
+    ! the date had no effect. A W <= -999 now means "from the date".
     parma_ffp_MV = getHP(parma_year, parma_month, parma_day, parma_ic)
-
-    parma_s_W = max(parma_s_W, -135.4d0)
+    if (parma_s_W <= -999.d0) then
+      ! After the last day of the neutron-monitor table getHP falls back to
+      ! the yearly Usoskin table, which ends in 2006 and is zero after it, so
+      ! a recent date would silently get W = 0 (solar minimum). Use the
+      ! latest earlier day that has neutron-monitor data instead, and say so.
+      if (parma_year >= 1951 .and. (parma_ic == 2 .or. parma_ic == 4)) then
+        wy = parma_year; wm = parma_month; wd = parma_day
+        do k_back = 1, 3700
+          wd = wd - 1
+          if (wd < 1) then
+            wd = 31; wm = wm - 1
+            if (wm < 1) then
+              wm = 12; wy = wy - 1
+            end if
+          end if
+          w_back = getHP(wy, wm, wd, ic_back)
+          if (ic_back == 1 .or. ic_back == 3) exit
+        end do
+        if (ic_back == 1 .or. ic_back == 3) then
+          write(*,'(A,I4.4,A,I2.2,A,I2.2,A,F6.1)') &
+            '  WARNING: no PARMA W index for this date; using the latest one, ', &
+            wy, '-', wm, '-', wd, ': W = ', w_back
+          parma_ffp_MV = w_back
+          parma_ic     = ic_back
+        end if
+      end if
+      if (parma_ic >= 4) then
+        write(*,'(A,I0,A)') '  WARNING: PARMA has no W index for this date (code ', &
+                            parma_ic, '); using W = 0'
+        parma_s_W = 0.d0
+      else
+        parma_s_W = parma_ffp_MV
+      end if
+    end if
+    parma_s_W    = max(parma_s_W, -135.4d0)
 
     write(*,'(A,F8.2,A)') '  PARMA atm. depth:   ', parma_d_gcm2, ' g/cm2'
     write(*,'(A,F8.3,A)') '  PARMA cutoff rigid: ', parma_rc_GV,  ' GV'
-    write(*,'(A,F8.1,A)') '  PARMA FFP:          ', parma_ffp_MV, ' MV'
+    write(*,'(A,F8.1)')   '  PARMA W of date:    ', parma_ffp_MV
     write(*,'(A,F8.1)')   '  PARMA W index:      ', parma_s_W
     write(*,*)
 
