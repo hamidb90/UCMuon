@@ -12,21 +12,46 @@ or numerical result changes.
   rock (the Transport tab said so) after generating 100 000 hits for about
   13 minutes. The default is now a vertical cylinder of 0.5 m radius and 1 m
   height (box: 1 m x 1 m x 1 m) whose top face is 30 m deep, and the generator
-  asks for 10 000 muons: a first run takes about 3 minutes on 4 threads.
+  asks for 10 000 muons: a first run takes 3 to 4 minutes on 4 threads.
   Saved sessions keep their own detector.
+- Advanced mode's guaranteed-hit workflow also defaults to 10 000 muons (it
+  shares the field with the Standard workflow and had kept 100 000).
 - A detector face at the ground printed as "-0 m".
 - The Transport tab numbers PUMAS ⑦, as the README and the documentation do
   (⑥ is UCMuon Terrain, in its own tab).
+- Results: a rate's statistical error is a caption under it ("± 1.24 /s
+  (statistical, 1σ)"); it was the metric's delta, drawn as a green up arrow
+  as if it were a change. Fig. 4 of the paper is retaken with it.
+- The UCMuon-MC engine description says it runs one worker per ~20 000 muons,
+  so a small run is serial (the Mode card said "Serial Python" next to
+  "Multiprocess-parallel").
+- `ucmugen/include/UCMuGen_PARMA.h` compiles under clang with `-Wpedantic
+  -Werror`: its longest table string (139 000 characters) is above the length
+  a compiler must accept, and the warning is now silenced around the tables
+  (`ucmugen/tools/make_parma_header.py`; the regenerated header differs only
+  by those lines). The UCMuGen CI now builds `test_parma.cc` with `-Werror`
+  (clang warns only when the tables are compiled in, not on the include).
 
 ### Documentation
 - README: a "Your first simulation (Basic mode)" walkthrough after the
-  installation, with the times and numbers of a measured run; which tabs each
-  mode shows; the engine count per tab; that the surface generator needs
-  gfortran; `data/` does not ship the MUSIC tables.
+  installation, with the times and numbers of measured runs and why only a
+  few tens of the hits end in the detector; which tabs each mode shows; the
+  engine count per tab and the engines in their ① to ⑦ order; which parts need
+  gfortran (the surface generator, so Basic cannot generate without it) and
+  which do not; `data/` does not ship the MUSIC tables; `tools/` and `docs/`
+  list all their files; the Terrain tab's seven sections, section 4 (DEM
+  check) included.
+- Engine numbers corrected in `requirements.txt` (and `external/pumas-master/`
+  for PUMAS), `INSTALL.md` (the installer's summary lists Engine 7) and the
+  `benchmark/codes/` READMEs of MUSIC, Bethe-Bloch and PROPOSAL.
+- `ROADMAP.md`, the working roadmap of June 2026 (it pointed to files that are
+  not published and described the GUI as it was then), is no longer
+  published; `tools/check_consistency.py` reports it if it comes back.
 
 ### Tests
-- Two GUI regression tests (fresh-install detector underground with 10 000
-  hits; no "-0"), each failing on 1.3.1.
+- Four GUI regression tests, each failing on 1.3.1: fresh-install detector
+  underground with 10 000 hits; no "-0"; guaranteed-hit default 10 000; the
+  rate's error shown under it, not as a delta.
 
 ## [1.3.1] — 2026-10-08
 

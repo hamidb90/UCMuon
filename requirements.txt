@@ -15,13 +15,13 @@ plotly>=5.18
 scipy>=1.11
 matplotlib>=3.7
 
-# ── Bethe-Bloch engine — Python driver (Engine 2) ────────────────────────────
+# ── Bethe-Bloch engine — Python driver (Engine 3) ────────────────────────────
 # Pure Python/NumPy CSDA transport — no additional packages needed.
 # MS=OFF: analytical exact CSDA, sub-second for 600k muons.
 # MS=ON:  vectorized NumPy stepping with Highland MCS.
 # Driver file: gui/ucmuon_bb_driver.py
 
-# ── UCMuon Stochastic engine (Engine 4) ──────────────────────────────────────
+# ── UCMuon-MC engine (Engine 1, the flagship) ────────────────────────────────
 # Self-developed pure-Python stochastic transport — no additional packages needed.
 # Uses only numpy and scipy (already listed above).
 # Driver files: gui/ucmuon_stochastic_driver.py, gui/gui_stochastic_engine.py
@@ -32,11 +32,12 @@ matplotlib>=3.7
 
 # ── PUMAS backward/forward MC (Engine 7) ─────────────────────────────────────
 # C binary — no Python packages needed beyond numpy (already above).
-# Requires: pumas-master/ directory in project root (LGPL, Niess et al. 2017).
-# Build:     make pumas        (runs automatically if pumas-master/ is present)
+# Requires: external/pumas-master/ (LGPL-3.0, Niess et al. 2017), downloaded
+#           by setup.sh / install.ps1 on request; not bundled.
+# Build:     make pumas        (runs automatically if external/pumas-master/ is present)
 # First run: builds a physics dump in bin/pumas_StandardRock.pumas (~10 s)
 # Subsequent runs load the dump and start instantly.
-# NOT required for engines 1–5 — entirely optional.
+# NOT required for engines 1–6 — entirely optional.
 
 # ── UCMuon Terrain / DEM ray-tracing (Engine 6 — optional) ──────────────────
 # Required for DEM loading and coordinate reprojection.
@@ -44,7 +45,7 @@ matplotlib>=3.7
 #
 # rasterio>=1.3
 
-# ── PROPOSAL muon transport (Engine 3 — optional) ────────────────────────────
+# ── PROPOSAL muon transport (Engine 4 — optional) ────────────────────────────
 # Full stochastic MC (Koehne et al. 2013, Alameddine et al. 2024).
 #
 # IMPORTANT: incompatible with Anaconda/miniforge (pybind11 ABI mismatch).

@@ -114,6 +114,10 @@ using std::sqrt;
 using std::string;
 using std::tan;
 
+#if defined(__GNUC__)
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Woverlength-strings"
+#endif
 inline const std::map<std::string, std::string>& tables() {
   static const std::map<std::string, std::string> t = {
     {"input/muon--/final135.plus", R"PARMA(Depth(g/cm2)        A(1)        A(3)        A(5)
@@ -1761,6 +1765,9 @@ Data are calculated by NRLMSISE-00, Ap=4, F107A=100.0, F107=100.0, longitude and
   };
   return t;
 }
+#if defined(__GNUC__)
+#pragma GCC diagnostic pop
+#endif
 
 
 // Where the two tables too large to embed are found. Held here rather than in

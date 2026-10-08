@@ -52,6 +52,15 @@ def test_fresh_install_advanced_renders(new_app):
         assert len(tab.button) + len(tab.radio) + len(tab.text_area) > 0, name
 
 
+def test_guaranteed_hit_default_matches_the_standard_one(new_app):
+    """Both workflows share the key nmuonsgen; 1.3.2 changed only the
+    Standard default to 10 000 and left guaranteed-hit at 100 000."""
+    at = new_app(mode="Advanced")
+    widget(at, "radio", "gen_workflow").set_value("DAS-REM").run()
+    assert not exceptions(at)
+    assert widget(at, "number_input", "nmuonsgen").value == 10_000
+
+
 def test_old_autosave_without_mode_opens_in_advanced(new_app, repo_copy):
     (repo_copy / "ucmuon_autosave.json").write_text(json.dumps({"emin": 3.0}))
     at = new_app(keep_autosave=True)
@@ -300,6 +309,9 @@ def test_basic_results_after_transport(new_app, underground_run):
     assert any("Underground muons (transport)" in o for o in res.selectbox[0].options)
     labels = [m.label for m in res.metric]
     assert "Rate at depth [/s]" in labels and "Live time" in labels
+    rate = next(m for m in res.metric if m.label == "Rate at depth [/s]")
+    assert not rate.delta                         # 1.3.1: the error was a green "up" delta
+    assert any("(statistical, 1σ)" in c.value for c in res.caption)
     assert [t for t in res.text_input if t.label == "Load any file"]
     assert any("Depth 5 m, ρ = 2.65" in c.value for c in res.caption)
     assert widget(at, "number_input", "res_depth") is None         # the last transport's

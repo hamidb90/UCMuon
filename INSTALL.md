@@ -252,10 +252,11 @@ Both installers end with an **ENGINE AVAILABILITY** summary, e.g.:
 ```
   [x] Engine 1  UCMuon-MC (flagship)       (Python)
   [x] Engine 2  MUSIC stochastic MC        (bin/ucmuon_transport_music_omp)
-  [x] Engine 3  Bethe-Bloch + Highland MS  (bin/ucmuon_transport_bb_omp)
+  [x] Engine 3  Bethe-Bloch CSDA + MS      (bin/ucmuon_transport_bb_omp)
   [x] Engine 4  PROPOSAL stochastic MC     (system Python venv)
   [x] Engine 5  Backward MC                (Python)
   [x] Engine 6  UCMuon Terrain             (Python + rasterio)
+  [x] Engine 7  PUMAS backward MC          (bin/ucmuon_transport_pumas)
 ```
 
 Re-run `bash setup.sh` (or `install.ps1`) at any time to re-check — both are idempotent.

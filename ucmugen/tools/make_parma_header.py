@@ -190,6 +190,13 @@ def embed_tables(root: Path) -> tuple[str, int]:
     the same one PARMA has always done and no float round-trip is introduced.
     """
     chunks, total = [], 0
+    # The longest table is ~139 000 characters, above the 65 536 a compiler
+    # must accept: clang's -Wpedantic warns (-Woverlength-strings), so a user
+    # building with -Werror could not include the header (up to 1.3.1).
+    chunks.append("#if defined(__GNUC__)\n"
+                  "#pragma GCC diagnostic push\n"
+                  "#pragma GCC diagnostic ignored \"-Woverlength-strings\"\n"
+                  "#endif\n")
     chunks.append("inline const std::map<std::string, std::string>& tables() {\n"
                   "  static const std::map<std::string, std::string> t = {\n")
     for rel in EMBED:
@@ -202,6 +209,9 @@ def embed_tables(root: Path) -> tuple[str, int]:
         total += len(data)
         chunks.append(f'    {{"{rel}", R"PARMA({data})PARMA"}},\n')
     chunks.append("  };\n  return t;\n}\n")
+    chunks.append("#if defined(__GNUC__)\n"
+                  "#pragma GCC diagnostic pop\n"
+                  "#endif\n")
     return "".join(chunks), total
 
 

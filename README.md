@@ -12,7 +12,7 @@ MIT License · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20826984.svg)
 UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, with applications to muography of geological structures, CO₂ storage monitoring, and glacier/bedrock imaging. It can be run interactively through a browser-based GUI on any laptop, or in batch mode on an HPC cluster using MPI-parallelised Fortran executables.
 
 - **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Gaisser 1990, Reyna 2006, cosmic electrons; see [Surface spectra](#surface-spectra-validity-and-absolute-normalisation)), three source geometries, OpenMP and MPI parallelism
-- **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, PUMAS (backward/forward MC), Backward MC, UCMuon Terrain (DEM ray-tracing)
+- **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, Backward MC, UCMuon Terrain (DEM ray-tracing), PUMAS (backward/forward MC)
 - **Streamlit GUI** — a Basic mode (three tabs, the essential inputs, the rest derived) and an Advanced mode (every setting), interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
 - **HPC workflow** — MPI+OMP Fortran executables, SLURM scripts, automatic PHITS conversion
 - **Transmission maps** — terrain engine outputs `T_sim = Φ_rock / Φ_sky` per direction; run at multiple densities to build a T_sim library for inversion
@@ -75,7 +75,7 @@ bash setup.sh          # installs Python packages, builds Fortran binaries, chec
 bash run_gui.sh        # opens http://localhost:8501
 ```
 
-`setup.sh` auto-detects available source files and only builds what is present. The surface generator needs gfortran; without it only the pure-Python engines (1 UCMuon-MC, 5 Backward MC) and Advanced mode's guaranteed-hit generator work.
+`setup.sh` auto-detects available source files and only builds what is present. The surface generator needs gfortran (Basic mode cannot generate without it). The Python engines need no compiler: ① UCMuon-MC, ③ Bethe-Bloch's Python driver, ④ PROPOSAL, ⑤ Backward MC and ⑥ UCMuon Terrain, and so does Advanced mode's guaranteed-hit generator.
 
 ---
 
@@ -173,11 +173,11 @@ Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) o
 
 A first run with the defaults: a vertical cylinder of 0.5 m radius and 1 m height whose top face is 30 m deep in Standard Rock.
 
-1. **🌌 Generator.** Guan 2015 spectrum over 1 to 2500 GeV (its validated range), angular mode ⑥ (momentum and zenith drawn jointly from the flux, recommended) up to θ = 85°, and the detector above. From the detector the tab derives a 126 cm safety margin (2σ of multiple scattering at that depth) and a source disk of radius 380 m. Click **Run UCMuon Surface Generator**: 10 000 detector hits take about 3 minutes on 4 threads.
+1. **🌌 Generator.** Guan 2015 spectrum over 1 to 2500 GeV (its recommended range), angular mode ⑥ (momentum and zenith drawn jointly from the flux, recommended) up to θ = 85°, and the detector above. From the detector the tab derives a 126 cm safety margin (2σ of multiple scattering at that depth) and a source disk of radius 380 m. Click **Run UCMuon Surface Generator**: 10 000 detector hits take 3 to 4 minutes on 4 threads (the surface generator is the Fortran binary built by `setup.sh`).
 2. **🪨 Transport.** The input is the generator's output, the engine UCMuon-MC, the material Standard Rock (ρ = 2.65 g/cm³), and the overburden (30 m) comes from the detector. Click **Run UCMuon-MC Transport**: a few seconds. About 6 % of the muons survive.
 3. **📊 Results.** The number of muons that end in the detector and their rate with its statistical error (two runs gave 40 and 65 muons, 8.1 ± 1.3 and 12.8 ± 1.6 per second: so few muons carry a large error), the live time the run represents (T = N_tried / R, about 5 s), energy and angle distributions, the θ-φ acceptance map, survival compared with the CSDA expectation along each muon's slant path, and 3D tracks.
 
-Why 10 000 hits give only a few tens of muons in the detector: the generator keeps every muon aimed at the detector enlarged by the safety margin, so that muons scattered into it by the rock are not lost. Most of them stop in the rock or are scattered away, and Results counts only those that end in the detector. More hits give more statistics: the run time grows in proportion.
+Why 10 000 hits give only a few tens of muons in the detector: the generator keeps every muon aimed at the detector enlarged by the safety margin, so that muons scattered into it by the rock are not lost. About 94 % of them stop in the 30 m of rock. Of the few hundred survivors, most were aimed at the margin band around the detector, whose area is about 12 times the detector's own (radius 1.76 m against 0.5 m), and still end outside it; Results counts only those that end in the detector. More hits give more statistics: the run time grows in proportion.
 
 For your own case, change the detector (position, depth, size, cylinder or box), the spectrum or the material, or switch the detector off and give the source size and the depth. Every input has a **?** help. The full list of what Basic and Advanced show is under [GUI tabs](#gui-tabs).
 
@@ -232,13 +232,15 @@ Required for the surface generator in the Standard workflow (only the Guaranteed
 
 ```
 UCMuon/
-├── README.md / LICENSE / CITATION.cff / ROADMAP.md / .gitignore
+├── README.md / LICENSE / CITATION.cff / CHANGELOG.md / .gitignore
 ├── requirements.txt              Python package list
 ├── Makefile                      build all local OMP and HPC MPI targets
 ├── setup.sh / install.ps1        installers (auto-detect what to build)
 ├── run_gui.sh / run_gui.bat      GUI launchers (Linux/macOS / Windows)
 ├── tools/
-│   └── compare_engines.py        multi-engine diagnostic: survival, energy, plots
+│   ├── compare_engines.py        multi-engine diagnostic: survival, energy, plots
+│   ├── check_consistency.py      release checks: versions, paper paths, shared files, test run
+│   └── bump_version.py           moves the version number everywhere at once
 │
 ├── src/
 │   ├── common/                   shared Fortran: RANLUX, RNORML, CORGEN
@@ -272,7 +274,7 @@ UCMuon/
 ├── test_run/                     comprehensive test run: inputs, reference output, run_test.sh
 ├── bin/                          compiled binaries (built by make; git-ignored)
 ├── data/                         physics tables (PARMA/EXPACS; the MUSIC tables, not redistributed, go here)
-├── docs/                         MUSIC_FILES.md, ENGINE6_USAGE_GUIDE.md
+├── docs/                         MUSIC_FILES.md, ENGINE6_USAGE_GUIDE.md, FLUX_NORMALISATION_AUDIT.md, MAINTENANCE.md
 ├── hpc/                          SLURM scripts + annotated input templates
 ├── output/                       simulation outputs (regenerable; git-ignored)
 │
@@ -475,12 +477,13 @@ In the GUI:
 
 The Terrain tab (Advanced mode) is one page, sections 1 to 7:
 
-1. Surface muon file: the Generator's output (Section 1)
-2. Geometry source: the bundled DEM, an uploaded GeoTIFF, or auto-download (Section 2)
-3. Detector GPS position: latitude, longitude, altitude a.s.l., with "Altitude from the DEM" (Section 3)
-4. Transport engine and material, with the rock density (Section 5)
-5. Optional overburden map preview (Section 6)
-6. Run terrain transport (Section 7); the results follow below, including "Save T_sim for density inversion"
+1. Surface muon file: the Generator's output
+2. Geometry source: the bundled DEM, an uploaded GeoTIFF, or auto-download
+3. Detector GPS position: latitude, longitude, altitude a.s.l., with "Altitude from the DEM"
+4. DEM check: whether the detector lies inside the DEM and how the DEM's elevation there compares with the altitude entered, with an N-S elevation profile and a 3D terrain view
+5. Transport engine and material, with the rock density
+6. Overburden map (optional): the rock overburden per direction, before running
+7. Run terrain transport; the results follow below, including "Save T_sim for density inversion"
 
 The output files below are those of the command-line driver `gui/ucmuon_terrain_driver.py`.
 

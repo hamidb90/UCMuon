@@ -1,4 +1,4 @@
-# PROPOSAL — UCMuon Engine 3
+# PROPOSAL — UCMuon Engine 4
 
 Full stochastic Monte Carlo (Koehne 2013; Alameddine 2024). **Part of the main
 UCMuon repo.** Driver: `gui/proposal_driver.py`. Install: `pip install proposal`

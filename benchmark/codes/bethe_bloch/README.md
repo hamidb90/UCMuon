@@ -1,4 +1,4 @@
-# Bethe–Bloch + Highland MSC — UCMuon Engine 2
+# Bethe–Bloch + Highland MSC — UCMuon Engine 3
 
 Deterministic CSDA energy loss (PDG/Groom) with Highland multiple scattering.
 **Part of the main UCMuon repo.** Binary: `bin/ucmuon_transport_bb_omp`

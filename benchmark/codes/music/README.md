@@ -1,4 +1,4 @@
-# MUSIC — UCMuon Engine 1
+# MUSIC — UCMuon Engine 2
 
 Kudryavtsev stochastic Monte Carlo. **Part of the main UCMuon repo**, not
 duplicated here. Binary: `bin/ucmuon_transport_music_omp`

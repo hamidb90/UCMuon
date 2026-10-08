@@ -849,6 +849,15 @@ def _fmt_time(seconds):
         return f"{s//86400}d {(s%86400)//3600:02d}h {(s%3600)//60:02d}m"
 
 
+def _rate_metric(col, label, rate, sigma):
+    """A rate, with its statistical error as a caption under the value (up to
+    1.3.1 the error was the metric's delta, drawn as a green up arrow as if it
+    were a change; inside the value it would be cut off in a narrow column)."""
+    col.metric(label, f"{rate:.4g}")
+    if sigma is not None and np.isfinite(sigma):
+        col.caption(f"± {sigma:.3g} /s (statistical, 1σ)")
+
+
 def _check_proposal():
     """
     Return (ok, version_or_message) for PROPOSAL availability.
@@ -2645,9 +2654,9 @@ _source_reach = _BM.source_reach
 def _warn_source_reach(det, theta_max_deg, **src):
     """Warn when the source cannot emit every muon that reaches the detector
     within theta_max: those muons are never generated, so the rate and live
-    time come out low. (Up to v1.2.0 nothing warned. Measured: the default
-    200 m disk gives an 11 % low hit rate into a 90 m-deep cylinder at
-    θ_max = 85° with Guan, against 1 % low at 600 m.)"""
+    time come out low. (Up to v1.2.0 nothing warned. Measured with 1.2.0's
+    defaults: a 200 m disk gives an 11 % low hit rate into a 90 m-deep
+    cylinder at θ_max = 85° with Guan, against 1 % low at 600 m.)"""
     res = _source_reach(det, theta_max_deg, **src)
     if res is None:
         return
@@ -3694,7 +3703,7 @@ with tab_gen:
         st.markdown("#### Sampling")
         _samp_dr1, _samp_dr2 = st.columns([3, 2])
         nmuons_gen = int(_samp_dr1.number_input(
-            "Muons to generate", min_value=100, max_value=None, value=100_000, step=1_000,
+            "Muons to generate", min_value=100, max_value=None, value=10_000, step=1_000,
             key="nmuonsgen",
             help="All N muons are guaranteed to hit the detector — no wasted trials.",
         ))
@@ -4964,7 +4973,8 @@ with tab_music:
             "PDG 2024 per-process radiative losses (brems / pair / photonuclear) "
             "Poisson-sampled with process-specific spectra + explicit δ-ray "
             "straggling + Highland MS + muon decay; mean dE/dx anchored exactly "
-            "to the evaluated table.  Multiprocess-parallel, no compilation, "
+            "to the evaluated table.  Multiprocess-parallel (one worker per ~20 000 "
+            "muons, so small runs are serial), no compilation, "
             "no external files, any platform — validated against MUSIC and "
             "PROPOSAL.  Default choice for slab and terrain transport."
         ),
@@ -6397,14 +6407,14 @@ def _render_results_tab():
             _qb3.metric("Survived (transport)", f"{_n_surv_det:,}")
             _qb4.metric("Survivors in the detector", f"{100*len(df)/max(_n_surv_det,1):.1f}%")
         elif flux_ok and rate_per_s is not None:
-            _qb3.metric("Rate [/s]",   f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
+            _rate_metric(_qb3, "Rate [/s]", rate_per_s, _rate_sigma)
             _qb4.metric("Live time",   _fmt_time(live_time_s))
     if flux_ok and rate_per_s is not None and (is_underground or is_det_hits):
         # Underground and detector-hit files: their rate and live time are
         # headline numbers too (up to v1.2.0 only a caption had them).
         _qr1, _qr2, _qr3, _qr4 = st.columns(4)
-        _qr1.metric("Rate at depth [/s]" if is_underground else "Hit rate [/s]",
-                    f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
+        _rate_metric(_qr1, "Rate at depth [/s]" if is_underground else "Hit rate [/s]",
+                     rate_per_s, _rate_sigma)
         _qr2.metric("Live time", _fmt_time(live_time_s))
     if flux_ok and rate_per_s is not None and not (is_pumas_flux or is_pumas_events):
         st.caption(
@@ -6471,7 +6481,7 @@ def _render_results_tab():
         if flux_ok and rate_per_s is not None:
             st.markdown("**Rate of the loaded rows and live time**")
             _rc1, _rc2, _rc3, _rc4 = st.columns(4)
-            _rc1.metric("Rate [/s]",   f"{rate_per_s:.4g}",   delta=f"±{_rate_sigma:.3g}")
+            _rate_metric(_rc1, "Rate [/s]", rate_per_s, _rate_sigma)
             _rc2.metric("Rate [/day]", f"{rate_per_s*86400:.4g}")
             _rc3.metric("Live time",   _fmt_time(live_time_s))
             _rc4.metric("Surface rate R [/s]", f"{st.session_state.get('gen_surface_rate') or 0:.4g}")

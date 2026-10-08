@@ -203,6 +203,8 @@ PRIVATE_MARKERS = (
     ("release checks", re.compile(r"release_check|release_notes")),
     ("MUSIC sources or tables", re.compile(r"src/transport/music/.*\.(f|for)$|data/music-.*\.dat$")),
     ("superseded benchmark material", re.compile(r"benchmark/figures/four_code/|benchmark/reports/(notes|benchmark_plan|COMPARISON_ALL_CODES)")),
+    # The pre-publication working roadmap (June 2026); published up to 1.3.1.
+    ("the internal roadmap", re.compile(r"^ROADMAP\.md$")),
 )
 
 
