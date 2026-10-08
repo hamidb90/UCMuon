@@ -63,7 +63,7 @@ _BB_MAT = {
     1: {"name": "Standard Rock", "Z": 11.0,  "A": 22.0,  "rho": 2.65,
         "I_eV": 136.4, "X0_gcm2": 26.54, "a_scale": 1.000},
     2: {"name": "Ice",           "Z": 7.42,  "A": 14.99, "rho": 0.917,
-        "I_eV":  79.7, "X0_gcm2": 33.10, "a_scale": 1.046},
+        "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.046},   # as water (PDG); 33.10 up to 1.3.2
     3: {"name": "Water",         "Z": 7.42,  "A": 14.99, "rho": 1.000,
         "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.046},
     4: {"name": "Concrete",      "Z": 11.11, "A": 22.08, "rho": 2.300,

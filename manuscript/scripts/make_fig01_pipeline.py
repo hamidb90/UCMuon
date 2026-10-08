@@ -8,7 +8,9 @@ Thumbnail data sources (all already in the repo):
   Stage 1  surface vertical intensity from ucmuon_flux_models.reyna_flux
   Stage 2  survival vs. depth from
            benchmark/geant4_muon_rock_v5/figures_benchmark/benchmark_summary.csv
-  Stage 3  manuscript/figs/Screenshot_gui.png  (manual GUI capture)
+  Stage 3  top band of manuscript/figs/gui_screenshot.png, the Fig. 4 capture
+           of the GUI (up to v1.3.2 an untracked June 2026 capture that
+           predated the Basic/Advanced modes)
 
 Usage:  python3 manuscript/scripts/make_fig01_pipeline.py
 """
@@ -31,7 +33,8 @@ FIGS_DIR = SCRIPT_DIR.parent / "figs"
 OUT_PDF = FIGS_DIR / "fig01_pipeline.pdf"
 SURVIVAL_CSV = (SCRIPT_DIR.parent.parent / "benchmark" / "geant4_muon_rock_v5"
                 / "figures_benchmark" / "benchmark_summary.csv")
-GUI_PNG = FIGS_DIR / "Screenshot_gui.png"
+GUI_PNG = FIGS_DIR / "gui_screenshot.png"
+GUI_ASPECT = 1.7          # width / height of the band shown as the thumbnail
 
 sys.path.insert(0, str(SCRIPT_DIR))
 import ucmuon_flux_models as fm  # noqa: E402
@@ -47,7 +50,7 @@ BOX_BOT, BOX_TOP = 0.60, 0.84
 STAGES = [
     dict(color=C1, title="Stage 1 — Surface generator",
          body="ucmuon_gen_omp\nFortran 90 + OpenMP / MPI",
-         items="8 spectra · 4 angular · 3 geometries",
+         items="8 spectra · 6 angular · 3 geometries",
          cap="Surface energy spectrum"),
     dict(color=C2, title="Stage 2 — Transport engine",
          body="UCMuon-MC | MUSIC | Bethe–Bloch\nPROPOSAL | BackMC | Terrain",
@@ -58,7 +61,7 @@ STAGES = [
          items="spectra · rates · transmission & density maps",
          cap="Streamlit GUI — Results tab"),
 ]
-ARROWS = [("muons_surface.dat", "13/14-col ASCII"),
+ARROWS = [("muons_surface.dat", "14-col ASCII"),
           ("muons_underground.dat", "18-col ASCII")]
 
 
@@ -122,9 +125,11 @@ def thumb_survival(ax):
 
 def thumb_screenshot(ax):
     if GUI_PNG.exists():
-        ax.imshow(mpimg.imread(str(GUI_PNG)), aspect="equal")
+        img = mpimg.imread(str(GUI_PNG))
+        img = img[: int(img.shape[1] / GUI_ASPECT)]   # title, tabs, run summary
+        ax.imshow(img, aspect="equal")
     else:
-        ax.text(0.5, 0.5, "Screenshot_gui.png\nnot found", ha="center",
+        ax.text(0.5, 0.5, "gui_screenshot.png\nnot found", ha="center",
                 va="center", fontsize=7, color="0.5", transform=ax.transAxes)
     ax.axis("off")
     for spine in ax.spines.values():

@@ -2,8 +2,9 @@
 
 Standalone Geant4 application (`MuonRock`) that propagates the benchmark muons
 through a Standard-Rock slab and scores survival, energy, and scattering at each
-depth plane. **Reference physics:** `FTFP_BERT` + `G4EmStandardPhysics_option4`,
-Urban multiple-scattering model.
+depth plane. **Reference physics:** `FTFP_BERT` with its default electromagnetic
+physics (`MuonRock.cc` registers `new FTFP_BERT()` and replaces nothing; up to
+1.3.2 this file said `G4EmStandardPhysics_option4` with the Urban model).
 
 ## Files here
 | File / dir | Purpose |

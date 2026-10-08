@@ -2,7 +2,7 @@
 **UCLouvain / CP3**
 **Date:** 2026-05-23
 **Geant4 run:** `outputs/run_file_20260522_210114`  (600,000 events, 18878 s)
-**Reference code:** Geant4 11 + FTFP_BERT + G4EmStandardPhysics_option4
+**Reference code:** Geant4 11 + FTFP_BERT (default EM physics; an earlier version of this line said G4EmStandardPhysics_option4, which `MuonRock.cc` does not use)
 
 ---
 

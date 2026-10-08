@@ -429,7 +429,7 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 
 - Loss decomposition from the **PDG 2024 per-process tables** (Groom–Mokhov–Striganov, 2024 electronic revision; embedded): ionisation, bremsstrahlung, pair production, photonuclear `[MeV cm²/g]` vs energy
 - **Native per-material tables** for Standard Rock, water, ice, and iron — no rescaling approximation (the old rock-rescale underestimated iron radiative losses by ~38% at 1 TeV); seawater uses the water table with sub-percent composition rescaling, custom materials rescale the rock table
-- Hard radiative events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, pair `1/v³`, photonuclear `1/v`
+- Hard bremsstrahlung and photonuclear events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, photonuclear `1/v`; pair production, whose loss is spread over many small transfers (`1/v³`), stays in the continuous term
 - **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the Rutherford `1/T²` spectrum; the continuous ionisation term is restricted accordingly (ionisation straggling — the dominant fluctuation below ~100 GeV)
 - Multiple scattering: Highland (1975) per step; muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
 - **Per-muon adaptive stepping**: every muon gets `dx ≈ 20 g/cm²` regardless of zenith angle

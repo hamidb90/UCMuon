@@ -34,8 +34,11 @@ contains
   ! Base seed for one run.
   !
   ! If the environment variable UCMUON_SEED holds an integer, it is used
-  ! verbatim, which makes a run exactly reproducible (needed by the validation
-  ! suite, and by any paper that wants to quote its seed).  Otherwise a seed is
+  ! verbatim, which makes a single-thread run (OMP_NUM_THREADS=1) exactly
+  ! reproducible (needed by the validation suite, and by any paper that wants
+  ! to quote its seed).  With several threads each stream is still fixed, but
+  ! which thread supplies the last accepted muons depends on scheduling.
+  ! Otherwise a seed is
   ! derived from the wall clock at millisecond resolution and mixed with the
   ! process id, so that jobs launched at the same instant (SLURM arrays,
   ! repeated GUI runs) still get distinct streams.

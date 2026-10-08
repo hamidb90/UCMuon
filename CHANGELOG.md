@@ -1,5 +1,42 @@
 # Changelog
 
+## [Unreleased]
+
+Found by a line-by-line review of the paper against the code (2026-10-08).
+
+### Fixed
+- **Bethe-Bloch, Python driver, ice:** the radiation length was 33.10 g/cm²;
+  it is 36.08 g/cm², as water, the Fortran engine and UCMuon-MC use (PDG).
+  This changes mainly the multiple-scattering angles and lateral displacements
+  of Bethe-Bloch runs in ice with multiple scattering on (θ₀ 4 to 5 % smaller).
+- An autosave file holding valid JSON that is not an object (a list, say)
+  crashed the GUI on start; it is now ignored.
+- Config tab: the survival fraction is a caption under "Survived", no longer a
+  green up arrow (the same fix as for the rate in 1.3.2).
+
+### Benchmark data
+- `benchmark/results/benchmark_summary_v2.csv` is rebuilt from the v3 engine
+  outputs that the paper's tables use, by the new
+  `benchmark/analysis/regen_summary_v2.py`. It was a June 2026 copy with only
+  the UCMuon rows patched by hand: the BB mean exit energy at 200 m was 135.18
+  GeV (v3: 128.50, as in the paper) and the UCMuon rows were not the v3 run
+  (survival at 200 m 16.369 %, v3 16.392 %). Geant4, PHITS, MUSIC and PROPOSAL
+  are unchanged; nothing the README quotes changes.
+
+### Documentation
+- README and the UCMuon-MC driver docstrings: hard radiative events are
+  sampled per process for bremsstrahlung and photonuclear interactions only;
+  pair production stays in the continuous term (as the code has done since
+  June 2026). They described pair production as sampled too.
+- `src/generator/rng_parallel.f90`: a fixed `UCMUON_SEED` reproduces a run
+  exactly with one OpenMP thread only (the comment said any run).
+- `benchmark/codes/geant4/README.md` and `benchmark/reports/BENCHMARK_FEEDBACK.md`:
+  the Geant4 reference uses `FTFP_BERT` with its default electromagnetic
+  physics, not `G4EmStandardPhysics_option4` (`MuonRock.cc` replaces nothing).
+
+### Tests
+- Two regression tests (`tests/gui/test_fixes_v133.py`), each failing on 1.3.2.
+
 ## [1.3.2] — 2026-10-08
 
 A first run with the GUI's defaults now gives a meaningful result. No physics

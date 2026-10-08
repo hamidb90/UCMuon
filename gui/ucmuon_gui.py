@@ -242,7 +242,9 @@ def load_settings():
       - Missing file  → silent no-op
       - Empty file    → warns user, renames to .corrupt, starts fresh
       - Invalid JSON  → warns user, renames to .corrupt, starts fresh
-      - Wrong schema  → silently ignores (incompatible old format)
+      - Valid JSON that is not an object → ignored (up to 1.3.2 it crashed
+        the app on start); the schema stamp (_ucmuon_schema_version) is
+        written but not checked
     """
     # Once per session: afterwards ui_state keeps the values of hidden widgets,
     # and reading the file again would bring back keys removed on purpose
@@ -283,6 +285,8 @@ def load_settings():
         return
     except Exception:
         return  # other IO error — silent
+    if not isinstance(data, dict):
+        return
 
     for k, v in data.items():
         if k not in st.session_state:   # only set if widget hasn't claimed it yet
@@ -7000,7 +7004,10 @@ if _ADV:            # Basic shows Generator, Transport and Results only
             if st.session_state.get("music_nmuons_survived"):
                 _ntr = st.session_state.get("music_nmuons_transported", 1)
                 _ns  = st.session_state["music_nmuons_survived"]
-                st.metric("Survived",    f"{_ns:,}", delta=f"{100*_ns/max(_ntr,1):.1f}%")
+                # The fraction as a caption: as a delta it was a green "up"
+                # arrow, as if it were a change (up to 1.3.2).
+                st.metric("Survived",    f"{_ns:,}")
+                st.caption(f"{100*_ns/max(_ntr,1):.1f}% of the transported muons")
             st.divider()
             # "settings" is what Restore reads back; "summary" is for reading.
             config_str = json.dumps({"settings": _settings_snapshot(), "summary": cfg_display},

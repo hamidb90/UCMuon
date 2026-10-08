@@ -7,18 +7,21 @@ Physics model (v2 — table-anchored stochastic decomposition)
 ─────────────────────────────────────────────────────────────
 Total energy loss per step dx [g/cm²]:
 
-    dE = a_res(E) × dx  +  ΔE_δ  +  v_cut × L_rad(E) × dx  +  ΔE_hard
+    dE = a_res(E) × dx  +  ΔE_δ  +  soft(E) × dx  +  ΔE_hard
 
   a_res    : restricted ionisation = a_ion(E) − k_δ·ln(T_max/T_cut)
   ΔE_δ     : δ-rays (knock-on electrons), Poisson-sampled above T_cut=10 MeV
              from the Rutherford 1/T² close-collision spectrum
-  L_rad(E) : L_brems(E) + L_pair(E) + L_photonuc(E)  — per-process mean
-             radiative losses from the PDG 2024 evaluated table for
-             Standard Rock (embedded; pdg.lbl.gov muE table)
-  ΔE_hard  : catastrophic radiative events, Poisson-sampled above v_cut
-             per process: brems φ(v)∝(1−v)/v, pair φ(v)∝1/v³,
-             photonuclear φ(v)∝1/v, each with rate
-             λ_i = (1−v_cut)·L_i(E)/(E_tot·<v>_i)
+  L_b, L_p, L_n : per-process mean radiative losses (bremsstrahlung, pair,
+             photonuclear) from the PDG 2024 evaluated table for Standard
+             Rock (embedded; pdg.lbl.gov muE table)
+  soft(E)  : (2v_cut − v_cut²)·L_b + v_cut·L_n + L_p  (hard_spectrum='proc');
+             pair production stays continuous, its loss being spread over
+             many small transfers (φ ∝ 1/v³)
+  ΔE_hard  : catastrophic bremsstrahlung and photonuclear events,
+             Poisson-sampled above v_cut per process: brems φ(v)∝(1−v)/v at
+             λ_b = (1−v_cut)²·L_b/(E_tot·<v>_b), photonuclear φ(v)∝1/v at
+             λ_n = (1−v_cut)·L_n/(E_tot·<v>_n)
 
   Conservation: every stochastic term subtracts its own mean from the
   continuous part, so <dE/dx> equals the evaluated PDG table EXACTLY at
@@ -924,11 +927,13 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
 
         dE = a_res(E)·dx                       restricted ionisation
            + ΔE_δ                              δ-rays  (Poisson, T > 10 MeV)
-           + v_cut·L_rad(E)·dx                 soft radiative (deterministic)
+           + soft(E)·dx                        soft radiative (deterministic)
            + ΔE_hard                           catastrophic events (Poisson)
 
-    with L_rad = L_brems + L_pair + L_nucl from the table; hard events are
-    sampled per process with shape-specific spectra (hard_spectrum='proc').
+    with, for hard_spectrum='proc', soft = (2v_cut − v_cut²)·L_brems
+    + v_cut·L_nucl + L_pair and hard bremsstrahlung and photonuclear events
+    sampled per process with shape-specific spectra (pair production is
+    continuous); for the legacy single-shape spectra, soft = v_cut·L_rad.
 
     Parameters
     ----------
@@ -944,8 +949,9 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     progress_cb  : callable(n_transported, n_survived, n_total)
     range_table  : retained for CLI compatibility; since v2 the loss model is
                    always anchored to the PDG 2024 per-process table
-    hard_spectrum: 'proc' (per-process: brems (1-v)/v, pair 1/v³, nucl 1/v;
-                   recommended), 'bh' (single (1-v)/v), 'groom' (single 1/v)
+    hard_spectrum: 'proc' (per-process: brems (1-v)/v, nucl 1/v, pair
+                   continuous; recommended), 'bh' (single (1-v)/v),
+                   'groom' (single 1/v)
     delta_rays   : explicit δ-ray sampling above T_CUT_DELTA with restricted
                    continuous ionisation (ionisation straggling)
 
@@ -1099,7 +1105,8 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
         # 3. Hard radiative (Poisson-sampled, v > v_cut)
         dE_hard = np.zeros(len(idx))
         if hard_spectrum == 'proc':
-            # Per-process sampling: brems (1-v)/v, pair 1/v³, photonuclear 1/v
+            # Per-process sampling: brems (1-v)/v, photonuclear 1/v (pair
+            # production is in the continuous term above)
             for L_proc, key, hf in ((Lb, "brems", (1.0-v_cut)**2), (Ln, "nucl", (1.0-v_cut))):
                 pv, pcdf, pvm = _shp[key]
                 lam_i = hf * L_proc / (E_tot * pvm)  # events/(g/cm²)
