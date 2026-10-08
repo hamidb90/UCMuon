@@ -1,6 +1,6 @@
 # Changelog
 
-## [1.3.1] — 2026-10-07
+## [1.3.1] — 2026-10-08
 
 Two GUI Results-tab bugs were found after 1.3.0, while re-measuring the paper's
 examples and taking its GUI figure. A full audit followed (every number and
