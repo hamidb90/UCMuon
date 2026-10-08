@@ -13,7 +13,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 - **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Gaisser 1990, Reyna 2006, cosmic electrons; see [Surface spectra](#surface-spectra-validity-and-absolute-normalisation)), three source geometries, OpenMP and MPI parallelism
 - **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, PUMAS (backward/forward MC), Backward MC, UCMuon Terrain (DEM ray-tracing)
-- **Streamlit GUI** — interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
+- **Streamlit GUI** — a Basic mode (three tabs, the essential inputs, the rest derived) and an Advanced mode (every setting), interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
 - **HPC workflow** — MPI+OMP Fortran executables, SLURM scripts, automatic PHITS conversion
 - **Transmission maps** — terrain engine outputs `T_sim = Φ_rock / Φ_sky` per direction; run at multiple densities to build a T_sim library for inversion
 - **Density analysis** — pixel-wise density inversion by three methods: forward-model T_sim library fitting, plus analytical opacity inversion (column + mean density) from a single open-sky and target measurement; double-ratio maps, chi-squared landscape, uncertainty propagation (GUI tab 🔬 Density)
@@ -21,7 +21,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v1.3.1)
+## Status & scope (v1.3.2)
 
 The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
@@ -75,7 +75,7 @@ bash setup.sh          # installs Python packages, builds Fortran binaries, chec
 bash run_gui.sh        # opens http://localhost:8501
 ```
 
-`setup.sh` auto-detects available source files and only builds what is present. Engines 1 (UCMuon-MC) and 5 (pure Python) work immediately without any Fortran compiler.
+`setup.sh` auto-detects available source files and only builds what is present. The surface generator needs gfortran; without it only the pure-Python engines (1 UCMuon-MC, 5 Backward MC) and Advanced mode's guaranteed-hit generator work.
 
 ---
 
@@ -104,7 +104,7 @@ bash run_gui.sh        # opens http://localhost:8501
 
 ### Windows
 
-Engines 1 (**UCMuon-MC**) and 5 (Backward MC) are pure Python and work immediately. Engines 2 and 3 require a Fortran compiler via MSYS2. Engine 4 (PROPOSAL) is not supported on Windows.
+Engines 1 (**UCMuon-MC**) and 5 (Backward MC) are pure Python and work immediately. The surface generator and Engines 2 and 3 need a Fortran compiler via MSYS2 (the installer offers to install it). Engine 4 (PROPOSAL) is not supported on Windows.
 
 ```powershell
 # 1. Install Python 3.11+ from https://www.python.org/downloads/
@@ -122,7 +122,7 @@ powershell -ExecutionPolicy Bypass -File install.ps1
 run_gui.bat            # double-click, or run from a terminal
 ```
 
-**To enable Engines 2 and 3 (Fortran) on Windows:**
+**To enable the surface generator and Engines 2 and 3 (Fortran) on Windows by hand:**
 
 1. Install [MSYS2](https://www.msys2.org/) (accept default path `C:\msys64`)
 2. Open **MSYS2 UCRT64** from the Start menu and run:
@@ -164,6 +164,22 @@ bash test_run/run_test.sh
 ```
 
 Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) on a seeded 2000-muon configuration in a few seconds and grades the result against the reference output committed in `test_run/expected/`: 574 of 2000 muons survive 25 m of Standard Rock (28.70 %), with a mean exit kinetic energy of 13.562 GeV. Grading is numerical, since a different compiler can move the last bits of a double without anything being wrong; byte identity is reported as well when it holds. The transport stage is pure Python, so without a Fortran compiler the script falls back to the committed surface file and still checks stage 2.
+
+---
+
+## Your first simulation (Basic mode)
+
+`bash run_gui.sh` (Windows: `run_gui.bat`) opens the GUI at http://localhost:8501. It starts in **Basic mode**: three tabs, Generator, Transport and Results, with the essential inputs only. Everything else (safety margin, source size, overburden) is derived from them and shown. The **Advanced mode** toggle next to the title shows every setting and adds the Terrain, Density and Config tabs; switching back and forth keeps your values.
+
+A first run with the defaults: a vertical cylinder of 0.5 m radius and 1 m height whose top face is 30 m deep in Standard Rock.
+
+1. **🌌 Generator.** Guan 2015 spectrum over 1 to 2500 GeV (its validated range), angular mode ⑥ (momentum and zenith drawn jointly from the flux, recommended) up to θ = 85°, and the detector above. From the detector the tab derives a 126 cm safety margin (2σ of multiple scattering at that depth) and a source disk of radius 380 m. Click **Run UCMuon Surface Generator**: 10 000 detector hits take about 3 minutes on 4 threads.
+2. **🪨 Transport.** The input is the generator's output, the engine UCMuon-MC, the material Standard Rock (ρ = 2.65 g/cm³), and the overburden (30 m) comes from the detector. Click **Run UCMuon-MC Transport**: a few seconds. About 6 % of the muons survive.
+3. **📊 Results.** The number of muons that end in the detector and their rate with its statistical error (two runs gave 40 and 65 muons, 8.1 ± 1.3 and 12.8 ± 1.6 per second: so few muons carry a large error), the live time the run represents (T = N_tried / R, about 5 s), energy and angle distributions, the θ-φ acceptance map, survival compared with the CSDA expectation along each muon's slant path, and 3D tracks.
+
+Why 10 000 hits give only a few tens of muons in the detector: the generator keeps every muon aimed at the detector enlarged by the safety margin, so that muons scattered into it by the rock are not lost. Most of them stop in the rock or are scattered away, and Results counts only those that end in the detector. More hits give more statistics: the run time grows in proportion.
+
+For your own case, change the detector (position, depth, size, cylinder or box), the spectrum or the material, or switch the detector off and give the source size and the depth. Every input has a **?** help. The full list of what Basic and Advanced show is under [GUI tabs](#gui-tabs).
 
 ---
 
@@ -255,7 +271,7 @@ UCMuon/
 ├── ucmugen/                      single-file C++17 generator for Geant4 (UCMuGen.h, examples, validation)
 ├── test_run/                     comprehensive test run: inputs, reference output, run_test.sh
 ├── bin/                          compiled binaries (built by make; git-ignored)
-├── data/                         physics tables (PARMA, MUSIC tables, …)
+├── data/                         physics tables (PARMA/EXPACS; the MUSIC tables, not redistributed, go here)
 ├── docs/                         MUSIC_FILES.md, ENGINE6_USAGE_GUIDE.md
 ├── hpc/                          SLURM scripts + annotated input templates
 ├── output/                       simulation outputs (regenerable; git-ignored)
@@ -296,7 +312,7 @@ Object files and `.mod` files go into `build/` — the project root stays clean.
 
 ## Transport engines
 
-Seven engines are available in Tab 2 (🪨 **Transport**):
+Seven engines: ① to ⑤ and ⑦ in the 🪨 **Transport** tab (Basic mode leaves out ⑤, which needs no muon file), ⑥ in its own 🗺 **Terrain** tab (Advanced mode):
 
 | # | Name | Physics | Requirements | When to use |
 |---|---|---|---|---|
@@ -612,14 +628,14 @@ and the depth.
 switching back and forth keeps the Advanced values. A fresh install opens in
 Basic.
 
-| Tab | Content |
-|---|---|
-| 🌌 **Generator** | Surface muon generation — spectrum, geometry, detector filter, live OMP progress |
-| 🪨 **Transport** | Seven engines with engine-specific controls and live progress |
-| 🗺️ **Terrain** | UCMuon Terrain: DEM upload, overburden maps, flux polar plots, transmission map output |
-| 🔬 **Density** | Density inversion: (1) T_sim library fit; (2) direct opacity inversion; (3) two-flux-map ratio |
-| 📊 **Results** | Energy/angle distributions, survival rate, 3D trajectories, rate estimation |
-| ⚙️ **Config** | Session autosave/restore, quick stats, CSV export |
+| Tab | Shown in | Content |
+|---|---|---|
+| 🌌 **Generator** | Basic, Advanced | Surface muon generation: spectrum, geometry, detector filter, live OMP progress |
+| 🪨 **Transport** | Basic, Advanced | Engines ① to ⑤ and ⑦ (Basic: without ⑤) with engine-specific controls and live progress |
+| 🗺 **Terrain** | Advanced | Engine ⑥ UCMuon Terrain: DEM, overburden maps, flux polar plots, transmission map output |
+| 📊 **Results** | Basic, Advanced | Rate and live time, energy/angle distributions, survival vs depth, 3D trajectories |
+| 🔬 **Density** | Advanced | Density inversion: (1) T_sim library fit; (2) direct opacity inversion; (3) two-flux-map ratio |
+| 📋 **Config** | Advanced | Session autosave/restore, quick stats, CSV export |
 
 ---
 

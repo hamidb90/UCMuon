@@ -33,6 +33,14 @@ def test_detector_round_trip(shape, kw):
     assert BM.bottom_depth_m(d) == pytest.approx(26.5)
 
 
+def test_a_face_at_the_ground_is_zero_not_minus_zero():
+    """A top face at z = 0 printed as "-0 m" (1.3.1)."""
+    d = {"shape": 1, "ax": 0.0, "ay": 0.0, "az": -9000.0,         # 1.3.1's default
+         "bx": 0.0, "by": 0.0, "bz": 0.0, "r": 5.0}
+    assert math.copysign(1.0, BM.top_depth_m(d)) == 1.0
+    assert f"{BM.top_depth_m(d):g}" == "0"
+
+
 def test_tilted_cylinder_is_not_basic():
     d = BM.detector_from_basic(1, 0.0, 0.0, 10.0, 2.0, radius_m=1.0)
     d["bx"] += 50.0

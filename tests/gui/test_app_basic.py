@@ -28,6 +28,20 @@ def test_fresh_install_starts_in_basic(new_app, repo_copy):
     assert len(top_tab(at, "Results").markdown) + len(top_tab(at, "Results").info) > 0
 
 
+def test_fresh_install_detector_is_underground(new_app):
+    """Up to 1.3.1 the default detector was a 90 m tall, 5 cm column reaching
+    up to the ground: Basic's first run took 100 000 hits (13 min) and then
+    transported through no rock. Now its top face is 30 m deep, 10 000 hits."""
+    at = new_app()
+    assert not exceptions(at)
+    assert (widget(at, "number_input", "bd_top").value,
+            widget(at, "number_input", "bd_height").value,
+            widget(at, "number_input", "bd_radius").value) == (30.0, 1.0, 0.5)
+    assert widget(at, "number_input", "nmuonsgen").value == 10_000
+    card = {m.label: m.value for m in top_tab(at, "Generator").metric}
+    assert (card["Safety margin"], card["Source"]) == ("126 cm", "R = 380 m")
+
+
 def test_fresh_install_advanced_renders(new_app):
     at = new_app(mode="Advanced")
     assert not exceptions(at)

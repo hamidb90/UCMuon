@@ -51,13 +51,13 @@ def recommended(spectrum):
 def top_depth_m(det):
     """Depth of the detector's top face below z = 0, in m (>= 0 above ground)."""
     z = max(det["az"], det["bz"]) if det["shape"] == 1 else max(det["zmin"], det["zmax"])
-    return -float(z) / 100.0
+    return 0.0 - float(z) / 100.0          # 0.0 - : a face at z = 0 is 0 m, not -0 m
 
 
 def bottom_depth_m(det):
     """Depth of the detector's deepest point below z = 0, in m."""
     z = min(det["az"], det["bz"]) if det["shape"] == 1 else min(det["zmin"], det["zmax"])
-    return -float(z) / 100.0
+    return 0.0 - float(z) / 100.0
 
 
 def detector_from_basic(shape, cx_m, cy_m, top_m, height_m, radius_m=1.0,

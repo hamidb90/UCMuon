@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.3.1"          # app version — keep in sync with CITATION.cff
+__version__ = "1.3.2"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -2670,10 +2670,13 @@ def _warn_source_reach(det, theta_max_deg, **src):
 
 # ── Basic mode: the detector ─────────────────────────────────────────────────
 # Defaults of the per-detector widgets (Generator tab), used when a key has
-# never been rendered.
-_DET_DEFAULTS = {"sh": 1, "ax": 0.0, "ay": 0.0, "az": -9000.0, "bx": 0.0, "by": 0.0,
-                 "bz": 0.0, "rr": 5.0, "xn": -100.0, "yn": -100.0, "zn": -9000.0,
-                 "xx": 100.0, "yx": 100.0, "zx": 0.0}
+# never been rendered: a 1 m tall detector of 0.5 m radius (box: 1 m x 1 m)
+# whose top face is 30 m deep, so a first run with the defaults transports
+# through rock and takes a few minutes (up to 1.3.1: a 90 m tall, 5 cm column
+# reaching up to the ground, i.e. no overburden in Basic).
+_DET_DEFAULTS = {"sh": 1, "ax": 0.0, "ay": 0.0, "az": -3100.0, "bx": 0.0, "by": 0.0,
+                 "bz": -3000.0, "rr": 50.0, "xn": -50.0, "yn": -50.0, "zn": -3100.0,
+                 "xx": 50.0, "yx": 50.0, "zx": -3000.0}
 
 
 def _session_detectors():
@@ -3404,23 +3407,23 @@ with tab_gen:
                                 st.markdown("**Bottom A**")
                                 d["ax"] = st.number_input("Ax [cm]", value=0.0,     key=f"ax{i}")
                                 d["ay"] = st.number_input("Ay [cm]", value=0.0,     key=f"ay{i}")
-                                d["az"] = st.number_input("Az [cm]", value=-9000.0, key=f"az{i}")
+                                d["az"] = st.number_input("Az [cm]", value=-3100.0, key=f"az{i}")
                             with _dc2:
                                 st.markdown("**Top B**")
                                 d["bx"] = st.number_input("Bx [cm]", value=0.0, key=f"bx{i}")
                                 d["by"] = st.number_input("By [cm]", value=0.0, key=f"by{i}")
-                                d["bz"] = st.number_input("Bz [cm]", value=0.0, key=f"bz{i}")
-                            d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 5.0, key=f"rr{i}")
+                                d["bz"] = st.number_input("Bz [cm]", value=-3000.0, key=f"bz{i}")
+                            d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 50.0, key=f"rr{i}")
                         else:
                             _dc1, _dc2 = st.columns(2)
                             with _dc1:
-                                d["xmin"] = st.number_input("Xmin [cm]", value=-100.0,  key=f"xn{i}")
-                                d["ymin"] = st.number_input("Ymin [cm]", value=-100.0,  key=f"yn{i}")
-                                d["zmin"] = st.number_input("Zmin [cm]", value=-9000.0, key=f"zn{i}")
+                                d["xmin"] = st.number_input("Xmin [cm]", value=-50.0,   key=f"xn{i}")
+                                d["ymin"] = st.number_input("Ymin [cm]", value=-50.0,   key=f"yn{i}")
+                                d["zmin"] = st.number_input("Zmin [cm]", value=-3100.0, key=f"zn{i}")
                             with _dc2:
-                                d["xmax"] = st.number_input("Xmax [cm]", value=100.0, key=f"xx{i}")
-                                d["ymax"] = st.number_input("Ymax [cm]", value=100.0, key=f"yx{i}")
-                                d["zmax"] = st.number_input("Zmax [cm]", value=0.0,   key=f"zx{i}")
+                                d["xmax"] = st.number_input("Xmax [cm]", value=50.0,  key=f"xx{i}")
+                                d["ymax"] = st.number_input("Ymax [cm]", value=50.0,  key=f"yx{i}")
+                                d["zmax"] = st.number_input("Zmax [cm]", value=-3000.0, key=f"zx{i}")
                         detectors.append(d)
             use_detector = True
         else:
@@ -3591,7 +3594,7 @@ with tab_gen:
             nmuons_gen = int(_samp_c1.number_input(
                 ("Detector hits to generate"
                  if not _ADV and st.session_state.get("bd_use_detector", True)
-                 else "Muons to generate"), min_value=100, max_value=None, value=100_000, step=1_000,
+                 else "Muons to generate"), min_value=100, max_value=None, value=10_000, step=1_000,
                 key="nmuonsgen",
                 help=("**Detector filter ON:** this many *accepted* muons (hits); "
                       "total tried = N / acceptance.\n\n"
@@ -3728,23 +3731,23 @@ with tab_gen:
                                     st.markdown("**Bottom A**")
                                     d["ax"] = st.number_input("Ax [cm]", value=0.0,     key=f"ax{i}")
                                     d["ay"] = st.number_input("Ay [cm]", value=0.0,     key=f"ay{i}")
-                                    d["az"] = st.number_input("Az [cm]", value=-9000.0, key=f"az{i}")
+                                    d["az"] = st.number_input("Az [cm]", value=-3100.0, key=f"az{i}")
                                 with _dc2:
                                     st.markdown("**Top B**")
                                     d["bx"] = st.number_input("Bx [cm]", value=0.0, key=f"bx{i}")
                                     d["by"] = st.number_input("By [cm]", value=0.0, key=f"by{i}")
-                                    d["bz"] = st.number_input("Bz [cm]", value=0.0, key=f"bz{i}")
-                                d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 5.0, key=f"rr{i}")
+                                    d["bz"] = st.number_input("Bz [cm]", value=-3000.0, key=f"bz{i}")
+                                d["r"] = st.number_input("Radius [cm]", 0.1, 1e4, 50.0, key=f"rr{i}")
                             else:
                                 _dc1, _dc2 = st.columns(2)
                                 with _dc1:
-                                    d["xmin"] = st.number_input("Xmin [cm]", value=-100.0,  key=f"xn{i}")
-                                    d["ymin"] = st.number_input("Ymin [cm]", value=-100.0,  key=f"yn{i}")
-                                    d["zmin"] = st.number_input("Zmin [cm]", value=-9000.0, key=f"zn{i}")
+                                    d["xmin"] = st.number_input("Xmin [cm]", value=-50.0,   key=f"xn{i}")
+                                    d["ymin"] = st.number_input("Ymin [cm]", value=-50.0,   key=f"yn{i}")
+                                    d["zmin"] = st.number_input("Zmin [cm]", value=-3100.0, key=f"zn{i}")
                                 with _dc2:
-                                    d["xmax"] = st.number_input("Xmax [cm]", value=100.0, key=f"xx{i}")
-                                    d["ymax"] = st.number_input("Ymax [cm]", value=100.0, key=f"yx{i}")
-                                    d["zmax"] = st.number_input("Zmax [cm]", value=0.0,   key=f"zx{i}")
+                                    d["xmax"] = st.number_input("Xmax [cm]", value=50.0,  key=f"xx{i}")
+                                    d["ymax"] = st.number_input("Ymax [cm]", value=50.0,  key=f"yx{i}")
+                                    d["zmax"] = st.number_input("Zmax [cm]", value=-3000.0, key=f"zx{i}")
                             detectors.append(d)
                             _warn_margin(d, e_min, theta_max, locals().get("src_w_m", 0.0))
                             _warn_source_reach(
@@ -4900,7 +4903,7 @@ with tab_music:
         "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":          "③ UCMuon CSDA — Bethe-Bloch + MS (OMP)",
         "PROPOSAL":                                                           "④ PROPOSAL — full stochastic MC",
         "Backward MC Flux Integrator":                                        "⑤ Backward MC flux integrator",
-        "PUMAS":                                                              "⑥ PUMAS — backward MC + forward (C)",
+        "PUMAS":                                                              "⑦ PUMAS — backward MC + forward (C)",
     }
 
     # Basic offers the transport engines only: the Backward MC flux integrator
@@ -4917,9 +4920,9 @@ with tab_music:
         "**③ Bethe-Bloch**: Analytical a+bE loss + Highland MS. OMP-parallel. No external files.\n\n"
         "**④ PROPOSAL**: Full stochastic MC (IceCube/KM3NeT). Requires `pip install proposal`.\n\n"
         "**⑤ Backward MC**: Flux integrator — no muon file needed.\n\n"
-        "**⑥ PUMAS**: True backward MC (Niess 2017). "
+        "**⑦ PUMAS**: True backward MC (Niess 2017). "
         "Forward or backward mode. No muon file needed in backward mode. Run `make pumas`.\n\n"
-        "📌 For real terrain (volcano, glacier): use the **Terrain** tab (Advanced mode)."
+        "📌 ⑥ UCMuon Terrain, for real terrain (volcano, glacier), is the **Terrain** tab (Advanced mode)."
     )
     _eng1, _eng2 = st.columns([2, 3])
     with _eng1:
@@ -5053,7 +5056,7 @@ with tab_music:
     | ③ | **UCMuon CSDA** | Bethe-Bloch $a+bE$ + Highland MS | Fastest; OMP; no files | No Landau fluctuations → overestimates survival by ~5–20% |
     | ④ | **PROPOSAL** | Full stochastic MC (Koehne/Alameddine 2013/2024) | Landau; LPM; 3D MS; independent check | Requires `pip install proposal`; first run ~60 s |
     | ⑤ | **Backward MC** | Flux integrator (CSDA + stochastic) | No muon file needed; gives flux at depth | No individual muon tracking |
-    | ⑥ | **PUMAS** | True backward MC (Niess 2017) | No muon file in backward mode; 100% efficiency; CSDA/mixed/straggled | Requires `make pumas`; C binary |
+    | ⑦ | **PUMAS** | True backward MC (Niess 2017) | No muon file in backward mode; 100% efficiency; CSDA/mixed/straggled | Requires `make pumas`; C binary |
 
     **Survival fraction ordering** (same input, same geometry):
 

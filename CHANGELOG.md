@@ -1,5 +1,33 @@
 # Changelog
 
+## [1.3.2] — 2026-10-08
+
+A first run with the GUI's defaults now gives a meaningful result. No physics
+or numerical result changes.
+
+### Fixed
+- **Default detector.** It was a 90 m tall column of 5 cm radius reaching up to
+  the ground. In Basic mode, where the overburden is the depth of the
+  detector's top face, a first run with the defaults transported through no
+  rock (the Transport tab said so) after generating 100 000 hits for about
+  13 minutes. The default is now a vertical cylinder of 0.5 m radius and 1 m
+  height (box: 1 m x 1 m x 1 m) whose top face is 30 m deep, and the generator
+  asks for 10 000 muons: a first run takes about 3 minutes on 4 threads.
+  Saved sessions keep their own detector.
+- A detector face at the ground printed as "-0 m".
+- The Transport tab numbers PUMAS ⑦, as the README and the documentation do
+  (⑥ is UCMuon Terrain, in its own tab).
+
+### Documentation
+- README: a "Your first simulation (Basic mode)" walkthrough after the
+  installation, with the times and numbers of a measured run; which tabs each
+  mode shows; the engine count per tab; that the surface generator needs
+  gfortran; `data/` does not ship the MUSIC tables.
+
+### Tests
+- Two GUI regression tests (fresh-install detector underground with 10 000
+  hits; no "-0"), each failing on 1.3.1.
+
 ## [1.3.1] — 2026-10-08
 
 Two GUI Results-tab bugs were found after 1.3.0, while re-measuring the paper's
