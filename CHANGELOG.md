@@ -1,5 +1,143 @@
 # Changelog
 
+## [1.3.1] — 2026-10-07
+
+Two GUI Results-tab bugs were found after 1.3.0, while re-measuring the paper's
+examples and taking its GUI figure. A full audit followed (every number and
+plot of the Results, Transport, Generator, Terrain and Density tabs recomputed
+independently; every engine's input and output; the command-line, HPC and
+documentation paths), and everything it found is fixed here.
+
+### ⚠ Changes results
+- **Rate at depth of the detector-hit file.** After transport, the
+  underground detector filter tested each muon against the detector inflated
+  by the generator's safety margin, so the detector-hit file, and the rate at
+  depth that the Results tab gives it since 1.3.0, were those of the inflated
+  volume. The margin belongs to the generator's straight-line cut (it keeps
+  the muons that multiple scattering moves into the detector); underground,
+  the real detector decides. Measured on a 10 cm × 50 cm cylinder with its top
+  face 90 m deep and a 2.3 m margin (Guan, angular mode 6, MUSIC,
+  4 × 10⁵ generated hits): 810 ± 3 muons/min before, 4.5 ± 0.2 muons/min now.
+  Rerun the transport for detector-hit files made with 1.3.0 or earlier; the
+  underground file itself is unchanged.
+- **Fast flux estimator range table** (GUI fast-estimator panels, Density
+  tab Methods 2 and 3, the margin helper): the CSDA ranges from 140 GeV on did
+  not match Groom (2001) Table IV-6 (1 % long at 140 GeV rising to 11 % at
+  1 TeV), and the table ended at 1 TeV, beyond which the flux was 0. Now the
+  Groom values to 2 TeV (as the GUI's own table and the backward MC), then
+  dE/dX = a + bE. The slab flux under 200 / 500 / 800 m of rock drops by
+  about 4 / 12 / 20 %; Method 2 on the shipped library (ρ = 2.00) moved from
+  ρ̂ = 2.115 to 2.049 (median; usable pixels 535 to 642). Below 100 GeV (≈ 150 m of rock) nothing changes.
+- **Terrain tab, per-muon direction**: muons were binned by their direction of
+  travel instead of their arrival direction, so each crossed the rock on the
+  opposite side of the sky. Per-bin transmissions were right on average
+  (every spectrum is uniform in azimuth); the per-muon alive flags in the
+  terrain output, and anything using survivor directions, were mirrored.
+- **Results, legacy angular modes (1-5)**: the mean energy, the survival
+  fraction and the charge ratio were unweighted while the rate was weighted
+  (Guan mode 2 at the surface: mean E 6.2 GeV shown, 8.3 weighted).
+- **Results, survival vs depth**: the CSDA curve used the vertical opacity
+  for every muon; it now uses each muon's slant path (all-sky, 20 m: 17.7 %
+  before, 11.9 % now, equal to Bethe-Bloch's Monte Carlo).
+- **Exposure panel**: R came from a separate flux-model selector (default
+  Reyna) whatever the generator's spectrum (−15 % for a Guan run); it now
+  uses the generator's spectrum (1, 4-7), the last run's printed R for PARMA,
+  and the selector only for spectra 2 and 8.
+- **PUMAS** (Engine 7): the backward flux spectrum dΦ/dE was Φ·E·ln(Emax/Emin)
+  (each bin averaged its events' Φ/pdf instead of summing them over N·ΔE); the
+  backward-event metrics (mean energies, μ⁺/μ⁻) were unweighted sampler
+  statistics. Forward mode aborted on ordinary generator files ("bad norm for
+  state direction": directions from 6-decimal momenta were not normalised),
+  and read the detector mask of a 13-column hits file as its hit flag,
+  dropping the hits of detectors 2, 3, ...
+- **Bethe-Bloch, Python driver**: the Highland momentum treated the kinetic
+  energy as total: NaN directions below 105.7 MeV (written alive), too much
+  scattering above (about ×2 at 200 MeV). Survival and exit energies do not
+  depend on it (unchanged, checked event by event).
+- **Bethe-Bloch, MPI binary, custom material**: the radiation length was half
+  Tsai's ((11.319 − ln Z) instead of ln(287/√Z)), so multiple scattering was
+  √2 too large.
+- **Geant4 and PHITS exports from the GUI**: cosmic e± (spectrum 8) were
+  written as muons (PDG ±13, muon mass); and with the detector filter on and
+  Save ALL off, the Geant4 export converted an all-muons file left by an
+  earlier run.
+- **Terrain tab**: Save T_sim, the 3D view and the cross-check used the
+  density field's current value instead of the run's (a T_sim file could be
+  saved under the wrong density); the flux-vs-elevation plot stayed on screen,
+  relabelled, after the azimuth or the run changed.
+- **Density tab**: library pixels that are NaN (bins of a Terrain-saved T_sim
+  file with no muons) came out "OK" with ρ̂ = NaN, and the synthetic data
+  generator crashed on them; downloads and the Methods 2-3 maps could be
+  those of the previous inversion; a "synthetic validation" banner stayed
+  after loading measured data.
+- **Backward MC panel**: the mean surface energy and survival probability
+  were averaged over the full solid angle, counting directions that do not
+  contribute as 0 (at 1000 m: P_survival 0.39 shown, 1.00 over the
+  contributing directions). The rate was right.
+- **Guaranteed-hit mode, spectrum 2** sampled p^-2.7 instead of p^-3.7.
+- **Source-size helper**: its "optimised radius" left out the depth × tan θ
+  reach (127× too few hits in one case); it now gives the required source of
+  Basic mode and the Generator's warning.
+
+### Fixed
+- Results, distributions of an underground file: the histogram of an
+  at-depth quantity (θ, φ, x, y, z, E, direction cosines) and the θ-φ
+  acceptance map included the stopped muons, which the engines write with
+  zeros there, so for a deep run nearly every row sat in the first bin. They
+  now use the survivors; the surface columns keep every row. The sea-level
+  "cos²θ·sinθ peak" line, which held for none of the files, is gone.
+- Results: the underground charge composition counts survivors; the detector
+  solid angle is that of the detector, not of the margin-inflated volume; the
+  rate of a generator detector-selection file says it is that of the inflated
+  volume; a detector-hit file keeps the survivor count and the underground
+  file it was cut from (a later transport or Terrain run overwrote them), and
+  without them shows no survival curve; live times under a minute keep three
+  digits (1.27 s, not "1 s"); the 3D title names the file kind.
+- Transport: a failed MUSIC or Fortran Bethe-Bloch run returned exit status 0
+  (now 1), and the underground filter then ran on the previous run's file (it
+  now skips a file older than the run); the depth-mismatch warning only for
+  the generator run's own output; the Iron preset says which engines use
+  rock composition at iron density; the X₀ input says which engines use it;
+  the filter caption no longer shows the margin.
+- Generator: the directional-flux and MCS-margin helpers took the total E_min
+  as kinetic (≤ 4 %); help texts (angular-mode bias, panel acceptance) and
+  rounding.
+- Terrain/Backward MC: "Underground detector", v_cut and MS are autosaved (a
+  restart turned an underground detector into a surface one); outputs name
+  the backward-MC spectrum (its numbering differs from the generator's); the
+  backward-MC panel warns below a spectrum's fitted range; labels (slant, not
+  vertical, path; nearest-pixel DEM lookup; the Density altitude factor
+  cancels in T).
+- Documentation: `hpc/` inputs (rectangle template 7 lines; X₀ in g/cm²;
+  density note; these inputs are for the MPI binaries), `hpc/README_HPC.md`
+  (paths, 13-column hits file), README and INSTALL (gfortran for the
+  generator, engine ordering, Terrain walkthrough), `docs/ENGINE6_USAGE_GUIDE.md`
+  (driver name, spectrum, typical fluxes, runtimes, GUI steps), the MURAVES
+  guide, Makefile engine numbers, converter and driver docstrings.
+- `hpc/input_params.dat` called the power-law spectrum E^-2.7; it is E^-3.7.
+- Stopped muons in the 18-column output: every engine now writes where the
+  muon stopped (x, y, z). Up to 1.3.0 MUSIC did, the Python engines
+  (UCMuon-MC, Bethe-Bloch, PROPOSAL) wrote the surface x, y with the stopping
+  depth, and PUMAS and the Fortran Bethe-Bloch range cut wrote the surface
+  point. (Their direction columns are placeholders, as before.)
+- PUMAS: live progress in the GUI (the driver held the binary's output until
+  the end).
+- Generator console: progress lines without the detector filter report the
+  same tried count as the summary; "Integrated flux" gives its units
+  (vertical, cm⁻² s⁻¹ sr⁻¹); the summary names the detector-hits file when one
+  is written; "Plane at W" for the source plane position.
+- GUI: the Terrain and Density inputs (method, file paths, download box,
+  thresholds, detector layout, ...) are autosaved, so Basic-mode reruns no
+  longer reset them; the survival-plot subtitle fits.
+
+### Tests
+- `tests/gui`: the underground filter keeps only muons that reach the real
+  detector; the 3D title; the range table against Groom; the PUMAS spectrum
+  integrates to its rate; Bethe-Bloch directions finite; Terrain arrival
+  azimuth; NaN library pixels; stopped-muon positions (Bethe-Bloch,
+  UCMuon-MC); Terrain and Density inputs surviving Basic reruns. Each fails
+  on 1.3.0.
+
 ## [1.3.0] — 2026-10-06
 
 The GUI gets a **Basic / Advanced** switch; before it, the GUI bugs found by an

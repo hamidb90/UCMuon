@@ -62,15 +62,23 @@ _GROOM_T_GEV = np.array([
     0.01, 0.014, 0.02, 0.03, 0.04, 0.08, 0.10, 0.14, 0.20, 0.30,
     0.40, 0.80, 1.00, 1.40, 2.00, 3.00, 4.00, 8.00,
     10.0, 14.0, 20.0, 30.0, 40.0, 80.0, 100.0,
-    140.0, 200.0, 300.0, 400.0, 800.0, 1000.0,
+    140.0, 200.0, 300.0, 400.0, 800.0, 1000.0, 1400.0, 2000.0,
 ])
-# Values from Groom (2001) Table 26.1 Standard Rock, divided by 100 for correct g/cm² units.
+# Groom, Mokhov & Striganov, ADNDT 78 (2001), Table IV-6, Standard Rock, in
+# g/cm²; the same values as _GROOM_R_GCM2 in ucmuon_gui.py and the backward
+# MC. Up to 1.3.0 the entries from 140 GeV on were wrong (1 % long at 140 GeV
+# rising to 11 % at 1 TeV) and the table stopped at 1 TeV.
 _GROOM_R_GCM2 = np.array([
     0.8516, 1.542, 2.866, 5.698, 9.145, 26.76, 36.96, 58.79, 93.32, 152.4,
     211.5, 441.8, 553.4, 771.2, 1088., 1599., 2095., 3998.,
     4920., 6724., 9360., 13620., 17760., 33430., 40840.,
-    55460., 76650., 107900., 136100., 225300., 272200.,
-])  # g/cm²  — Groom (2001) Table 26.1 Standard Rock (already in g/cm²)
+    54950., 74590., 104000., 130200., 212900., 245300., 299000., 361600.,
+])
+
+# Beyond the table (2 TeV, 3616 m w.e.) the range is continued with
+# dE/dX = a + b E, fitted to the slopes of its last three points:
+# a = 2.31e-3 GeV cm²/g, b = 4.28e-6 cm²/g (standard-rock values).
+_A_LOSS, _B_LOSS = 2.31e-3, 4.28e-6
 
 # Log-log interpolator: T → R
 _log_T_tab = np.log(_GROOM_T_GEV)
@@ -84,6 +92,10 @@ def _R_of_T(T_GeV: float | np.ndarray) -> float | np.ndarray:
     logT = np.log(np.clip(T, _GROOM_T_GEV[0], _GROOM_T_GEV[-1]))
     logR = np.interp(logT, _log_T_tab, _log_R_tab)
     R = np.exp(logR)
+    hi = T > _GROOM_T_GEV[-1]       # continue with dE/dX = a + bE
+    if hi.any():
+        R[hi] = _GROOM_R_GCM2[-1] + np.log((_A_LOSS + _B_LOSS * T[hi]) /
+                                           (_A_LOSS + _B_LOSS * _GROOM_T_GEV[-1])) / _B_LOSS
     return float(R[0]) if scalar else R
 
 
@@ -94,6 +106,10 @@ def _T_of_R(R_gcm2: float | np.ndarray) -> float | np.ndarray:
     logR = np.log(np.clip(R, _GROOM_R_GCM2[0], _GROOM_R_GCM2[-1]))
     logT = np.interp(logR, _log_R_tab, _log_T_tab)
     T = np.exp(logT)
+    hi = R > _GROOM_R_GCM2[-1]      # continue with dE/dX = a + bE
+    if hi.any():
+        e0 = _GROOM_T_GEV[-1] + _A_LOSS / _B_LOSS
+        T[hi] = e0 * np.exp(_B_LOSS * (R[hi] - _GROOM_R_GCM2[-1])) - _A_LOSS / _B_LOSS
     return float(T[0]) if scalar else T
 
 
@@ -368,12 +384,10 @@ _T_GRID = np.logspace(np.log10(0.5), np.log10(1.5e4), 600)  # 0.5 GeV → 15 TeV
 def emin_from_opacity(opacity_gcm2: float) -> float | None:
     """
     Minimum muon kinetic energy [GeV] to traverse opacity_gcm2 [g/cm²].
-    Returns None if opacity exceeds the maximum tabulated CSDA range.
+    Beyond the table (3616 m w.e.) the range is continued with a + bE.
     """
     if opacity_gcm2 <= 0.0:
         return 0.0
-    if opacity_gcm2 >= _GROOM_R_GCM2[-1]:
-        return None   # above table maximum (~27,000 km.w.e.)
     return float(_T_of_R(opacity_gcm2))
 
 

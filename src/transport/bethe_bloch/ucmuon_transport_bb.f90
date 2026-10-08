@@ -127,7 +127,9 @@ program ucmuon_transport_bb
         write(*,*) ' Aeff:';       read(*,*) A_eff
         write(*,*) ' Density [g/cm3]:';   read(*,*) rho_mat
         write(*,*) ' Mean excitation energy I [eV]:'; read(*,*) I_eV
-        X0_gcm2 = 716.408d0*A_eff / (Z_eff*(Z_eff+1.d0)*(11.319d0-log(Z_eff)))
+        ! Tsai: ln(287/sqrt(Z)) (as the OpenMP version). Up to 1.3.0 this read
+        ! (11.319 - ln Z) = 2 ln(287/sqrt(Z)), half the radiation length.
+        X0_gcm2 = 716.408d0*A_eff / (Z_eff*(Z_eff+1.d0)*log(287.d0/sqrt(Z_eff)))
         b_rad   = max(3.02d-6*(Z_eff**2/A_eff)/(121.d0/22.d0), 1.d-7)
       case default
         write(*,*) ' Unknown mat_type — defaulting to Standard Rock.'

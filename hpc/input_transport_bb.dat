@@ -39,11 +39,11 @@ ucmuon_underground_bb         # output_prefix
 #     136.4                  # mean excitation energy I  [eV]
 #   Radiation length and b_rad are computed automatically from Tsai formula.
 #
-#   NOTE: rho_mat affects the slant path length (g/cm2) but NOT the stopping
-#   power table (Groom 2001 values are per g/cm2). Changing rho while keeping
-#   mat_type=1 correctly models lower/higher density rock (e.g. volcanic 1.7).
-#   To model a different density with Standard Rock elemental composition,
-#   use mat_type=5 and set Z=11, A=22, rho=1.7, I=136.4.
+#   NOTE: mat_type 1-4 use the density listed above; this MPI binary reads
+#   no density for them. To model another density with Standard Rock
+#   composition (e.g. volcanic rock at 1.7 g/cm3), use mat_type=5 with
+#   Z=11, A=22, rho=1.7, I=136.4. The density sets the slant opacity and
+#   the density-effect correction of the Bethe-Bloch stopping power.
 
 # --- [3/5]  GEOMETRY --------------------------------------------------------
 

@@ -439,7 +439,6 @@ print(f"{'='*64}")
 print(f"""
   Parameter        BB+MS        MUSIC        UCMuon Stoc.  PROPOSAL
   ─────────────────────────────────────────────────────────────────
-  b_rad [cm²/g]    3.08e-6      internal     3.475e-6      internal
   X0 used [g/cm²]  26.54        internal     {X0_CM:.2f}×{RHO}={X0_CM*RHO:.1f}     N/A (Molière)
   Energy loss      CSDA mean    stochastic   stochastic    stochastic
   Landau fluct.    NO           YES          YES (Poisson) YES
@@ -455,16 +454,12 @@ print(f"""
      Before this fix, ~50% of muons were killed incorrectly by BB+MS, causing
      BB+MS ≈ 18.9% vs UCMuon-MC ≈ 32.8% (14 pp spurious discrepancy).
 
-  2. b_rad: BB+MS (3.08e-6) vs UCMuon-MC (3.475e-6) — +12.8%.
-     This causes UCMuon-MC to have higher radiative losses, leading to
-     LOWER survival at depth relative to BB+MS after the source-plane fix.
-
-  3. CSDA vs stochastic: BB+MS (no Landau fluctuations) OVERestimates survival
+  2. CSDA vs stochastic: BB+MS (no Landau fluctuations) OVERestimates survival
      at depth because hard events are not sampled. UCMuon-MC correctly
-     applies Poisson-sampled catastrophic losses.
-     Combined with b_rad difference, the net effect depends on depth and energy.
+     applies Poisson-sampled catastrophic losses (PDG 2024 per-process tables);
+     the net effect depends on depth and energy.
 
-  4. X0 unit conversion (FIXED in GUI and standalone driver):
+  3. X0 unit conversion (FIXED in GUI and standalone driver):
      gui_stochastic_engine.py now converts rad_gcm2 / rho before passing to driver.
      ucmuon_stochastic_driver.py _MAT_DB default corrected to X0_cm=10.015 (was 26.48).
      This script uses X0={X0_CM:.4f} cm → X0_gcm2={X0_CM*RHO:.2f} g/cm² ✓

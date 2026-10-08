@@ -8,7 +8,9 @@
 #
 #  Usage:   bash test_run/run_test.sh        (from the repository root)
 #
-#  Exit status 0 means every produced file matched its reference byte for byte.
+#  Exit status 0 means the run reproduces the reference numerically (muon count,
+#  survival fraction, mean exit energy, within the tolerances below); byte
+#  identity is reported too but not required.
 #
 #  Requirements: gfortran-built bin/ucmuon_gen_omp (run ./setup.sh) for Stage 1,
 #  and Python 3.9+ with NumPy for Stage 2.  Stage 2 needs no compiler.

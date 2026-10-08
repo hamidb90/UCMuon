@@ -9,7 +9,7 @@
 #    Energies    → GeV
 #    Depths      → m   (converted internally to cm)
 #    Density     → g/cm³
-#    Rad. length → cm
+#    Rad. length → g/cm²  (MUSIC convention)
 #
 #  Run with:
 #    sbatch run_ucmuon_transport.sh input_transport_music.dat
@@ -19,8 +19,8 @@
 
 ucmuon_selected.dat           # input_file
 #   Path to the generator output file.
-#   Accepts ucmuon_selected.dat (14 cols with hit_flag) or
-#   ucmuon_surface.dat (also 14 cols) or legacy 13-col files.
+#   Accepts ucmuon_selected.dat (13 cols: the detector hits, no hit_flag)
+#   or ucmuon_surface.dat (14 cols, with hit_flag).
 #   The format is auto-detected from the first data line.
 
 ucmuon_underground            # output_prefix
@@ -42,8 +42,8 @@ ucmuon_underground            # output_prefix
 #   Vesuvius/MURAVES geometry uses 1.7 g/cm³ (volcanic rock)
 #   Puy de Dôme: 2.65 g/cm³
 
-26.48                         # radiation_length  [cm]
-#   Standard Rock: 26.48   Water: 36.08   Ice: 39.3
+26.48                         # radiation_length  [g/cm²]
+#   Standard Rock: 26.48   Water and ice: 36.08
 #   Used for multiple scattering (Highland formula).
 #   If uncertain, use the standard value for the material type.
 

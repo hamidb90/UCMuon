@@ -254,7 +254,9 @@ def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
 
     Status codes:
       0 = OK
-      1 = open sky (T_sim ≈ 1 for all densities)
+      1 = open sky (T_sim ≈ 1 for all densities), or no data (T_data or
+          a library map is NaN: Terrain-saved T_sim files leave bins with no
+          muons NaN)
       2 = T_data above library range (ρ < ρ_min, under-dense)
       3 = T_data below library range (ρ > ρ_max, over-dense)
       4 = low sensitivity (|dT/dρ| < min_sensitivity)
@@ -282,6 +284,13 @@ def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
                 continue
 
             T_vec = T_stack[:, ia, ie]   # T_sim at each ρ, shape (n_rho,)
+
+            # No library value at some density: nothing to interpolate (up to
+            # 1.3.0 such pixels came out "OK" with ρ̂ = NaN).
+            if np.isnan(T_vec).any():
+                rho_map[ia, ie]    = np.nan
+                status_map[ia, ie] = 1
+                continue
 
             # Check for open sky: T_sim ≈ 1 for all densities
             if np.all(T_vec >= _OPENSKY_THRESHOLD):
@@ -426,6 +435,11 @@ def generate_synthetic_tdata(tsim_lib, true_rho, n_events=10_000, seed=42):
         for ie in range(n_el):
             rho_true_pix = float(rho_map[ia, ie])
             T_vec        = T_stack[:, ia, ie]
+            if np.isnan(T_vec).any() or np.isnan(rho_true_pix):
+                # no library value here: no synthetic measurement either
+                T_data[ia, ie]  = np.nan
+                sigma_T[ia, ie] = np.nan
+                continue
 
             # Interpolate true transmission
             T_true = float(np.interp(rho_true_pix, rho_vec, T_vec))
@@ -516,10 +530,12 @@ def write_density_map(az_c, el_c, rho_map, sigma_rho, status_map, fpath,
 #  library is required.  Mean density follows from the geometry:  ρ̄ = ϱ̂ / L.
 # ═════════════════════════════════════════════════════════════════════════════
 
-# Opacity sampling grid [g/cm²] — 0 (open sky) plus log-spaced up to ~CSDA max.
+# Opacity sampling grid [g/cm²]: 0 (open sky) plus log-spaced up to 8e5, the
+# range of a 15 TeV muon (the top of the flux models' energy grid). Up to 1.3.0
+# it stopped at 2.7e5, where the old range table ended.
 _OPACITY_GRID = np.concatenate((
     [0.0],
-    np.logspace(np.log10(1.0), np.log10(2.7e5), 512),
+    np.logspace(np.log10(1.0), np.log10(8.0e5), 640),
 ))
 
 

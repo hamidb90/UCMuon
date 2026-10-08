@@ -9,9 +9,10 @@ output (ucmuon_underground.dat).
 
 Usage
 -----
-  python3 ucmuon_to_phits.py <input.dat> [output.dat] [--mode gen|transport]
+  python3 ucmuon_to_phits.py <input.dat> [output.dat] [--mode gen|transport|auto]
 
-  mode=gen        (default) reads ucmuon_selected.dat / ucmuon_surface.dat
+  mode=auto       (default) picks gen or transport from the column count
+  mode=gen        reads ucmuon_selected.dat / ucmuon_surface.dat
                   13-col or 14-col generator format
                   → uses surface position and direction
 

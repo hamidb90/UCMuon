@@ -376,6 +376,9 @@ def _tab_tdata(da):
                 st.session_state["da_T_data"]   = T_2d
                 st.session_state["da_sigma_T"]  = None
                 st.session_state["da_T_data_measured"] = True
+                # measured data: no synthetic truth, no stale result or download
+                for _k in ("da_synth_rho_used", "da_download_bytes", "da_rho_map"):
+                    st.session_state.pop(_k, None)
                 st.session_state["da_lib_az_c"] = az_c_d
                 st.session_state["da_lib_el_c"] = el_c_d
                 _rho_txt = (f"ρ_file = {meta['density']:.3f} g/cm³"
@@ -426,6 +429,8 @@ def _tab_tdata(da):
                     st.session_state["da_sigma_T"]        = sigma_T
                     st.session_state["da_T_data_measured"] = False
                     st.session_state["da_synth_rho_used"] = rho_true
+                    for _k in ("da_download_bytes", "da_rho_map"):
+                        st.session_state.pop(_k, None)
                     st.success(
                         f"✅  Synthetic T_data generated — ρ_true = {rho_true:.2f} g/cm³  |  "
                         f"N = {int(n_events):,}  |  σ_T mean = {float(np.nanmean(sigma_T)):.4f}"
@@ -537,6 +542,7 @@ def _tab_inversion(da):
                 st.write("Computing double ratio…")
                 D_map = da.compute_double_ratio(T_data, lib[ref_rho])
 
+                st.session_state.pop("da_download_bytes", None)   # the previous map's
                 st.session_state["da_rho_map"]      = rho_map
                 st.session_state["da_sigma_rho"]    = sigma_rho
                 st.session_state["da_status_map"]   = status_map
@@ -799,6 +805,8 @@ def _di_load_input(da, method_key):
                 st.session_state["di_az"]   = az_c
                 st.session_state["di_el"]   = el_c
                 st.session_state["di_sigma"] = None
+                for _k in ("di_opac", "di_sigopac", "di_status", "di_rho", "di_sigrho", "di_dl"):
+                    st.session_state.pop(_k, None)   # results of the previous T
                 st.success(f"✅ T loaded — {len(az_c)} az × {len(el_c)} el  |  "
                            f"T ∈ [{np.nanmin(T_2d):.3f}, {np.nanmax(T_2d):.3f}]")
             except Exception as _e:
@@ -843,6 +851,8 @@ def _di_load_input(da, method_key):
                 st.session_state["di_az"]    = az_t
                 st.session_state["di_el"]    = el_t
                 st.session_state["di_sigma"] = None
+                for _k in ("di_opac", "di_sigopac", "di_status", "di_rho", "di_sigrho", "di_dl"):
+                    st.session_state.pop(_k, None)   # results of the previous T
                 st.success(f"✅ T = Φ_target/Φ_open formed — "
                            f"{len(az_t)} az × {len(el_t)} el  |  "
                            f"T ∈ [{np.nanmin(T_2d):.3f}, {np.nanmax(T_2d):.3f}]")
@@ -1008,6 +1018,7 @@ def _di_run_and_results(da, method_key):
                 rho_map = sig_rho = None
                 if L_map is not None:
                     rho_map, sig_rho = da.opacity_to_density(opac, L_map, sig_opac)
+                st.session_state.pop("di_dl", None)   # the previous inversion's file
                 st.session_state["di_opac"]   = opac
                 st.session_state["di_sigopac"] = sig_opac
                 st.session_state["di_status"] = status
@@ -1137,8 +1148,12 @@ def _render_direct_workflow(da, method_key):
     st.session_state["di_model"] = sel
     st.session_state["di_alt"] = _f2.number_input("Altitude [m]", 0.0, 6000.0,
                                                   float(st.session_state.get("di_alt", 0.0)),
-                                                  10.0, key="di_alt_in")
-    st.caption("Flux models are azimuth-symmetric → T(ϱ) depends only on elevation.")
+                                                  10.0, key="di_alt_in",
+                                                  help="Scales the flux by exp(h/8500 m), "
+                                                       "which cancels in T = I(ϱ)/I(0): it "
+                                                       "does not change the inversion.")
+    st.caption("Flux models are azimuth-symmetric → T(ϱ) depends only on elevation. "
+               "The altitude factor cancels in the transmission.")
     st.divider()
 
     _di_load_input(da, method_key)

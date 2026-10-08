@@ -382,3 +382,23 @@ def test_density_with_the_shipped_library(new_app):
     assert not exceptions(at)
     med = [m.value for m in at.metric if m.label.startswith("Median ρ̂")]
     assert med and abs(float(med[0].split()[0]) - 2.5) < 0.05
+
+
+def test_density_and_terrain_inputs_survive_basic(new_app, repo_copy):
+    """Up to 1.3.0 the Terrain and Density inputs outside the autosave reset
+    after Basic reruns (Basic does not render those tabs)."""
+    def basic_cycle(at):
+        widget(at, "toggle", "ui_mode_toggle").set_value(False).run()
+        at.run(); at.run(); at.run()               # Streamlit drops hidden state here
+        widget(at, "toggle", "ui_mode_toggle").set_value(True).run()
+
+    at = new_app(mode="Advanced")
+    synth = "🔬 Generate synthetic (test)"
+    widget(at, "radio", "da_tdata_mode").set_value(synth).run()
+    basic_cycle(at)
+    assert widget(at, "radio", "da_tdata_mode").value == synth
+    widget(at, "radio", "da_method").set_value("direct").run()
+    basic_cycle(at)
+    assert widget(at, "radio", "da_method").value == "direct"
+    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text())
+    assert (saved["da_method"], saved["da_tdata_mode"]) == ("direct", synth)

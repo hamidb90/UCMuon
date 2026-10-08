@@ -20,7 +20,7 @@ two independent external Monte Carlo references.
 
 > **Authoritative run: v2 (2026-05-25)** — `reports/BENCHMARK_FEEDBACK.md`.
 > Its 100 m (265 MWE) transmissions (G4 32.7 %, PHITS 32.6 %, MUSIC 32.9 %,
-> PROPOSAL 32.8 %, BB 33.3 %, UCMuon 32.3 %) are Table 1 of the manuscript.
+> PROPOSAL 32.8 %, BB 33.3 %, UCMuon 33.0 %) are the survival table of the manuscript.
 > Raw `.dat` files live in the git-ignored scratch directory
 > `benchmark/geant4_muon_rock_v5/` (≈8 GB, never tracked).
 

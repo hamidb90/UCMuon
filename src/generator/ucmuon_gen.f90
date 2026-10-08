@@ -32,9 +32,10 @@
 ! ──────────────────
 !   • Requires  use mpi  (provided by the MPI module from mpif90 wrapper).
 !   • Compile with: mpif90 -O2 -fopenmp ...  (see Makefile target ucmuon_gen).
-!   • input_params.dat format is IDENTICAL to the OMP version EXCEPT that
-!     the trailing blank "Press Enter" line is no longer needed (and is
-!     ignored safely if present).
+!   • hpc/input_params.dat is written for THIS (MPI) binary. The OpenMP
+!     version reads two things more: a save_phits line after save_all (and
+!     the PHITS file name when it is 1), and a trailing blank "Press Enter"
+!     line. The hpc/*.dat transport inputs are likewise for the MPI binaries.
 !=============================================================================
 program ucmuon_gen
   use mpi
@@ -836,7 +837,7 @@ program ucmuon_gen
       if (source_mode == 1) then
         write(*,'(A,F9.2,A,F9.2,A)') '  Disk center:    (', src_disk_cx_m, ',', src_disk_cy_m, ') m'
         write(*,'(A,F9.2,A)')         '  Disk radius:    ', src_disk_r_m, ' m'
-        write(*,'(A,F9.2,A)')         '  W fixed:        ', src_w_m, ' m'
+        write(*,'(A,F9.2,A)')         '  Plane at W =    ', src_w_m, ' m'
         if (src_tilt_deg > 0.01d0) then
           write(*,'(A,F7.2,A)')       '  Tilt angle:     ', src_tilt_deg, ' deg'
           write(*,'(A,F7.2,A)')       '  Tilt azimuth:   ', src_tilt_az_deg, ' deg'

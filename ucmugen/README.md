@@ -178,7 +178,7 @@ several Geant4 workers read each other's half-written values: with 8 threads,
 (`validation/test_parma.cc`, section 6). Multithreaded PARMA runs from before
 the fix should be redone. `install()` now also loads PARMA's tables, so call
 it once before worker threads start, as before. The generated
-header is 269 kB with 232 kB of embedded tables and needs no data files at
+header is 271 kB with 232 kB of embedded tables and needs no data files at
 runtime. Cutoff rigidity from latitude and longitude, and the W index from a
 date, need the two tables too large to embed (1.8 MB and 233 kB), so those are
 loaded from a data directory you point at; the second is also revised by JAEA
@@ -210,7 +210,7 @@ Start with `examples/geant4/` to integrate, and `examples/features/` to decide
 what to integrate: the first is the minimum you need and is meant to be copied,
 the second exercises all eight spectra, all four surfaces, all three detector
 shapes, the angular ranges, seeding and normalisation, and prints what each
-choice does to the rate. It needs no Geant4 and runs in two seconds.
+choice does to the rate. It needs no Geant4 and runs in a few seconds.
 
 ## Versions
 

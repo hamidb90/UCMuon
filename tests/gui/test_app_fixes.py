@@ -96,3 +96,49 @@ def test_b13b_measured_data_without_density_header(repo_copy, tmp_path):
     f.write_text("# az el T\n0 10 0.5\n0 20 0.6\n90 10 0.4\n90 20 0.7\n")
     *_, meta = da.load_transmission_map(f, require_density=False)
     assert meta["density"] is None
+
+
+def test_underground_filter_uses_the_real_detector(new_app, repo_copy):
+    """The detector-hit file after transport, and so the rate at depth Results
+    gives it, is that of the real detector, not of the generator's
+    margin-inflated one (v1.3.1). A 10 cm cylinder with a 2 m margin; one
+    muon alive inside it, one alive 1 m off its axis, one stopped 1 m off it:
+    only the first is a hit (the 1.3.0 filter counted all three)."""
+    import numpy as np
+    out = repo_copy / "output"
+    ug, sel = out / "ug_margin_test.dat", out / "ug_margin_test_selected.dat"
+    det = {"shape": 1, "margin": 200.0, "ax": 0.0, "ay": 0.0, "az": -600.0,
+           "bx": 0.0, "by": 0.0, "bz": -550.0, "r": 10.0}
+    rows = [  # EventID xs ys zs Es theta_s phi_s charge alive x y z E cx cy cz theta phi
+        [1, 0, 0, 0, 20.0, 0, 0, 1, 1, 0.0, 0, -500, 18.0, 0, 0, -1, 0, 0],
+        [2, 100, 0, 0, 20.0, 0, 0, 1, 1, 100.0, 0, -500, 18.0, 0, 0, -1, 0, 0],
+        [3, 100, 0, 0, 2.0, 0, 0, -1, 0, 100.0, 0, -575, 0.0, 0, 0, 0, 0, 0],
+    ]
+    np.savetxt(ug, np.array(rows, float), fmt="%g",
+               header="EventID xs ys zs Es theta_s phi_s charge alive x y z E cx cy cz theta phi")
+    try:
+        run_state = {f"{w}_{k}": v for w in ("gen", "music") for k, v in
+                     (("lines", []), ("running", False), ("success", None),
+                      ("stop_req", False), ("nmuons", 0), ("proc", None),
+                      ("start_time", None), ("end_time", None))}
+        run_state["music_success"] = True          # a finished transport
+        at = new_app(mode="Advanced", state={
+            "_state": run_state, "ug_use_filter": True, "ug_filter_done": False,
+            "gen_use_detector": True, "gen_detectors": [det], "ug_file": str(ug),
+            "ug_filter_file": str(sel), "ug_depth_m": 5.0})
+        assert not exceptions(at)
+        assert at.session_state["ug_filter_done"] is True
+        hits = np.loadtxt(sel, comments="#", ndmin=2)
+        assert [int(h[0]) for h in hits] == [1]
+    finally:
+        for f in (ug, sel):
+            f.unlink(missing_ok=True)
+
+
+def test_3d_title_names_the_file_kind(new_app, underground_run):
+    """The 3D viewer said "UG Selected" for every file (v1.3.1)."""
+    ug, state = underground_run
+    at = new_app(mode="Advanced", state=state)
+    specs = [c.proto.spec for c in at.get("plotly_chart")]
+    assert any("3D Muon Trajectories: underground" in s for s in specs)
+    assert not any("UG Selected" in s for s in specs)

@@ -12,7 +12,7 @@ c++ -std=c++17 -O2 -I../../include feature_tour.cc -o feature_tour
 ./feature_tour
 ```
 
-Runs in about two seconds. No Geant4, no external data. To include the
+Runs in a few seconds. No Geant4, no external data. To include the
 site-aware PARMA spectrum, generate `UCMuGen_PARMA.h` first (see
 `ucmugen/tools/make_parma_header.py`) and add `-DUCMUGEN_TOUR_PARMA`.
 

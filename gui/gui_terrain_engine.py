@@ -154,10 +154,14 @@ def assign_direction_bins(surface_df, n_az, n_ze, ze_max_deg):
     theta_rad = np.arccos(np.clip(-cz, -1.0, 1.0))    # zenith from vertical
     theta_deg = np.degrees(theta_rad)
 
-    # Geographic azimuth: 0=N (−y in ENU where y=North), CW
-    # In our coordinate system: x=East, y=North, z=Up
-    # phi_geog = atan2(cx, cy) = atan2(East, North)
-    phi_geog_deg = (np.degrees(np.arctan2(cx, cy)) + 360.0) % 360.0
+    # Geographic azimuth (0 = N, 90 = E, clockwise) of the direction the muon
+    # COMES FROM, which is the ray tracer's azimuth (its ray goes up toward the
+    # sky): x = East, y = North, and (cx, cy, cz) is the direction of travel,
+    # so the arrival direction is (-cx, -cy). Up to 1.3.0 this used
+    # atan2(cx, cy) and put every muon in the bin opposite its arrival
+    # direction (mirrored shadow in per-muon output; uniform-φ spectra kept the
+    # per-bin transmissions right on average).
+    phi_geog_deg = (np.degrees(np.arctan2(-cx, -cy)) + 360.0) % 360.0
 
     # Bin assignment
     az_step = 360.0 / n_az
@@ -2210,7 +2214,7 @@ def render_terrain_tab(script_dir, project_dir,
                         f"Blocked bin range:  "
                         f"{float(ob_rock.min()):.0f} – {float(ob_rock.max()):.0f} g/cm²  "
                         f"({float(ob_rock.min())/(_ob_rho*100):.0f} – "
-                        f"{float(ob_rock.max())/(_ob_rho*100):.0f} m vertical equiv.)"
+                        f"{float(ob_rock.max())/(_ob_rho*100):.0f} m of rock along the ray)"
                     )
                     _pv2b.caption(
                         "How overburden is computed: for each (azimuth, zenith) bin the DEM "
@@ -2555,6 +2559,13 @@ def render_terrain_tab(script_dir, project_dir,
                     st.session_state["terrain_result_engine"]    = terrain_engine
                     st.session_state["terrain_result_underground"] = underground
                     st.session_state["terrain_result_det_cell"]  = det_cell_id  # None for DEM
+                    # The run's density and site: Save T_sim, the 3D view and
+                    # the cross-check use these, not the fields' current values
+                    # (up to 1.3.0 a density changed after the run was written
+                    # into the saved T_sim file's name and header).
+                    st.session_state["terrain_result_rho"]  = float(terrain_rho)
+                    st.session_state["terrain_result_site"] = (float(_run_lat), float(_run_lon),
+                                                               float(_run_alt))
                     st.session_state["ug_file"] = t_outfile
                     # Remember the surface file it came from, so Results gives
                     # it the live time of that generator run (ucmuon_gui.py
@@ -2890,7 +2901,7 @@ def render_terrain_tab(script_dir, project_dir,
                             "Run terrain transport at **several different densities** (e.g. 1.5, 2.0, 2.5, 3.0 g/cm³), "
                             "saving one file per density.  Load all files in the **Density Analysis** tab as the T_sim library."
                         )
-                        _rho_curr_ts  = _sf(st.session_state.get("terrain_rho", 2.65), 2.65)
+                        _rho_curr_ts  = _sf(st.session_state.get("terrain_result_rho", st.session_state.get("terrain_rho", 2.65)), 2.65)
                         _tsim_c1, _tsim_c2 = st.columns([3, 1])
                         _tsim_fname = _tsim_c1.text_input(
                             "Output filename",
@@ -2904,9 +2915,11 @@ def render_terrain_tab(script_dir, project_dir,
                                     surv_map / np.where(total_map > 0, total_map, 1.0),
                                     np.nan,
                                 )
-                                _lat_ts = _sf(st.session_state.get("terrain_lat", 0.0), 0.0)
-                                _lon_ts = _sf(st.session_state.get("terrain_lon", 0.0), 0.0)
-                                _alt_ts = _sf(st.session_state.get("terrain_alt", 0.0), 0.0)
+                                _site_ts = st.session_state.get("terrain_result_site") or (
+                                    _sf(st.session_state.get("terrain_lat", 0.0), 0.0),
+                                    _sf(st.session_state.get("terrain_lon", 0.0), 0.0),
+                                    _sf(st.session_state.get("terrain_alt", 0.0), 0.0))
+                                _lat_ts, _lon_ts, _alt_ts = _site_ts
                                 _drv_ts = _load_terrain_driver(script_dir)
                                 # Bins with no muons stay NaN ("no data"):
                                 # writing 0 would make the density inversion
@@ -2989,7 +3002,7 @@ def render_terrain_tab(script_dir, project_dir,
                     _det_lat_3d   = _sf(st.session_state.get("terrain_lat", 45.76), 45.76)
                     _det_lon_3d   = _sf(st.session_state.get("terrain_lon", 2.955), 2.955)
                     _det_alt_3d   = _sf(st.session_state.get("terrain_alt", 1094.0), 1094.0)
-                    _rho_t3       = _sf(st.session_state.get("terrain_rho", 2.65), 2.65)
+                    _rho_t3       = _sf(st.session_state.get("terrain_result_rho", st.session_state.get("terrain_rho", 2.65)), 2.65)
                     _ug_3d        = bool(st.session_state.get("terrain_result_underground", False))
 
                     # Four cases:
@@ -3216,7 +3229,7 @@ def render_terrain_tab(script_dir, project_dir,
                             _n_bl_v    = int((~sky_m).sum())
                             _ob_med_v  = float(np.median(_ob_rock_v))
                             _ob_max_v2 = float(np.max(_ob_rock_v))
-                            _rho_vv    = _sf(st.session_state.get("terrain_rho", 2.65), 2.65)
+                            _rho_vv    = _sf(st.session_state.get("terrain_result_rho", st.session_state.get("terrain_rho", 2.65)), 2.65)
                             st.info(
                                 f"**Current result:** {_n_bl_v} blocked bins  |  "
                                 f"median {_ob_med_v:,.0f} g/cm²  |  "
@@ -3243,7 +3256,7 @@ def render_terrain_tab(script_dir, project_dir,
                         "azimuth (N = 0°, E = 90°)."
                     )
 
-                    _rho_comp  = _sf(st.session_state.get("terrain_rho", 2.65), 2.65)
+                    _rho_comp  = _sf(st.session_state.get("terrain_result_rho", st.session_state.get("terrain_rho", 2.65)), 2.65)
                     _det_lat_c = _sf(st.session_state.get("terrain_lat", 40.827), 40.827)
                     _det_lon_c = _sf(st.session_state.get("terrain_lon", 14.401), 14.401)
                     _det_alt_c = _sf(st.session_state.get("terrain_alt", 608.0), 608.0)
@@ -3393,6 +3406,13 @@ def render_terrain_tab(script_dir, project_dir,
                         if _spec_note_comp:
                             st.warning("⚠️  " + _spec_note_comp)
 
+                        # What the stored curve was computed for: azimuth bin,
+                        # spectrum, energy window and the overburden map (it
+                        # changes with the run and its density). Up to 1.3.0 a
+                        # result stayed on screen, relabelled, after any change.
+                        _comp_sig = (int(_az_slice_idx), int(_spec_mode_comp),
+                                     float(_emin_comp), float(_emax_comp),
+                                     round(float(np.nansum(ob_map)), 3))
                         if st.button("▶  Compute flux vs elevation (backward MC)", key="comp_flux_btn",
                                      width='stretch', type="primary"):
                             _flux_terrain  = np.full(len(ze_c), np.nan)
@@ -3433,9 +3453,14 @@ def render_terrain_tab(script_dir, project_dir,
                             st.session_state["comp_flux_terrain"] = _flux_terrain
                             st.session_state["comp_flux_opensky"] = _flux_opensky
                             st.session_state["comp_flux_el"]      = _el_c
+                            st.session_state["comp_flux_sig"]     = _comp_sig
                             _prog_comp.progress(1.0, text="✅  Done.")
 
-                        if "comp_flux_terrain" in st.session_state:
+                        if ("comp_flux_terrain" in st.session_state
+                                and st.session_state.get("comp_flux_sig") != _comp_sig):
+                            st.info("The settings or the Terrain run changed since the last "
+                                    "computation: press Compute again.")
+                        elif "comp_flux_terrain" in st.session_state:
                             _ft = st.session_state["comp_flux_terrain"]
                             _fo = st.session_state["comp_flux_opensky"]
                             _el_ax = st.session_state["comp_flux_el"]

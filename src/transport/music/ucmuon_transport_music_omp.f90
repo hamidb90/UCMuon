@@ -207,7 +207,7 @@ program ucmuon_transport_music_omp
         write(*,*) ' ERROR: init=1 but no eloss file found.'
         write(*,'(A,A)') '        Expected: ', trim(eloss_file)
         write(*,*) '        Run once with init=0 -- mulos() will generate it.'
-        stop
+        error stop 1
       end if
     end if
   else
@@ -217,7 +217,7 @@ program ucmuon_transport_music_omp
       write(*,*) ' ERROR: music-double-diff-rock.dat not found.'
       write(*,*) '        Required by mulos() to compute the energy-loss table.'
       write(*,*) '        Place it in the project root (from Kudryavtsev MUSIC zip).'
-      stop
+      error stop 1
     end if
     write(*,'(A,A,A)') '  init=0: mulos() will generate ', trim(eloss_file), ' ...'
   end if
@@ -237,7 +237,7 @@ program ucmuon_transport_music_omp
       write(*,*) ' ERROR: init=1 but no cross-section file found.'
       write(*,'(A,A)')   '        Expected: ', trim(xsec_file)
       write(*,*) '        Re-run with init=0 to compute and cache the tables.'
-      stop
+      error stop 1
     end if
   end if
 
@@ -249,7 +249,7 @@ program ucmuon_transport_music_omp
     real(8) :: p_tmp, px_tmp, py_tmp, pz_tmp, th_tmp, ph_tmp, e_tmp, xs_tmp, ys_tmp, zs_tmp
     open(unit=10, file=trim(infile), form='formatted', status='old', iostat=ios)
     if (ios /= 0) then
-      write(*,*) ' ERROR: cannot open ', trim(infile); stop
+      write(*,*) ' ERROR: cannot open ', trim(infile); error stop 1
     end if
     ncols = 0
     do
@@ -264,7 +264,7 @@ program ucmuon_transport_music_omp
         read(linebuf,*,iostat=ios2) ev_tmp,xs_tmp,ys_tmp,zs_tmp,p_tmp, &
               px_tmp,py_tmp,pz_tmp,th_tmp,ph_tmp,e_tmp,ch_tmp,dm_tmp
         if (ios2==0) then; ncols = 13
-        else; write(*,*) ' ERROR: cannot parse first data line.'; stop
+        else; write(*,*) ' ERROR: cannot parse first data line.'; error stop 1
         end if
       end if
       exit

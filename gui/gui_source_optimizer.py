@@ -268,46 +268,50 @@ def render_combined_source_panel(
         st.info("Hemisphere mode: source centring not applicable. "
                 "Energy and θ_max recommendations below still apply.")
     else:
-        # Metrics: optimised (centred at detector centroid) + geometric at current θ_max
+        # The source every straight path at θ ≤ θ_max into the margin-inflated
+        # detectors starts on (basic_mode.required_source, the rule of Basic
+        # mode and of the Generator's "source too small" warning). Up to 1.3.0
+        # this panel recommended an "optimised" radius without the depth × tan θ
+        # reach, which biases detector-filter rates low (x127 in one case).
+        import basic_mode as _BM
+        _req = _BM.required_source(detectors, theta_max, 1 if source_mode == 1 else 2)
         _a1, _a2, _a3, _a4, _a5 = st.columns(5)
-        _a1.metric("Centre X", f"{opt['src_cx_m']:.2f} m")
-        _a2.metric("Centre Y", f"{opt['src_cy_m']:.2f} m")
+        _a1.metric("Centre X", f"{_req['disk_cx']:.2f} m")
+        _a2.metric("Centre Y", f"{_req['disk_cy']:.2f} m")
         if source_mode == 1:
-            _opt_r = opt["src_r_m"]
-            _a3.metric("Optimised radius",   f"{_opt_r:.2f} m",
-                       help="Centred at detector centroid + 1.5 × MCS margin "
-                            f"(σ_r at E = {_fmt_E(opt['E_eff'])} GeV — never below "
-                            "the CSDA survival threshold)")
-            _a4.metric("Geometric (θ_max)",  f"{opt['r_geo_max']:.0f} m",
-                       help="Min radius from origin to cover all detectors at current θ_max")
+            _opt_r = _req["disk_r"]
+            _a3.metric("Required radius", f"{_opt_r:.0f} m",
+                       help="Every straight path at θ ≤ θ_max into the detectors, "
+                            "inflated by their safety margins, starts on the source "
+                            "(rounded up to 10 m). Smaller biases the rate low; larger "
+                            "only costs trials.")
         else:
-            _opt_r = max(opt["src_lx_m"], opt["src_ly_m"])
-            _a3.metric("Half-width Lx", f"{opt['src_lx_m']:.2f} m")
-            _a4.metric("Half-width Ly", f"{opt['src_ly_m']:.2f} m")
+            _hx = (_req["src_u2_m"] - _req["src_u1_m"]) / 2.0
+            _hy = (_req["src_v2_m"] - _req["src_v1_m"]) / 2.0
+            _opt_r = max(_hx, _hy)
+            _a3.metric("Required half-widths", f"{_hx:.0f} × {_hy:.0f} m",
+                       help="Every straight path at θ ≤ θ_max into the inflated "
+                            "detectors starts on the source (rounded up to 10 m).")
+        _a4.metric("Detectors", f"{n_det}")
         _area_gain = (_cur_r / max(_opt_r, 0.01)) ** 2
         _a5.metric("Area gain vs current",
                    f"×{_area_gain:.0f}" if _area_gain >= 2 else "—",
-                   help="How many fewer wasted muons with the optimised source")
+                   help="How many fewer wasted trials with the required source")
 
         st.caption(
             f"MCS margin evaluated at E = {_fmt_E(opt['E_eff'])} GeV "
-            "(max of E_min and the CSDA threshold at detector depth).  "
-            "ℹ️ The optimised source omits the depth × tan θ reach, so oblique "
-            "trajectories are under-sampled — use it with the detector filter for "
-            "hit-count studies; for unbiased angular spectra use the geometric radius."
+            "(max of E_min and the CSDA threshold at detector depth)."
         )
 
         # Alerts only when action is needed
-        _shift = np.sqrt(opt["src_cx_m"]**2 + opt["src_cy_m"]**2)
-        if _shift > 0.5 or (_cur_r - _opt_r > 0.5 * _opt_r):
-            _parts = []
-            if _shift > 0.5:
-                _parts.append(f"shift centre to ({opt['src_cx_m']:.1f}, "
-                              f"{opt['src_cy_m']:.1f}) m")
-            if _cur_r - _opt_r > 0.5 * _opt_r:
-                _parts.append(f"reduce size to **{_opt_r:.1f} m** "
-                              f"(×{_area_gain:.0f} more signal hits per CPU hour)")
-            st.info("💡 " + "  |  ".join(_parts) + ".", icon="💡")
+        if _cur_r < _opt_r - 1e-6:
+            st.warning(f"⚠️ The source is smaller than required ({_opt_r:.0f} m): "
+                       f"paths into the detector at large θ start outside it, so the "
+                       f"rate comes out low.")
+        elif _cur_r - _opt_r > 0.5 * _opt_r:
+            st.info(f"💡 The source can shrink to **{_opt_r:.0f} m** "
+                    f"(×{_area_gain:.0f} fewer wasted trials) without biasing the rate.",
+                    icon="💡")
 
         # Multi-detector breakdown (collapsed)
         if n_det > 1:

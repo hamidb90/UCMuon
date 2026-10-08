@@ -21,7 +21,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v1.3.0)
+## Status & scope (v1.3.1)
 
 The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
@@ -199,7 +199,7 @@ Optional:
 
 ### Fortran compiler with OpenMP
 
-Required only for Engines 2 (MUSIC) and 3 (Bethe-Bloch).
+Required for the surface generator in the Standard workflow (only the Guaranteed-hit mode is pure Python) and for Engines 2 (MUSIC) and 3 (Bethe-Bloch, Fortran version).
 
 | Platform | Command |
 |---|---|
@@ -283,7 +283,7 @@ bash setup.sh                     # recommended: checks all deps + builds local 
 
 make local                        # OMP-only binaries (GUI use)
 make hpc                          # MPI+OMP binaries (HPC use, needs mpif90)
-make pumas                        # PUMAS C binary — local only (requires pumas-master/ in project root)
+make pumas                        # PUMAS C binary — local only (requires external/pumas-master/)
 make clean                        # remove build/
 make veryclean                    # clean + remove all binaries + pumas physics dumps
 ```
@@ -315,10 +315,10 @@ Seven engines are available in Tab 2 (🪨 **Transport**):
 **Survival rate ordering** (100 m Standard Rock, 6 × 10⁵ muons, 5–300 GeV):
 
 ```
-UCMuon-MC (32.3%)  <  PROPOSAL (32.8%)  ≈  MUSIC (32.9%)  <  BB (33.3%)
+PROPOSAL (32.8%)  ≈  MUSIC (32.9%)  ≈  UCMuon-MC (33.0%)  <  BB (33.3%)
 ```
 
-BB overestimates survival because it uses deterministic mean energy loss — no stochastic catastrophic radiative events. MUSIC and PROPOSAL agree within 0.1 pp. UCMuon-MC is ~0.6 pp below MUSIC after switching to the Bethe-Heitler hard-event spectrum.
+BB overestimates survival because it uses deterministic mean energy loss — no stochastic catastrophic radiative events. MUSIC, PROPOSAL and UCMuon-MC agree within 0.15 pp (benchmark/results/benchmark_summary_v2.csv).
 
 | Overburden | Recommended engine |
 |---|---|
@@ -438,9 +438,9 @@ pip install rasterio
 
 ### Get a DEM file
 
-Option A — Auto-download in the GUI (no account needed):
+Option A — Auto-download in the GUI:
 
-> Tab 2 → UCMuon Terrain → Section 1 → "Auto-download" tab → set bounding box → Download
+> Terrain tab (Advanced mode) → Section 2 "Geometry source" → auto-download → set the bounding box and an OpenTopography API key (or the rate-limited demo key) → Download DEM. The bundled Mt. Vesuvius DEM is the default source.
 
 Option B — Command line with `eio`:
 
@@ -457,11 +457,16 @@ Option C — [OpenTopography](https://portal.opentopography.org): select area �
 
 In the GUI:
 
-1. Upload or auto-download a GeoTIFF DEM (Section 1)
-2. Enter detector GPS coordinates — latitude, longitude, altitude a.s.l. (Section 2)
-3. Set rock density and spectrum model (Section 3)
-4. Click **Quick terrain preview** for the overburden shape (~30 s)
-5. Click **▶ Run UCMuon Terrain** for the full overburden + flux maps
+The Terrain tab (Advanced mode) is one page, sections 1 to 7:
+
+1. Surface muon file: the Generator's output (Section 1)
+2. Geometry source: the bundled DEM, an uploaded GeoTIFF, or auto-download (Section 2)
+3. Detector GPS position: latitude, longitude, altitude a.s.l., with "Altitude from the DEM" (Section 3)
+4. Transport engine and material, with the rock density (Section 5)
+5. Optional overburden map preview (Section 6)
+6. Run terrain transport (Section 7); the results follow below, including "Save T_sim for density inversion"
+
+The output files below are those of the command-line driver `gui/ucmuon_terrain_driver.py`.
 
 ### Output files
 
@@ -625,7 +630,7 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for:
 - One-time module setup and binary build
 - MPI rank selection strategy (`nranks ≤ N_muons / 1000`)
 - Step-by-step: generate → transport → PHITS conversion
-- Output column formats (14-column generator, 18-column transport)
+- Output column formats (13-column detector hits / 14-column surface generator, 18-column transport)
 - PHITS `s-type=17` source section
 - Expected wall times (e.g. 1M muons transport: ~8 min on 26 ranks)
 - Troubleshooting table

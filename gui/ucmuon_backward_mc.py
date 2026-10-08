@@ -36,7 +36,8 @@ Poisson approximation:
 where λ_fatal = b_total × ln(1/v_stop) / ln(1/v_cut)  [events/g/cm²]
 and v_stop is the minimum energy fraction that would stop the muon.
 
-Spectrum models (same as Tab 1 GUI):
+Spectrum models (backward-MC numbering, NOT the generator's 1-8; e.g. 3 is
+Guan here, PARMA in the generator):
     1 = CosmoALEPH (Schmelling 2013)  dN/dp ∝ p^{-3.195}
     2 = Power-law                   dN/dE ∝ E^{-3.7}
     3 = Guan et al. (2015)          arXiv:1509.06176
@@ -218,6 +219,15 @@ def range_summary(got, n_directions):
             + (f" (up to {100.0 * worst:.0f} % low)" if worst > 0 else "")
             + (f", and {n_zero} are 0, where the true flux is small but not zero."
                if n_zero else "."))
+
+
+SPECTRUM_NAMES = {1: "CosmoALEPH", 2: "power law", 3: "Guan 2015", 4: "Frosin 2025"}
+
+
+def spectrum_name(spectrum_mode):
+    """Name of a backward-MC spectrum number (its numbering differs from the
+    generator's, so outputs print the name)."""
+    return SPECTRUM_NAMES.get(int(spectrum_mode), f"spectrum {spectrum_mode}")
 
 
 def spectrum_range_warning(spectrum_mode, E_min_GeV):
@@ -406,6 +416,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
 
         sum_flux = 0.0; sum_surf = 0.0
         sum_Es   = 0.0; sum_Ps  = 0.0
+        sum_dO   = 0.0      # solid angle of the zenith bins that contribute
 
         for ith, (th, dO, cos_t, X_sl) in enumerate(zip(th_mid, dOmega, cos_mid, X_slant)):
 
@@ -440,13 +451,17 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
             sum_surf += phi_s * dO * cos_t
             sum_Es   += E_s_GeV * dO
             sum_Ps   += Ps * dO
+            sum_dO   += dO
 
             rate_total += contrib * dE_GeV
 
         flux_det[iE]   = sum_flux
         flux_surf[iE]  = sum_surf
-        E_surf_out[iE] = sum_Es  / dOmega_total if dOmega_total > 0 else 0.0
-        Ps_out[iE]     = sum_Ps  / dOmega_total if dOmega_total > 0 else 0.0
+        # Means over the zenith bins that contribute: directions beyond the
+        # range table or outside the energy window carry no E_s or P_surv
+        # (up to 1.3.0 they counted as 0 through the full solid angle).
+        E_surf_out[iE] = sum_Es  / sum_dO if sum_dO > 0 else np.nan
+        Ps_out[iE]     = sum_Ps  / sum_dO if sum_dO > 0 else np.nan
 
         if progress_cb and iE % max(1, n_E // 10) == 0:
             progress_cb(f"E bin {iE+1}/{n_E}  E_det={E_det/1000:.2f} GeV"
@@ -539,7 +554,8 @@ def _write_results(res, fpath):
         fh.write(f"# Depth: {info['depth_m']:.1f} m  "
                  f"rho: {info['rho']:.3f} g/cm3  mat: {info['mat']}\n")
         fh.write(f"# Vertical opacity: {res['X_vert_gcm2']:.1f} g/cm2\n")
-        fh.write(f"# Mode: {info['mode']}  spectrum: {info['spectrum_mode']}\n")
+        fh.write(f"# Mode: {info['mode']}  spectrum: {spectrum_name(info['spectrum_mode'])}"
+                 f" (backward-MC number {info['spectrum_mode']})\n")
         fh.write(f"# Total expected rate: {res['rate_m2_s']:.5e} m-2 s-1\n")
         if info.get("range_note"):
             fh.write(f"# WARNING: {info['range_note']}\n")
@@ -606,7 +622,7 @@ def main():
           flush=True)
     print(f"  {mat['name']}  rho={rho:.3f} g/cm3  depth={depth_m:.1f} m"
           f"  opacity={depth_m*100*rho:.1f} g/cm2", flush=True)
-    print(f"  Spectrum mode {spec_mode}  theta_max={theta_max_deg:.0f} deg"
+    print(f"  Spectrum {spectrum_name(spec_mode)}  theta_max={theta_max_deg:.0f} deg"
           f"  E={E_min_GeV}–{E_max_GeV} GeV  bins={n_E}x{n_theta}", flush=True)
 
     res = backward_mc_flux(

@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.3.0"          # app version — keep in sync with CITATION.cff
+__version__ = "1.3.1"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -181,6 +181,27 @@ def _settings_snapshot():
         "terrain_engine_choice", "terrain_naz", "terrain_nze",
         "terrain_zemax", "terrain_step", "terrain_dem_path",
         "terrain_dem_mode",       # DEM source radio (bundled / upload / download)
+        "terrain_underground",    # without it a restart turned an underground
+                                  # detector (alt below the DEM) into a surface one
+        "terrain_vcut", "terrain_ms",
+        # Terrain and Density value inputs (up to 1.3.0 not autosaved, so Basic
+        # reruns, which do not render those tabs, reset them). Left out on
+        # purpose: buttons, uploads, plots, the OpenTopography API key (a
+        # secret), the file selector and the widgets whose options depend on
+        # loaded data (a stale value would raise).
+        "terrain_geom_mode", "terrain_dem_manual", "terrain_dl_s", "terrain_dl_n",
+        "terrain_dl_w", "terrain_dl_e", "terrain_dl_prod", "terrain_dl_out",
+        "terrain_tsim_outfile", "terrain_mug_thresh", "terrain_energy_logy",
+        "terrain_2d_radius", "terrain_3d_radius", "terrain_3d_view_mode",
+        "terrain_setup_3d_radius",
+        "comp_az_target", "comp_spec_mode", "comp_emin", "comp_emax", "comp_logscale",
+        "da_method", "da_lib_paths_text", "da_tdata_mode", "da_tdata_path",
+        "da_synth_nevents", "da_min_sens", "da_use_sig", "da_sig_N",
+        "da_det_baseline", "da_det_nch_x", "da_det_nch_y", "da_det_pitch_x",
+        "da_det_pitch_y",
+        "di_tpath", "di_tgt_path", "di_opn_path", "di_L_source", "di_Lsim_path",
+        "di_Lsim_zenith", "di_rho_sim", "di_ob_path", "di_model_sel", "di_alt_in",
+        "di_use_sig", "di_N",
         "terrain_outfile",        # terrain_infile intentionally omitted:
                                   # its selectbox key is NOT autosaved because a
                                   # stale path in session_state causes
@@ -191,7 +212,7 @@ def _settings_snapshot():
         "gen_emax", "gen_angular_mode", "gen_theta_max",
         # the run's live-time inputs (Results tab), so a restart keeps them
         "gen_ntry", "gen_surface_rate", "gen_spectrum_run", "gen_run_started",
-        "gen_run_files", "ug_sources", "gen_use_dasrem", "gen_source_plane",
+        "gen_run_files", "ug_sources", "ug_hits_survived", "ug_hits_from", "gen_use_dasrem", "gen_source_plane",
         "gen_disk_tilt", "gen_disk_tilt_az",
         "gen_ui_mode", "gen_basic_used", "gen_basic_summary",  # Basic run record
         "surface_file", "selected_file", "ug_file",
@@ -815,6 +836,8 @@ def _fmt_time(seconds):
         return f"{seconds*1e3:.2f} ms"
     if seconds < 1.0:
         return f"{seconds*1e3:.0f} ms"
+    if seconds < 60:
+        return f"{seconds:.3g} s"        # a live time of 1.27 s is not "1 s"
     s = int(seconds)
     if s < 60:
         return f"{s} s"
@@ -1308,23 +1331,43 @@ def _g4_momentum_MeV(row):
     )
 
 
-def write_geant4_ascii(df, outpath):
+ELECTRON_MASS_MEV = 0.51099895
+
+
+def _is_electron_file(path):
+    """True for a file of the last generator run when that run was spectrum 8
+    (cosmic e±): the writers then use PDG ±11 and the electron mass."""
+    try:
+        return (int(st.session_state.get("gen_spectrum_run", 0) or 0) == 8
+                and _file_from_last_run(path))
+    except Exception:
+        return False
+
+
+def _pdg(charge, electrons):
+    """PDG code: mu- 13, mu+ -13; e- 11, e+ -11."""
+    base = 11 if electrons else 13
+    return base if charge < 0 else -base
+
+
+def write_geant4_ascii(df, outpath, electrons=False):
     ecol = "Es" if "Es" in df.columns else "E"
+    _m   = ELECTRON_MASS_MEV if electrons else MUON_MASS_MEV
     xcol = "xs" if "xs" in df.columns else "x"
     ycol = "ys" if "ys" in df.columns else "y"
     zcol = "zs" if "zs" in df.columns else "z"
     lines = [
         "# UCMuon Geant4 source file — UCLouvain Muography Group",
         "# Format: PDG  x[mm]  y[mm]  z[mm]  px[MeV/c]  py[MeV/c]  pz[MeV/c]  Ekin[MeV]",
-        "# PDG: 13 = mu-   -13 = mu+",
+        ("# PDG: 11 = e-   -11 = e+" if electrons else "# PDG: 13 = mu-   -13 = mu+"),
     ]
     for _, row in df.iterrows():
-        pdg     = 13 if row["charge"] < 0 else -13
+        pdg     = _pdg(row["charge"], electrons)
         x_mm    = row[xcol] * 10.0
         y_mm    = row[ycol] * 10.0
         z_mm    = row[zcol] * 10.0
         px, py, pz = _g4_momentum_MeV(row)
-        Ekin    = max(row[ecol] * 1000.0 - MUON_MASS_MEV, 0.0)
+        Ekin    = max(row[ecol] * 1000.0 - _m, 0.0)
         lines.append(
             f"{pdg:4d}  {x_mm:12.4f}  {y_mm:12.4f}  {z_mm:12.4f}"
             f"  {px:14.6f}  {py:14.6f}  {pz:14.6f}  {Ekin:14.6f}"
@@ -1334,7 +1377,7 @@ def write_geant4_ascii(df, outpath):
     return len(df)
 
 
-def write_geant4_hepevt(df, outpath):
+def write_geant4_hepevt(df, outpath, electrons=False):
     """
     G4HEPEvtInterface ASCII format — per event:
         NHEP
@@ -1344,8 +1387,9 @@ def write_geant4_hepevt(df, outpath):
     Momenta and mass in GeV.
     """
     lines = []
+    _mass = ELECTRON_MASS_MEV / 1000.0 if electrons else MUON_MASS_GEV
     for _, row in df.iterrows():
-        pdg    = 13 if row["charge"] < 0 else -13
+        pdg    = _pdg(row["charge"], electrons)
         p      = row["p"]
         th, ph = row["theta"], row["phi"]
         px =  p * np.sin(th) * np.cos(ph)
@@ -1355,7 +1399,7 @@ def write_geant4_hepevt(df, outpath):
         lines.append(
             f"1  {pdg:d}  0  0"
             f"  {px:.6e}  {py:.6e}  {pz:.6e}"
-            f"  {MUON_MASS_GEV:.6f}"
+            f"  {_mass:.9f}"
         )
     with open(outpath, "w") as f:
         f.write("\n".join(lines) + "\n")
@@ -1364,7 +1408,7 @@ def write_geant4_hepevt(df, outpath):
 # ══════════════════════════════════════════════════════════════════════════════
 # PHITS DUMP WRITERS
 # ══════════════════════════════════════════════════════════════════════════════
-def write_phits_surface(df, outpath):
+def write_phits_surface(df, outpath, electrons=False):
     """
     PHITS s-type=17 dump — format: (30(1p1d24.15))
     No headers. 10 values per line: kf x y z cx cy cz Ekin[MeV] wt td
@@ -1373,14 +1417,15 @@ def write_phits_surface(df, outpath):
     ycol = "ys" if "ys" in df.columns else "y"
     zcol = "zs" if "zs" in df.columns else "z"
     ecol = "E"  if "E"  in df.columns else "Es"
+    _m   = ELECTRON_MASS_MEV if electrons else MUON_MASS_MEV
     with open(outpath, "w") as f:
         for _, r in df.iterrows():
-            kf   = 13 if r["charge"] < 0 else -13
+            kf   = _pdg(r["charge"], electrons)
             th, ph = r["theta"], r["phi"]
             cx   =  np.sin(th) * np.cos(ph)
             cy   =  np.sin(th) * np.sin(ph)
             cz   = -np.cos(th)
-            Ekin = max(r[ecol] * 1000.0 - MUON_MASS_MEV, 0.0)
+            Ekin = max(r[ecol] * 1000.0 - _m, 0.0)
             f.write(
                 _phits_d(kf)      + _phits_d(r[xcol]) + _phits_d(r[ycol]) +
                 _phits_d(r[zcol]) + _phits_d(cx)      + _phits_d(cy)      +
@@ -1532,7 +1577,12 @@ def _auto_geant4_convert():
     src_sel = (st.session_state.get("selected_file") or
                st.session_state.get("surface_file", ""))
 
-    if g4_use_all and src_all and Path(_abspath(src_all)).exists():
+    # Only a file this run wrote: with the detector filter on and Save ALL
+    # off, an all-muons file on disk is from an earlier run (up to 1.3.0 it
+    # was exported as this run's).
+    _this_run = {_norm_path(f) for f in (st.session_state.get("gen_run_files") or [])}
+    if (g4_use_all and src_all and Path(_abspath(src_all)).exists()
+            and _norm_path(src_all) in _this_run):
         src = _abspath(src_all)
         src_label = "all generated muons"
     else:
@@ -1547,8 +1597,9 @@ def _auto_geant4_convert():
         return
     try:
         df_g4 = load_file(src)
-        n = write_geant4_ascii(df_g4, dst) if fmt == "ascii" \
-            else write_geant4_hepevt(df_g4, dst)
+        _el = _is_electron_file(src)
+        n = write_geant4_ascii(df_g4, dst, electrons=_el) if fmt == "ascii" \
+            else write_geant4_hepevt(df_g4, dst, electrons=_el)
         st.success(f"✅  Geant4 file written: `{dst}`  ({n:,} muons — {src_label})")
         st.session_state["gen_geant4_done"] = True
     except Exception as ex:
@@ -1584,7 +1635,7 @@ def _auto_phits_convert():
             return
         try:
             df_p = load_file(src)
-            n = write_phits_surface(df_p, phits_dst)
+            n = write_phits_surface(df_p, phits_dst, electrons=_is_electron_file(src))
             st.success(f"✅  PHITS file written: `{phits_dst}`  ({n:,} muons)")
             st.session_state["gen_phits_done"] = True
         except Exception as ex:
@@ -1946,6 +1997,13 @@ def _auto_ug_filter():
     if not Path(src).exists():
         st.warning(f"⚠️  Underground filter skipped — `{src}` not found.")
         return
+    # Only the output of this transport run: a failed run leaves an older file
+    # behind, which up to 1.3.0 was filtered and shown as the new result.
+    _t0_run = _gg("music_start_time")
+    if _t0_run and Path(src).stat().st_mtime < float(_t0_run) - 1.0:
+        st.warning(f"⚠️  Underground filter skipped — `{src}` is older than this "
+                   f"transport run (the run did not write it).")
+        return
 
     # Pre-assign so Pylance/VSCode does not warn about potentially unbound names
     nhit          = 0
@@ -1971,7 +2029,13 @@ def _auto_ug_filter():
                     f"{det_top_cm/100:.1f} m (the rock above the detector)."
                 )
 
-        dfsel, nhit   = apply_ug_detector_filter(dfu, det_list)
+        # The safety margin belongs to the generator's straight-line cut (it
+        # keeps the muons that multiple scattering moves into the detector).
+        # Underground, after transport, the real detector decides: with the
+        # margin this file, and the rate at depth Results gives it, would be
+        # those of the inflated volume (x180 for a 10 cm detector, 2.3 m margin).
+        dfsel, nhit   = apply_ug_detector_filter(
+            dfu, [{**_d, "margin": 0.0} for _d in det_list])
 
         # Correct parentheses: int((series).sum()) not int(series).sum()
         n_survived_ug = int((dfu["alive"] == 1).sum()) \
@@ -1996,6 +2060,14 @@ def _auto_ug_filter():
         # live time (up to v1.2.0 it was not recorded and always had "No rate").
         _src_surface = (st.session_state.get("ug_sources") or {}).get(_norm_path(src))
         _record_ug_source(dst, _src_surface)
+        # The survivors the hits were cut from, tied to this hits file (a
+        # later transport or Terrain run overwrites music_nmuons_survived).
+        _hs = dict(st.session_state.get("ug_hits_survived") or {})
+        _hs[_norm_path(dst)] = n_survived_ug
+        st.session_state["ug_hits_survived"] = _hs
+        _hf = dict(st.session_state.get("ug_hits_from") or {})
+        _hf[_norm_path(dst)] = _norm_path(src)
+        st.session_state["ug_hits_from"] = _hf
 
     except Exception as ex:
         st.error(f"❌  Underground filter failed: {ex}")
@@ -2004,7 +2076,8 @@ def _auto_ug_filter():
 # ══════════════════════════════════════════════════════════════════════════════
 # 3D TRAJECTORY PLOT
 # ══════════════════════════════════════════════════════════════════════════════
-def plot_3d_trajectories(df, n_show, depth_m, detectors=None, radius_m=800.0):
+def plot_3d_trajectories(df, n_show, depth_m, detectors=None, radius_m=800.0,
+                         title="3D Muon Trajectories"):
     survived = df[df["alive"] == 1].head(n_show)
     stopped  = df[df["alive"] == 0].head(n_show)
     fig = go.Figure()
@@ -2150,8 +2223,7 @@ def plot_3d_trajectories(df, n_show, depth_m, detectors=None, radius_m=800.0):
         legend=dict(bgcolor="rgba(0,0,0,0.5)", bordercolor="#555",
                     borderwidth=1, font=dict(color="white")),
         margin=dict(l=0, r=0, t=30, b=0), height=620,
-        title=dict(text="3D Muon Trajectories — UG Selected",
-                   font=dict(color="white")),
+        title=dict(text=title, font=dict(color="white")),
     )
     return fig
 
@@ -2359,7 +2431,8 @@ def plot_3d_surface(df, radius_m, detectors=None, source_mode=1,
                 fig.add_trace(tr)
 
     title = ("Surface Muon Trajectories — hits (green) vs misses (red)"
-             if "hit_flag" in df.columns
+             if "hit_flag" in df.columns and detectors
+             else "Surface Muon Directions" if "hit_flag" in df.columns
              else "Selected Muon Trajectories → Detector")
 
     fig.update_layout(
@@ -2392,21 +2465,25 @@ def plot_survival_vs_depth(df, depth_m, rho, actual_rate=None, engine="transport
     muon) and the Monte Carlo survival at depth_m: actual_rate [%] when given
     (the transport's own count), else the 'alive' fraction of df."""
     depths_m    = np.linspace(0, depth_m * 1.5, 120)
-    depths_gcm2 = depths_m * 100.0 * rho
 
-    # Groom 2001 CSDA table (log-log interpolation) — replaces wrong linear approx.
-    # depths_gcm2 already carries the material density (opacity equivalence);
-    # the previous rho_stdrock/rho factor cancelled rho entirely, so the curve
-    # was always evaluated at Standard Rock density.
-    E_min_GeV = np.array([
-        _groom_threshold_energy(x)[0] for x in depths_gcm2
-    ])
-
-    # Es is TOTAL energy; the Groom threshold is kinetic
-    energies = df["Es"].values
+    # Groom 2001 CSDA range of each muon (log-log interpolation), from its
+    # surface energy (Es is TOTAL energy; the table is kinetic), against the
+    # SLANT opacity it crosses to reach a plane at depth d: d·ρ / cos, cos the
+    # direction cosine along the source plane's depth axis (z for an XY
+    # source, y for XZ, x for YZ), as the transport engines do. Up to 1.3.0
+    # the curve used the vertical opacity for every muon, which overstates the
+    # survival of an all-sky sample (17.7 % against 11.9 % at 20 m).
+    T_MeV  = np.clip((df["Es"].to_numpy(float) - MUON_MASS_GEV) * 1000.0,
+                     _GROOM_T_MEV[0], _GROOM_T_MEV[-1])
+    R_gcm2 = np.exp(np.interp(np.log(T_MeV), np.log(_GROOM_T_MEV), np.log(_GROOM_R_GCM2)))
+    th, ph = df["theta_s"].to_numpy(float), df["phi_s"].to_numpy(float)
+    _plane = int(st.session_state.get("gen_source_plane", 1) or 1)
+    cosd   = (np.abs(np.sin(th) * np.sin(ph)) if _plane == 2 else
+              np.abs(np.sin(th) * np.cos(ph)) if _plane == 3 else np.abs(np.cos(th)))
+    cosd   = np.maximum(np.nan_to_num(cosd, nan=1.0), 0.02)
+    reach_m = R_gcm2 * cosd / (100.0 * rho)     # deepest plane each muon reaches
     total    = max(len(df), 1)
-    rates    = [100.0 * np.sum(energies > e + MUON_MASS_GEV) / total
-                for e in E_min_GeV]
+    rates    = [100.0 * np.sum(reach_m > d) / total for d in depths_m]
 
     if actual_rate is None:
         actual_rate = 100.0 * (df["alive"] == 1).sum() / total
@@ -2441,13 +2518,12 @@ def plot_survival_vs_depth(df, depth_m, rho, actual_rate=None, engine="transport
         yaxis_gridcolor="#2a2a3a",
         legend=dict(bgcolor="rgba(0,0,0,0.5)", bordercolor="#555", borderwidth=1,
                     font=dict(color="white")),
-        margin=dict(l=60, r=30, t=80, b=50), height=440,
+        margin=dict(l=60, r=30, t=100, b=50), height=460,
         title=dict(
             text=(
                 f"CSDA Analytical Estimate vs {engine} Monte Carlo Result<br>"
-                "<sup>Blue curve: Groom (2001) CSDA range table — "
-                "fraction of input muons with E_surface > E_min(depth) | "
-                f"◆ {engine} survival at transport depth</sup>"
+                "<sup>Curve: CSDA range (Groom 2001) along each muon's slant path"
+                f"<br>◆ {engine} survival at the transport depth</sup>"
             ),
             font=dict(color="white", size=14),
         ),
@@ -2507,12 +2583,14 @@ def compute_detector_solid_angle(detectors, origin_cm=(0.0, 0.0, 0.0),
                                   n_samples=600_000):
     """
     Monte Carlo solid angle of detector(s) as seen from origin_cm.
-    Shoots uniform rays over the downward hemisphere (z < 0).
+    Shoots uniform rays over the downward hemisphere (z < 0). The detector
+    itself: the safety margin belongs to the generator's straight-line cut.
+    A geometric diagnostic; rates use T = N_tried / R (gui/live_time.py).
 
     Returns
     -------
     solid_angle_sr   : geometric solid angle [sr]
-    cos2_acceptance  : cos²θ-weighted acceptance [sr]  ← used for muon rate
+    cos2_acceptance  : cos²θ-weighted solid angle [sr]
     solid_angle_msr  : geometric solid angle [msr]
     frac_hemisphere  : fraction of 2π hemisphere subtended
     """
@@ -2535,7 +2613,7 @@ def compute_detector_solid_angle(detectors, origin_cm=(0.0, 0.0, 0.0),
     hit = np.zeros(n_samples, dtype=bool)
 
     for det in detectors:
-        margin = float(det.get("margin", 0.0))
+        margin = 0.0            # the real detector (see the docstring)
         if det["shape"] == 1:   # Cylinder
             hit |= _ray_hits_cylinder(
                 ox, oy, oz, dx, dy, dz,
@@ -2736,14 +2814,16 @@ def _render_mcs_margin_helper(detectors=None):
     _cos_ze  = max(math.cos(math.radians(_zen)), 0.01)
     _slant_m = _depth / _cos_ze
     _E_thr   = _groom(_slant_m * 100.0 * 2.65)   # min KE to traverse the slant path
-    _E_eff   = max(_e_min, _E_thr)               # slowest muon that actually arrives
+    # slowest muon that actually arrives, TOTAL energy (e_min is total, the
+    # Groom threshold kinetic)
+    _E_eff   = max(_e_min, _E_thr + 0.10566)
 
     # 1σ radial displacement [cm], Highland with CSDA energy loss along the
     # path (gui/mcs_margin.py); the constant-momentum _sr underestimates it
     # for muons that arrive with little energy left.
     import mcs_margin as _mm
     _rho_h = float(st.session_state.get("music_rho", 2.65) or 2.65)
-    _E_eff = max(_E_eff + 0.10566, _mm.arriving_energy_floor(_slant_m * 100.0, _rho_h))
+    _E_eff = max(_E_eff, _mm.arriving_energy_floor(_slant_m * 100.0, _rho_h))
     _sig1 = _mm.sigma_r_cm(_E_eff, _slant_m * 100.0, _rho_h) or _sr(_E_eff, _zen, _depth * 100.0)
     _hm1, _hm2, _hm3 = st.columns(3)
     _hm1.metric("1σ displacement",  f"{_sig1:.1f} cm",
@@ -2754,8 +2834,8 @@ def _render_mcs_margin_helper(detectors=None):
     _hm3.metric("3σ displacement",  f"{3.0 * _sig1:.1f} cm",
                 help="99.7 % coverage — compare with your detector size.")
 
-    if _e_min < _E_thr:
-        _stop_m = _csda_range_gcm2(_e_min) / 2.65 / 100.0
+    if _e_min < _E_thr + 0.10566:
+        _stop_m = _csda_range_gcm2(max(_e_min - 0.10566, 1e-3)) / 2.65 / 100.0   # kinetic
         st.warning(
             f"⚠️ E_min = {_e_min:.1f} GeV muons stop after ≈ {_stop_m:.1f} m of rock and never "
             f"reach {_depth:.0f} m at θ = {_zen:.0f}° (needs ≥ {_E_thr:.0f} GeV). "
@@ -3241,8 +3321,9 @@ with tab_gen:
                 "**②–⑤ (legacy)** Momentum from the vertical spectrum and θ from a fixed "
                 "law, with no surface projection: ② cos²θ (PARMA: its energy-averaged "
                 "zenith distribution), ③ uniform, ④ P(θ|E) from Guan/Frosin (right in θ "
-                "for a given E, but E weighted by the vertical spectrum: +7% at "
-                "15-30 GeV, −30% above 100 GeV for Guan), ⑤ cos³θ. Kept bit-exact for "
+                "for a given E, but E weighted by the vertical spectrum: for Guan over "
+                "15-1500 GeV, +7% at 15-30 GeV and −30% above 100 GeV; the bias grows "
+                "as E_min falls), ⑤ cos³θ. Kept bit-exact for "
                 "reproducing earlier runs; the GUI weights their events to the true "
                 "flux when computing rates."
             ),
@@ -4037,7 +4118,8 @@ with tab_gen:
                 if st.button("Convert → PHITS surface", key="btn_phits_surf", width='stretch'):
                     try:
                         _df_ps = load_file(_phits_src, mtime=Path(_phits_src).stat().st_mtime)
-                        _n_ps  = write_phits_surface(_df_ps, _phits_out)
+                        _n_ps  = write_phits_surface(_df_ps, _phits_out,
+                                                     electrons=_is_electron_file(_phits_src))
                         st.success(f"✅  Written: `{_phits_out}` ({_n_ps:,} muons)")
                         st.session_state["phits_surf_file"] = _phits_out
                     except Exception as _ex:
@@ -4135,8 +4217,9 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                     _sg2.metric("Solid angle",      f"{_sa_msr:.4f} msr")
                     _sg3.metric("Fraction of 2π",   f"{_frac*100:.4f} %")
                     _sg4.metric("cos²θ acceptance", f"{_ca_sr:.4e} sr")
-                    st.caption("MC estimate (600k rays from source centre). "
-                               "cos²θ acceptance is used in the flux formula.")
+                    st.caption("MC estimate (600k rays from source centre). A geometric "
+                               "diagnostic: rates and live times use the surface rate R "
+                               "(T = N_tried / R), not this solid angle.")
                 else:
                     st.info("Define at least one detector to compute its solid angle.")
 
@@ -4145,7 +4228,8 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             st.caption(
                 "How long a real detector would need to collect an equivalent number of muons "
                 "passing through the source surface area. "
-                "Formula: **t = N / (I_vert × Ω_eff × A_src)**"
+                "Formula: **T = N_tried / R**, R the rate of muons crossing the source "
+                "surface (flux × projection onto it, in the energy and zenith windows)"
             )
             if mono_beam:
                 st.warning(
@@ -4157,7 +4241,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             with _mtime_c1:
                 # ── Flux model ────────────────────────────────────────────────────
                 _ffe_model = st.selectbox(
-                    "Flux model for rate estimate",
+                    "Flux model (used for spectra 2, 3 and 8; the others use their own)",
                     list(_FFE_MODEL_LABELS.keys()),
                     index=list(_FFE_MODEL_LABELS.keys()).index("reyna_bugaev"),
                     format_func=lambda k: _FFE_MODEL_LABELS[k],
@@ -4249,9 +4333,24 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 tilt_deg=float(disk_tilt) if source_mode in (1, 2) else 0.0,
                 tilt_az_deg=float(disk_tilt_az) if source_mode in (1, 2) else 0.0)
             _th_rate = 0.0 if angular_mode == 1 else float(theta_max)
+            # The generator's own spectrum when this module has it (1, 4-7):
+            # then R is the one the generator prints. Up to 1.3.0 the panel
+            # always used the flux-model selector (default Reyna), so its live
+            # time disagreed with the run's (-15 % for a Guan run).
+            _spec_gen = None if mono_beam else int(spectrum_mode)
+            _r_src = _ffe_model
             try:
-                _rate_s = _LT.surface_rate(_ffe_model, max(e_min, 0.5 + 0.10566),
-                                           _emax_flux, _th_rate, _src_now) or 0.0
+                if _spec_gen in (1, 4, 5, 6, 7):
+                    _rate_s = _LT.surface_rate(_spec_gen, e_min, e_max, _th_rate, _src_now) or 0.0
+                    _r_src = "the generator's spectrum"
+                elif (_spec_gen == 3 and int(st.session_state.get("gen_spectrum_run", 0) or 0) == 3
+                      and st.session_state.get("gen_surface_rate")):
+                    _rate_s = float(st.session_state["gen_surface_rate"])
+                    _r_src = "the last PARMA run's printed R"
+                else:
+                    _rate_s = _LT.surface_rate(_ffe_model, max(e_min, 0.5 + 0.10566),
+                                               _emax_flux, _th_rate, _src_now) or 0.0
+                    _r_src = f"the flux model above ({_ffe_model})"
             except Exception as _e:
                 _rate_s, _flux_err = 0.0, str(_e)
             _rate_min = _rate_s * 60.0
@@ -4281,7 +4380,8 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             st.caption(
                 f"I_vert = {I_vert:.3g} cm⁻²sr⁻¹s⁻¹  |  "
                 f"E: {_e_range_str}  ({100*_band_frac:.1f}% of full spectrum)  |  "
-                f"R = {_rate_s:.4g} s⁻¹  (θ ≤ {_th_rate:.0f}°, projection onto the source)  |  "
+                f"R = {_rate_s:.4g} s⁻¹  (θ ≤ {_th_rate:.0f}°, projection onto the source; "
+                f"from {_r_src})  |  "
                 f"A_src = {_area_m2:.2g} m²  ({_a_label})"
             )
 
@@ -4397,7 +4497,10 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
             _df_emin  = _dfc3.number_input("E_min [GeV]", 0.1, 10000.0,
                                            max(0.1, float(st.session_state.get("emin", 1.0))),
                                            0.1, format="%.2f", key="df_emin",
-                                           help="Lower integration cut-off.")
+                                           help="Lower integration cut-off, TOTAL energy "
+                                                "(the Generator's convention).")
+            # the flux models integrate in kinetic energy
+            _df_tmin  = max(float(_df_emin) - 0.10566, 0.0)
             _df_alt   = _dfc4.number_input("Altitude [m]", 0, 5000, 0, 100, key="df_alt",
                                            help="Applies exp(h/8500 m) correction.")
             _vw_df = _ffe_validity_warning(_df_model, max(float(_df_emin) - 0.10566, 0.0),
@@ -4406,7 +4509,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 st.warning(f"⚠️  {_vw_df}", icon="⚠️")
             try:
                 _df_I_theta, _df_I_theta_T = angular_profile(
-                    np.array([0.0, float(_df_theta)]), E_min_GeV=float(_df_emin),
+                    np.array([0.0, float(_df_theta)]), E_min_GeV=_df_tmin,
                     model=_df_model, altitude_m=float(_df_alt))
                 _df_I_vert  = _df_I_theta[0]
                 _df_I_at_th = _df_I_theta[1]
@@ -4427,7 +4530,9 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 _cos2 = np.cos(np.radians(_df_theta))**2
                 _dfm4.metric("cos²θ (naive)", f"{_cos2:.4f}", delta=f"Δ = {_df_ratio-_cos2:+.4f}",
                              help="Naive approximation — compare to model curve.")
-                _dfm5.metric("Model E_min", f"{_df_emin:.0f} GeV", help="Lower cut-off for integration.")
+                _dfm5.metric("Model E_min", f"{_df_emin:.2f} GeV",
+                             help="Lower cut-off for integration (total energy; kinetic "
+                                  f"{_df_tmin:.2f} GeV).")
                 st.divider()
                 _BG = "rgb(15,17,23)"
                 _dfp_l, _dfp_r = st.columns(2)
@@ -4452,7 +4557,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 with _dfp_r:
                     st.markdown("**Angular profile** I(θ) / I(0°)")
                     _th_arr  = np.arange(0, 90, 2, dtype=float)
-                    _I_prof, _T_prof = angular_profile(_th_arr, E_min_GeV=float(_df_emin),
+                    _I_prof, _T_prof = angular_profile(_th_arr, E_min_GeV=_df_tmin,
                         model=_df_model, altitude_m=float(_df_alt))
                     _cos2_arr = np.cos(np.radians(_th_arr))**2
                     _fig_ang = go.Figure()
@@ -4579,7 +4684,7 @@ void PrimaryGeneratorAction::GeneratePrimaries(G4Event* event) {
                 help=(
                     "Geometric acceptance = detector area × effective solid angle.\n\n"
                     "Single 10×10 cm² panel (full sky): 314 cm²·sr\n"
-                    "Single panel, θ<30° cone: 84 cm²·sr\n"
+                    "Single panel, θ<30° cone: π·S·sin²θ = 79 cm²·sr\n"
                     "Telescope 10×10 cm², d=50 cm: 4 cm²·sr\n"
                     "MURAVES-style telescope: ~6 cm²·sr (this default)"
                 ))
@@ -5085,7 +5190,18 @@ with tab_music:
                                        key="musicpreset",
                                       help="Sets default density and radiation length.")
             mat = MUSIC_MATERIALS[mat_choice]
-            if mat["desc"]:
+            if mat_choice == "Iron":
+                # Only UCMuon-MC has iron tables; MUSIC, Bethe-Bloch, PROPOSAL and
+                # PUMAS run rock composition at iron density (measured at 10 m:
+                # survival 7.4 % with UCMuon-MC, 6.2 % with the others).
+                if transport_engine == "UCMuon Stochastic (Python)":
+                    st.caption("ℹ️ ρ=7.874 g/cm³, X₀=13.84 g/cm² — iron composition "
+                               "(UCMuon-MC's iron tables)")
+                else:
+                    st.warning("⚠️ Iron: this engine runs standard-rock composition "
+                               "(Z≈11) at iron density, an approximation; UCMuon-MC "
+                               "has iron tables.")
+            elif mat["desc"]:
                 st.caption(f"ℹ️ {mat['desc']}")
     
             _preset_prev = st.session_state.get("music_preset_prev")
@@ -5226,7 +5342,10 @@ with tab_music:
                                              value=st.session_state.get("music_rad", float(default_rad)),
                                              step=0.5, key="music_rad",
                                              help="Radiation length in g/cm² (MUSIC "
-                                                  "convention). Standard rock: 26.48; "
+                                                  "convention), used by MUSIC and "
+                                                  "UCMuon-MC; Bethe-Bloch, PROPOSAL and "
+                                                  "PUMAS take it from their own material "
+                                                  "definition. Standard rock: 26.48; "
                                                   "water/ice: 36.08; iron: 13.84.")
     
             else:
@@ -5282,7 +5401,11 @@ with tab_music:
                 st.metric("Overburden opacity  X = ρ·L", f"{_X_mean:.1f} g/cm²")
     
             # ── Depth vs detector mismatch warning ────────────────────────────────
-            _det_chk = st.session_state.get("gen_detectors", []) if st.session_state.get("gen_use_detector", False) else []
+            # only when the input is that generator run's output (as Basic's
+            # depth): another file has nothing to do with that detector
+            _det_chk = (st.session_state.get("gen_detectors", [])
+                        if st.session_state.get("gen_use_detector", False) and _in_from_gen
+                        else [])
             if _det_chk:
                 # The overburden is the rock above the detector, so it ends at
                 # the detector's top face (up to v1.2.0 this asked for the
@@ -5349,9 +5472,7 @@ with tab_music:
         _files_ok = _files_ok_init1   # used for init default selection
         _mat_suffix  = MUSIC_MATERIALS[mat_choice].get("mat_suffix", "rock")
         _group_label = {"rock":"rock", "water":"water / ice", "seawater":"seawater"}[_mat_suffix]
-        _xs_q_note   = {"approx": (f"⚠️ Iron (Z=26) uses rock XS tables (Z≈11) — approximate. "
-                                    f"Suitable for rough estimates only."),
-                        "good": None, "exact": None}[_xs_q]
+        _xs_q_note   = None   # the preset caption above now says it, for every engine
     
         if _ADV:
             if transport_engine == "MUSIC":
@@ -5807,7 +5928,9 @@ with tab_music:
             if ug_use_filter:
                 for _di, _det in enumerate(_det_ug):
                     _sn = "Cylinder" if _det["shape"] == 1 else "Box"
-                    st.caption(f"  Detector {_di+1}: {_sn}, margin {_det.get('margin',0):.0f} cm")
+                    st.caption(f"  Detector {_di+1}: {_sn}, the detector itself (its "
+                               f"{_det.get('margin',0):.0f} cm safety margin serves only the "
+                               f"generator's straight-line cut)")
         else:
             ug_use_filter  = False
             ug_filter_file = "output/muons_ug_selected.dat"
@@ -6193,15 +6316,38 @@ def _render_results_tab():
 
     # Pre-compute survival / charge so they're available both in the quick bar
     # and inside the detailed expander without duplicating lookup logic.
-    _ev          = df[ecol][df[ecol] > 0] if ecol in df.columns else pd.Series([], dtype=float)
+    _ev_mask     = ((df[ecol] > 0).to_numpy() if ecol in df.columns
+                    else np.zeros(len(df), dtype=bool))
+    _ev          = df[ecol][_ev_mask] if ecol in df.columns else pd.Series([], dtype=float)
     _s_survived  = int((df["alive"] == 1).sum()) if is_underground else None
-    _n_surv_det  = st.session_state.get("music_nmuons_survived", None)
+    # Survivors the hits were cut from, recorded with this hits file only.
+    _n_surv_det  = ((st.session_state.get("ug_hits_survived") or {}).get(_norm_path(chosen))
+                    if is_det_hits else None)
     _has_charge  = "charge" in df.columns
-    if _has_charge:
-        _np_c = int((df["charge"] == 1).sum())
-        _nm_c = int((df["charge"] == -1).sum())
     rate_per_s, live_time_s, flux_ok, _rate_note, _rate_sigma, _row_w = _compute_flux(
         df, is_underground, chosen)
+    # Legacy angular modes (1-5) carry importance weights (_row_w, aligned with
+    # df): means, the survival fraction and the charge ratio use them, like the
+    # rate does. Angular mode 6 and files without weights: plain counts.
+    def _wsum(mask):
+        return float(np.sum(_row_w[mask])) if _row_w is not None else float(np.sum(mask))
+    _ev_mean = float("nan")
+    if len(_ev) > 0:
+        _ev_mean = (float(np.average(_ev.to_numpy(float), weights=_row_w[_ev_mask]))
+                    if _row_w is not None and _wsum(_ev_mask) > 0 else float(_ev.mean()))
+    _surv_frac = None
+    if is_underground and _s_survived is not None:
+        _alive_m   = (df["alive"] == 1).to_numpy()
+        _surv_frac = _wsum(_alive_m) / max(_wsum(np.ones(len(df), dtype=bool)), 1e-300)
+    if _has_charge:
+        # at depth, the survivors' charge (stopped muons are written too)
+        _chg_m = ((df["alive"] == 1).to_numpy() if is_underground
+                  else np.ones(len(df), dtype=bool))
+        _np_c = int(((df["charge"] == 1).to_numpy() & _chg_m).sum())
+        _nm_c = int(((df["charge"] == -1).to_numpy() & _chg_m).sum())
+        _wp   = _wsum((df["charge"] == 1).to_numpy() & _chg_m)
+        _wm   = _wsum((df["charge"] == -1).to_numpy() & _chg_m)
+        _ratio_c = _wp / max(_wm, 1e-300)
     # Legacy angular modes (1-5) sample p and θ independently: their raw
     # counts are the sampling distribution. Plots use the flux weights when
     # they are known.
@@ -6221,22 +6367,32 @@ def _render_results_tab():
         _qb3.metric("Peak flux E_det [GeV]", f"{_pumas_peak:.2f}")
         _qb4.metric("Total events in file",  f"{int(df['n_events_in_bin'].sum()):,}")
     elif is_pumas_events:
+        # Backward events are drawn log-uniformly in E_det with a 50/50
+        # charge: their plain averages describe the sampler. Weighted by
+        # flux_contribution they describe the flux.
+        _pw = df["flux_contribution"].to_numpy(float)
+        _pw = np.where(np.isfinite(_pw) & (_pw > 0), _pw, 0.0)
+        _pws = max(float(_pw.sum()), 1e-300)
         _qb1.metric("PUMAS backward events", f"{len(df):,}")
-        _qb2.metric("Mean E_det [GeV]",      f"{df['E_det_GeV'].mean():.2f}")
-        _qb3.metric("Mean E_surf [GeV]",     f"{df['E_surf_GeV'].mean():.2f}")
-        _n_p = int((df["charge"] == 1).sum()); _n_m = int((df["charge"] == -1).sum())
-        _qb4.metric("μ⁺/μ⁻", f"{_n_p/max(_n_m,1):.3f}")
+        _qb2.metric("Mean KE_det [GeV], flux-weighted",
+                    f"{float(np.sum(_pw * df['E_det_GeV'].to_numpy(float))) / _pws:.2f}")
+        _qb3.metric("Mean KE_surf [GeV], flux-weighted",
+                    f"{float(np.sum(_pw * df['E_surf_GeV'].to_numpy(float))) / _pws:.2f}")
+        _w_p = float(_pw[(df["charge"] == 1).to_numpy()].sum())
+        _w_m = float(_pw[(df["charge"] == -1).to_numpy()].sum())
+        _qb4.metric("μ⁺/μ⁻ (flux-weighted)", f"{_w_p/max(_w_m,1e-300):.3f}")
     else:
         _qb1.metric("Muons" if not is_det_hits else "Detector hits", f"{len(df):,}")
         if len(_ev) > 0:
             _elabel = "Mean E at depth [GeV]" if (is_underground or is_det_hits) else "Mean E [GeV]"
-            _qb2.metric(_elabel, f"{_ev.mean():.2f}")
+            _qb2.metric(_elabel, f"{_ev_mean:.2f}")
         if is_underground and _s_survived is not None:
             _qb3.metric("Survived",      f"{_s_survived:,}")
-            _qb4.metric("Survival rate", f"{100*_s_survived/max(len(df),1):.1f}%")
+            _qb4.metric("Survival rate" + (" (weighted)" if _row_w is not None else ""),
+                        f"{100*_surv_frac:.1f}%")
         elif is_det_hits and _n_surv_det:
             _qb3.metric("Survived (transport)", f"{_n_surv_det:,}")
-            _qb4.metric("Detector hit rate",    f"{100*len(df)/max(_n_surv_det,1):.1f}%")
+            _qb4.metric("Survivors in the detector", f"{100*len(df)/max(_n_surv_det,1):.1f}%")
         elif flux_ok and rate_per_s is not None:
             _qb3.metric("Rate [/s]",   f"{rate_per_s:.4g}", delta=f"±{_rate_sigma:.3g}")
             _qb4.metric("Live time",   _fmt_time(live_time_s))
@@ -6254,6 +6410,16 @@ def _render_results_tab():
             f"source surface, same estimator as UCMuGen rate()). {_rate_note}.")
     elif not flux_ok and not (is_pumas_flux or is_pumas_events) and _rate_note:
         st.caption(f"No rate: {_rate_note}.")
+    if (flux_ok and rate_per_s is not None and not (is_underground or is_det_hits)
+            and _det_t3 and "hit_flag" in df.columns and len(df)
+            and bool((df["hit_flag"] == 1).all())):
+        # The generator's detector selection: straight lines through the
+        # detector inflated by its safety margin.
+        _mg = max(float(_d.get("margin", 0.0)) for _d in _det_t3)
+        st.caption(f"These rows are the generator's detector selection: straight lines "
+                   f"through the detector inflated by its {_mg:.0f} cm safety margin. Their "
+                   f"rate is that of the inflated volume, not of the detector; the rate at "
+                   f"the detector comes from transporting them (the detector-hit file).")
 
     # ── Detailed statistics (collapsed — expand for full breakdown) ───────────
     with st.expander("📊  Detailed statistics", expanded=False):
@@ -6262,28 +6428,33 @@ def _render_results_tab():
         with _ds_l:
             st.markdown("**Energy & survival**")
             _dsa1, _dsa2, _dsa3 = st.columns(3)
-            _dsa1.metric("Total muons", f"{len(df):,}")
+            if is_pumas_flux:
+                _dsa1.metric("E_det bins", f"{len(df):,}")
+            else:
+                _dsa1.metric("Total muons", f"{len(df):,}")
             if len(_ev) > 0:
-                _dsa2.metric("Mean E [GeV]", f"{_ev.mean():.2f}")
+                _dsa2.metric("Mean E [GeV]", f"{_ev_mean:.2f}")
                 _dsa3.metric("Max E [GeV]",  f"{_ev.max():.2f}")
             if is_underground and _s_survived is not None:
                 _dsb1, _dsb2, _dsb3 = st.columns(3)
                 _dsb1.metric("Survived",      f"{_s_survived:,}")
                 _dsb2.metric("Stopped",       f"{len(df)-_s_survived:,}")
-                _dsb3.metric("Survival rate", f"{100*_s_survived/max(len(df),1):.1f}%")
+                _dsb3.metric("Survival rate" + (" (weighted)" if _row_w is not None else ""),
+                             f"{100*_surv_frac:.1f}%")
             elif is_det_hits and _n_surv_det:
                 _dsb1, _dsb2 = st.columns(2)
                 _dsb1.metric("Hit / survived",  f"{len(df):,} / {_n_surv_det:,}")
-                _dsb2.metric("Detector hit rate", f"{100*len(df)/max(_n_surv_det,1):.1f}%")
+                _dsb2.metric("Survivors in the detector", f"{100*len(df)/max(_n_surv_det,1):.1f}%")
 
         with _ds_r:
             if _has_charge:
-                st.markdown("**Charge composition**")
+                st.markdown("**Charge composition**" + (" (survivors)" if is_underground else ""))
                 _cr1, _cr2, _cr3 = st.columns(3)
                 _cr1.metric("μ⁺  (+1)", f"{_np_c:,}")
                 _cr2.metric("μ⁻  (−1)", f"{_nm_c:,}")
-                _cr3.metric("μ⁺/μ⁻", f"{_np_c/max(_nm_c,1):.3f}",
-                            help="Expected ~1.27 at sea level.")
+                _cr3.metric("μ⁺/μ⁻" + (" (weighted)" if _row_w is not None else ""),
+                            f"{_ratio_c:.3f}",
+                            help="Sea level: about 1.27 (PDG); PARMA gives its own, site-dependent value.")
             if _det_t3:
                 st.markdown("**Detector solid angle**")
                 _sa_sr, _ca_sr, _sa_msr, _frac = compute_detector_solid_angle(_det_t3)
@@ -6459,6 +6630,13 @@ def _render_results_tab():
                         axes[0].set_ylabel(_ylab_cnt, color="white")
                         axes[0].set_title("Energy spectrum", color="white")
                     _vmask = df[pc].notna().to_numpy()
+                    # Underground files write stopped muons with zeros in the
+                    # at-depth columns: histogram those columns over the
+                    # survivors only (the surface columns keep every row).
+                    _at_depth = ("alive" in df.columns and
+                                 pc in ("x", "y", "z", "E", "cx", "cy", "cz", "theta", "phi"))
+                    if _at_depth:
+                        _vmask = _vmask & (df["alive"] == 1).to_numpy()
                     _raw = df[pc].to_numpy()[_vmask]
                     _xlabel = pc
                     if pc in ("theta","theta_s","phi","phi_s"):
@@ -6473,12 +6651,12 @@ def _render_results_tab():
                                     color="#ff6b6b", edgecolor="none", alpha=0.85, align="edge")
                     axes[1].set_xlabel(_xlabel, color="white")
                     axes[1].set_ylabel(_ylab_cnt, color="white")
-                    axes[1].set_title(f"Distribution: {pc}", color="white")
+                    axes[1].set_title(f"Distribution: {pc}" + (" (survivors)" if _at_depth else ""),
+                                      color="white")
                     if pc in ("theta","theta_s") and len(_raw) > 0:
+                        # (no cos²θ·sinθ reference line: it holds for neither a
+                        # flat source, angular mode 6, nor muons at depth)
                         axes[1].set_xlim(left=0)
-                        axes[1].axvline(35.26, color="#ffd700", lw=1.2, ls="--", alpha=0.7,
-                                        label="cos²θ·sinθ peak (35.3°)")
-                        axes[1].legend(fontsize=8, facecolor="#1c1e26", labelcolor="white", framealpha=0.7)
                     plt.tight_layout()
                     st.pyplot(fig2); plt.close(fig2)
                     _amode_run = int(st.session_state.get("gen_angular_mode", 6) or 6)
@@ -6494,6 +6672,8 @@ def _render_results_tab():
         if _show_generic and "theta" in df.columns and "phi" in df.columns:
             with st.expander("🧭  Angular acceptance map  (θ vs φ)", expanded=False):
                 _tp_mask   = (df["theta"].notna() & df["phi"].notna()).to_numpy()
+                if "alive" in df.columns:      # stopped muons carry theta = phi = 0
+                    _tp_mask = _tp_mask & (df["alive"] == 1).to_numpy()
                 _theta_deg = np.degrees(df["theta"].to_numpy(float)[_tp_mask])
                 # Wrap phi into [-180, 180): the Fortran generator and MUSIC
                 # write phi in [0, 2pi), the Python engines in [-pi, pi] —
@@ -6553,25 +6733,33 @@ def _render_results_tab():
             # (survivors that reach the detector) use the full transport output.
             # The transport's own survival count applies only to its files.
             _df_curve, _surv_mc = df, None
-            _ug_full = st.session_state.get("ug_file", "")
-            if _from_last_ug:
-                if (_norm_path(chosen) != _norm_path(_ug_full) and _ug_full
-                        and Path(_ug_full).exists()):
+            if is_det_hits:
+                # the underground file these hits were cut from (recorded by
+                # the filter; a later transport or Terrain run does not move it)
+                _ug_full = (st.session_state.get("ug_hits_from") or {}).get(_norm_path(chosen), "")
+                _df_curve = None
+                if _ug_full and Path(_ug_full).exists():
                     try:
                         _df_curve = load_file(_ug_full, mtime=Path(_ug_full).stat().st_mtime)
                     except Exception:
-                        _df_curve = df
+                        _df_curve = None
+            if _df_curve is not None and _from_last_ug:
                 if "alive" in _df_curve.columns and len(_df_curve):
                     _surv_mc = 100.0 * float((_df_curve["alive"] == 1).mean())
-            st.plotly_chart(plot_survival_vs_depth(
-                _df_curve, _depth_m_val, _rho_val, actual_rate=_surv_mc,
-                engine=(st.session_state.get("ug_engine", "transport")
-                        if _from_last_ug else "transport")))
+            if _df_curve is None:
+                st.caption("No survival curve: it needs every transported muon, and the "
+                           "underground file this detector-hit file was cut from is not "
+                           "known. Load that underground file instead.")
+            else:
+                st.plotly_chart(plot_survival_vs_depth(
+                    _df_curve, _depth_m_val, _rho_val, actual_rate=_surv_mc,
+                    engine=(st.session_state.get("ug_engine", "transport")
+                            if _from_last_ug else "transport")))
             st.caption(
-                "**Blue curve** — analytical CSDA (Groom 2001). "
-                "**◆ Diamond** — transport MC survival rate. "
-                "CSDA is an upper bound; stochastic engines include straggling and radiative losses. "
-                "Gap >5% may indicate E_min too low or (MUSIC) XS tables needing recalculation (init=0).")
+                "**Blue curve**: CSDA estimate (Groom 2001) for these muons along their slant "
+                "paths. **◆ Diamond**: the transport's survival. Stochastic engines differ from "
+                "CSDA by range straggling and radiative fluctuations, typically a few percent; "
+                "a much larger gap points to a setting mismatch (depth, density, material).")
 
 
     # ── 3D trajectories ───────────────────────────────────────────────────────
@@ -6625,8 +6813,10 @@ def _render_results_tab():
                             _det_3d = [_ov_det]
                             st.session_state["gen_detectors"] = _det_3d
                             st.session_state["gen_use_detector"] = True
-            st.plotly_chart(plot_3d_trajectories(df, _n_traj, auto_depth,
-                                                  detectors=_det_3d, radius_m=_radius_3d))
+            st.plotly_chart(plot_3d_trajectories(
+                df, _n_traj, auto_depth, detectors=_det_3d, radius_m=_radius_3d,
+                title=("3D Muon Trajectories: detector hits underground" if is_det_hits
+                       else "3D Muon Trajectories: underground")))
             st.caption("🟢 Generation surface  🔵 Survived  🔴 Stopped  🟡 Detector")
 
         elif "theta" in df.columns and ("x" in df.columns or "xs" in df.columns):
@@ -6643,7 +6833,8 @@ def _render_results_tab():
                 disk_tilt_az=float(st.session_state.get("gen_disk_tilt_az", 0.0)),
                 source_plane=int(st.session_state.get("gen_source_plane", 1)),
             ))
-            _lh = ("🟢 Hits detector  🔴 Misses" if "hit_flag" in df.columns
+            _lh = ("🟢 Hits detector  🔴 Misses" if "hit_flag" in df.columns and _det_3d
+                   else "direction lines" if "hit_flag" in df.columns
                    else "🔵 Selected trajectories")
             st.caption(f"🟢 Generation surface  {_lh}")
         else:
@@ -6758,7 +6949,7 @@ if _ADV:            # Basic shows Generator, Transport and Results only
             "generator": {
                 "e_min_GeV":       st.session_state.get("gen_emin",           "— run generator first"),
                 "e_max_GeV":       st.session_state.get("gen_emax",           "— run generator first"),
-                "spectrum_mode":   st.session_state.get("gen_spectrum_mode",  "— run generator first"),
+                "spectrum_mode":   st.session_state.get("gen_spectrum_run", st.session_state.get("gen_spectrum_mode", "— run generator first")),
                 "radius_m":        st.session_state.get("gen_radius",         "— run generator first"),
                 "n_muons_saved":   st.session_state.get("gen_nmuons_done",    "— run generator first"),
                 "theta_max_deg":   st.session_state.get("gen_theta_max",      "— run generator first"),

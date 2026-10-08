@@ -158,7 +158,7 @@ contains
       do j = 1, NGRID
         cdf(j) = partial(j) / I_total
       end do
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, ' cm^-2 s^-1 sr^-1 (vertical)'
       write(*,*) '  Spectrum mode:     Guan et al. (2015)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -183,7 +183,7 @@ contains
       do j = 1, NGRID
         cdf(j) = partial(j) / I_total
       end do
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, ' cm^-2 s^-1 sr^-1 (vertical)'
       write(*,*) '  Spectrum mode:     Frosin et al. (2025)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -208,7 +208,7 @@ contains
       do j = 1, NGRID
         cdf(j) = partial(j) / I_total
       end do
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, ' cm^-2 s^-1 sr^-1 (vertical)'
       write(*,*) '  Spectrum mode:     Bugaev/Gaisser (1990)  dN/dE ~ E^-2.7*(pion+kaon)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -232,7 +232,7 @@ contains
       do j = 1, NGRID
         cdf(j) = partial(j) / I_total
       end do
-      write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+      write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, ' cm^-2 s^-1 sr^-1 (vertical)'
       write(*,*) '  Spectrum mode:     Reyna-Bugaev (2006)  log-poly p^3*F_vert'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -254,7 +254,7 @@ contains
               * (p_max**(B_COSMO+1d0) - p_min**(B_COSMO+1d0)) &
               / (B_COSMO + 1d0)
       write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, &
-                              ' cm^-2 s^-1 sr^-1'
+                              ' cm^-2 s^-1 sr^-1 (vertical)'
       write(*,*) '  Spectrum mode:     CosmoALEPH (analytical)'
       write(*,*) '  CDF ready.'
       write(*,*)
@@ -277,7 +277,7 @@ contains
     do j = 1, NGRID
       cdf(j) = partial(j) / I_total
     end do
-    write(*,'(A,ES12.4)') '  Integrated flux:   ', I_total
+    write(*,'(A,ES12.4,A)') '  Integrated flux:   ', I_total, ' cm^-2 s^-1 sr^-1 (vertical)'
     write(*,*) '  Spectrum mode:     CosmoALEPH (table)'
     write(*,*) '  CDF ready.'
     write(*,*)

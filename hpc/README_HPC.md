@@ -14,20 +14,21 @@ UCMuon/                              <- project root; always run sbatch from her
 |-- README.md
 |-- requirements.txt                 <- Python deps (GUI only)
 |
-|-- ucmuon_gen                       <- binary: MPI+OMP generator
-|-- ucmuon_transport_music           <- binary: MPI+OMP MUSIC transport
-|-- ucmuon_transport_bb              <- binary: MPI+OMP Bethe-Bloch transport
-|-- ucmuon_to_phits                  <- binary: PHITS converter (no MPI needed)
-|-- music-eloss-rock.dat             <- generated on first MUSIC run (must be in root)
-|-- music-cross-sections-rock.dat    <- generated on first MUSIC run (must be in root)
+|-- bin/
+|   |-- ucmuon_gen                   <- binary: MPI+OMP generator
+|   |-- ucmuon_transport_music       <- binary: MPI+OMP MUSIC transport
+|   |-- ucmuon_transport_bb          <- binary: MPI+OMP Bethe-Bloch transport
+|   |-- ucmuon_to_phits              <- binary: PHITS converter (no MPI needed)
+|   `-- music-*.dat                  <- MUSIC tables (make data-links; generated
+|                                       on the first MUSIC run with init=0)
 |
 |-- src/
 |   |-- generator/                   <- generator Fortran source
 |   |-- parma/                       <- PARMA spectrum model
-|   |-- music/                       <- MUSIC transport source
-|   |-- bethe_bloch/                 <- Bethe-Bloch transport source
+|   |-- transport/music/             <- MUSIC transport source
+|   |-- transport/bethe_bloch/       <- Bethe-Bloch transport source
 |   |-- common/                      <- shared Fortran support files
-|   `-- phits/
+|   `-- converters/
 |       |-- ucmuon_to_phits.f90      <- PHITS converter (Fortran, fast)
 |       `-- ucmuon_to_phits.py       <- PHITS converter (Python, local use)
 |
@@ -190,7 +191,7 @@ tail -f logs/ucmuon_gen_<JOBID>.out
 ```
 
 Output in `output_<JOBID>/`:
-- `ucmuon_selected.dat` -- detector-aimed muons (14 col)
+- `ucmuon_selected.dat` -- detector-aimed muons (13 col)
 - `ucmuon_selected_phits.dat` -- PHITS dump (auto-converted)
 - `ucmuon_surface.dat` -- all muons (only if `save_all=1`)
 
@@ -250,11 +251,11 @@ Always use the compiled Fortran converter for production files.
 
 ```bash
 # Generator output -> PHITS (all muons in file):
-./ucmuon_to_phits gen < output_6307xxx/ucmuon_selected.dat \
+./bin/ucmuon_to_phits gen < output_6307xxx/ucmuon_selected.dat \
                       > output_6307xxx/ucmuon_selected_phits.dat
 
 # Transport output -> PHITS (alive muons only):
-./ucmuon_to_phits transport < output_6307xxx/ucmuon_underground.dat \
+./bin/ucmuon_to_phits transport < output_6307xxx/ucmuon_underground.dat \
                             > output_6307xxx/ucmuon_underground_phits.dat
 ```
 
@@ -299,15 +300,20 @@ For surface muons as source (before transport):
 
 ## Output column formats
 
-### Generator: ucmuon_selected.dat (14 columns)
+### Generator: ucmuon_selected.dat (13 columns) and ucmuon_surface.dat (14 columns)
 
 ```
+ucmuon_selected.dat (the detector-aimed muons, every row a hit):
+EventID  x_cm  y_cm  z_cm  p_GeV  px_GeV  py_GeV  pz_GeV
+         theta_rad  phi_rad  E_GeV  charge  det_mask
+ucmuon_surface.dat (all generated muons, save_all=1):
 EventID  x_cm  y_cm  z_cm  p_GeV  px_GeV  py_GeV  pz_GeV
          theta_rad  phi_rad  E_GeV  charge  hit_flag  det_mask
 ```
 
-Coordinate convention: z=0 at surface, z<0 underground.
-charge: +1=mu+, -1=mu-. hit_flag=1 means muon intersects a detector volume.
+Coordinate convention: z=0 at surface, z<0 underground. E is the total energy.
+charge: +1=mu+, -1=mu-. hit_flag=1 means the muon's straight line intersects a
+(margin-inflated) detector volume; det_mask says which detectors (bit i = detector i+1).
 
 ### Transport: ucmuon_underground.dat (18 columns)
 

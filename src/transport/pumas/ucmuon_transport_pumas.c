@@ -282,13 +282,17 @@ static void run_forward(const char *infile, const char *outfile,
 
         int   evid, charge_i;
         double xs, ys, zs, p_srf, px, py, pz, theta_s, phi_s, E_srf;
-        int   hit_flag = 1;
+        int   hit_flag = 1, c13 = 0, c14 = 0;
 
         int nc = sscanf(line,
-            "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %d",
+            "%d %lf %lf %lf %lf %lf %lf %lf %lf %lf %lf %d %d %d",
             &evid, &xs, &ys, &zs, &p_srf, &px, &py, &pz,
-            &theta_s, &phi_s, &E_srf, &charge_i, &hit_flag);
+            &theta_s, &phi_s, &E_srf, &charge_i, &c13, &c14);
         if (nc < 12) continue;
+        /* 14 columns: ... charge hit_flag det_mask. 13 columns (a detector-hits
+         * file): ... charge det_mask, every row a hit. Up to 1.3.0 column 13
+         * was read as hit_flag, which dropped the hits of detectors 2, 3, ... */
+        hit_flag = (nc >= 14) ? c13 : 1;
         if (!transport_all && hit_flag != 1) continue;
 
         double KE_srf = E_srf - MMUON_GEV;
@@ -304,6 +308,13 @@ static void run_forward(const char *infile, const char *outfile,
             cx =  sin(theta_s) * cos(phi_s);
             cy =  sin(theta_s) * sin(phi_s);
             cz = -cos(theta_s);
+        }
+        /* The file's momenta have 6 decimals: normalise, or PUMAS rejects the
+         * state ("bad norm for state direction") and the run aborts. */
+        {
+            double nrm = sqrt(cx * cx + cy * cy + cz * cz);
+            if (nrm <= 0.) continue;
+            cx /= nrm;  cy /= nrm;  cz /= nrm;
         }
 
         /* Slant path based on depth axis */
@@ -342,8 +353,12 @@ static void run_forward(const char *infile, const char *outfile,
             theta_f = acos(fmax(-1., fmin(1., -czf)));
             phi_f   = atan2(cyf, cxf);
         } else {
+            /* stopped: where it stopped (the state's last position), as every
+             * engine writes it since 1.3.1 (up to 1.3.0: the surface point) */
             Ef  = 0.;
-            xf  = xs; yf = ys; zf = zs;
+            xf  = state.position[0] * 100.;
+            yf  = state.position[1] * 100.;
+            zf  = state.position[2] * 100.;
             cxf = 0.; cyf = 0.; czf = -1.;
             theta_f = 0.; phi_f = 0.;
         }

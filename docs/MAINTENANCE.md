@@ -45,7 +45,7 @@ archived, and is added afterwards.
 
 The figures themselves are not published; the scripts that draw them are, in
 `manuscript/scripts/`, one per figure. Regenerate with
-`python3 manuscript/scripts/make_figNN_*.py`, or `bash scripts/make_all_figs.sh`
+`python3 manuscript/scripts/make_figNN_*.py`, or `bash manuscript/scripts/make_all_figs.sh`
 for all of them.
 
 If the change is only to the drawing, nothing else follows. If it changes what

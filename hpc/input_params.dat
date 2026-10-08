@@ -46,7 +46,7 @@
 # [2/7]  SPECTRUM MODEL
 # =============================================================================
 #   1 = CosmoALEPH    dN/dp ∝ p^{-3.1952}   (ALEPH data, Kudryavtsev 2009)
-#   2 = Power-law     dN/dE ∝ E^{-2.7}       (MUSIC convention)
+#   2 = Power-law     dN/dE ∝ E^{-3.7}       (legacy MUSIC cross-check)
 #   3 = PARMA/EXPACS  location & date-aware   (requires [2b] block below)
 #   4 = Guan et al. (2015)  Modified Gaisser, arXiv:1509.06176
 #   5 = Frosin et al. (2025)  Guan formula with refitted params (a=3.512, b=1.388)
@@ -59,8 +59,8 @@
 4                             # spectrum_mode
 #                               Demo: Guan 2015, valid from 1 GeV at all zenith
 #                               angles. CosmoALEPH (1) is only valid above
-#                               ~100 GeV/c: at a 19 GeV floor it overestimates
-#                               the flux several-fold.
+#                               ~100 GeV/c: at this demo's 17 GeV floor its
+#                               surface rate is 1.9x Guan's (9.9e5 vs 5.2e5 /s).
 
 # --- [2b]  PARMA parameters (only read when spectrum_mode = 3) ---------------
 # (These lines are skipped when spectrum_mode != 3)
@@ -105,12 +105,15 @@
 0.0                           # tilt azimuth                  [deg]  (0 = toward U axis)
 
 # --- Rectangle parameters (source_mode = 2, uncomment to use) ---------------
-# Replace the 6 disk lines above with these 5 lines for a rectangle:
+# Replace the 6 disk lines above with these 7 lines for a rectangle (the
+# rectangle has the same two tilt lines after W):
 # -500.0                      # U min  [m]
 #  500.0                      # U max  [m]
 # -500.0                      # V min  [m]
 #  500.0                      # V max  [m]
 #    0.0                      # W fixed [m]
+#    0.0                      # tilt angle from plane normal  [deg]
+#    0.0                      # tilt azimuth                  [deg]
 
 # --- Hemisphere parameters (source_mode = 3, uncomment to use) --------------
 # Replace the source_plane + disk lines above with these 2 lines:
@@ -124,7 +127,8 @@
 #   2 = cos²(θ)               (standard atmospheric muon distribution)
 #   3 = Uniform cone          (flat in solid angle up to θ_max)
 #   4 = Guan/Frosin P(θ|E)    (θ right for a given E, but E weighted by the
-#                               vertical spectrum: −30% above 100 GeV for Guan)
+#                               vertical spectrum: −30% above 100 GeV for Guan
+#                               over 15-1500 GeV, more for a lower E_min)
 #   5 = cos³(θ)
 #   6 = Joint J(p,θ) × projection onto the source surface   ← RECOMMENDED
 #       Draws p, direction and position together from the spectrum's own flux
@@ -183,7 +187,8 @@
 #                               gui/mcs_margin.py, suggests a value (2σ_r).
 #                               Demo: 2σ_r of the slowest muons reaching 30 m is
 #                               123 cm vertically and 185 cm at 60°; 200 cm
-#                               covers both.
+#                               covers both. At θ_max = 75° it is 263 cm, where
+#                               200 cm keeps about 90 % of the slowest muons.
 
 0.0   0.0   -3200.0          # cyl_A  (x, y, z)  [cm]  — bottom cap centre
 0.0   0.0   -3000.0          # cyl_B  (x, y, z)  [cm]  — top cap centre

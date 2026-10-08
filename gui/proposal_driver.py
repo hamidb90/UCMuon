@@ -445,11 +445,12 @@ def main():
                     fth = math.acos(max(-1.0, min(1.0, -fcz)))
                     fph = math.atan2(fcy, fcx)
                 else:
-                    # Spec: alive=0 → E=0, x=xs, y=ys, z=stop_depth, cx/cy/cz=0/0/-1
+                    # alive=0 → E=0, (x, y, z) = where it stopped (as every
+                    # engine writes it since 1.3.1), cx/cy/cz = 0/0/-1
                     Ef  = 0.0
-                    fx  = mu["xs"]
-                    fy  = mu["ys"]
-                    fz  = pf.z                 # actual stopping depth
+                    fx  = pf.x
+                    fy  = pf.y
+                    fz  = pf.z                 # actual stopping position
                     fcx, fcy, fcz = 0.0, 0.0, -1.0
                     fth, fph = 0.0, 0.0
                     stopped_rows.append((mu["evid"],

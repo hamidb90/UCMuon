@@ -78,7 +78,8 @@ Three options, all free:
 OPTION A — Auto-download inside the GUI  (easiest)
 ────────────────────────────────────────────────────────────────────────────────
 
-In the GUI under Tab 2 → UCMuon Terrain → Section 1 → "Auto-download" tab:
+In the GUI, Terrain tab (Advanced mode) → Section 2 "Geometry source" →
+auto-download (the bundled Mt. Vesuvius DEM is the default source):
 
   1. Set the bounding box around your site (south/north/west/east lat/lon)
      — typically ±0.5° around the detector is enough for most sites
@@ -86,8 +87,8 @@ In the GUI under Tab 2 → UCMuon Terrain → Section 1 → "Auto-download" tab:
   3. Click "Download DEM"
   4. The file is saved locally and automatically loaded
 
-This uses the OpenTopography public REST API (free, no account needed).
-Rate limit: ~5 requests/day with the demo key.
+This uses the OpenTopography REST API: enter your (free) API key, or use the
+rate-limited demo key (~5 requests/day).
 
 ────────────────────────────────────────────────────────────────────────────────
 OPTION B — Download from OpenTopography website  (best control)
@@ -142,7 +143,7 @@ The resulting .tif file can then be uploaded or pointed to in the GUI.
 STEP 3 — CONFIGURE THE DETECTOR POSITION
 ================================================================================
 
-In Section 2 of the Terrain panel, enter:
+In Section 3 of the Terrain tab ("Detector GPS position"), enter:
 
   Latitude  [°N]     : decimal degrees, WGS84 (same system as GPS / Google Maps)
   Longitude [°E]     : decimal degrees, WGS84  (negative = West)
@@ -187,10 +188,14 @@ Rock density ρ [g/cm³]
   For heterogeneous geology, use the density-weighted average:
     ρ_eff = Σ (ρᵢ × hᵢ) / Σ hᵢ
 
-Surface spectrum model
-  1 = CosmoALEPH (Schmelling 2013) — default; best for thick targets (E ≳ 50 GeV)
-  3 = Guan et al. (2015)        — use for comparison / publication
-  4 = Frosin et al. (2025)      — newest re-fitted parametrisation
+Surface spectrum model (command-line driver; backward-MC numbering, which
+differs from the generator's)
+  1 = CosmoALEPH (Schmelling 2013) — a fit above ~100 GeV/c only; the driver
+      integrates from 1 GeV, where it overestimates the flux many-fold
+  3 = Guan et al. (2015)        — recommended (fitted from 1 GeV, all zenith angles)
+  4 = Frosin et al. (2025)      — Guan's form re-fitted to seven datasets
+The GUI Terrain tab instead transports the Generator's own muons, so its
+spectrum is the one chosen in the Generator tab.
 
 Survival probability mode
   "CSDA + stochastic" (recommended) — includes the Poisson correction for
@@ -199,31 +204,30 @@ Survival probability mode
 
 Grid settings
   Azimuth bins (n_az):  36 (10° steps) is standard. Use 72 for publication quality.
-  Zenith bins  (n_ze):  18 ( 5° steps) is standard. Use 36 for publication quality.
+  Zenith bins  (n_ze):  18 (5° steps up to 90°; ze_max/18 in general). Use 36 for publication quality.
   Max zenith (°):       75° is recommended. Beyond 80° the flat-Earth approximation
                         degrades and computation slows significantly.
   Ray-trace step (m):   50 m gives good accuracy. Use 100 m for fast preview,
                         20 m for high-precision near-horizontal directions.
 
-Approximate runtimes (36 az × 18 ze = 648 directions):
-  Preview  (n_az=36, n_ze=9,  step=100m): ~30 s
-  Standard (n_az=36, n_ze=18, step=50m):  ~3 min
-  Fine     (n_az=72, n_ze=36, step=20m):  ~25 min
+Approximate runtimes of the command-line driver (laptop, 2026):
+  Preview  (n_az=36, n_ze=9,  step=100m): ~1 s
+  Standard (n_az=36, n_ze=18, step=50m):  ~4 s
+  Fine     (n_az=72, n_ze=36, step=20m):  ~40 s
 
 
 ================================================================================
 STEP 5 — RUN THE ENGINE
 ================================================================================
 
-IN THE GUI:
-  1. Load DEM (Section 1)
-  2. Set detector position (Section 2)
-  3. Configure material & physics (Section 3)
-  4. Optional: click "Quick terrain preview" to see the overburden shape
-     immediately (coarse, ~30s) before committing to the full run
-  5. Click "▶ Run UCMuon Terrain"
-  6. Progress appears in the live console panel below the button
-  7. Two polar heatmaps appear when the run completes
+IN THE GUI (Terrain tab, Advanced mode; one page, sections 1 to 7):
+  1. Section 1: the Generator's surface muon file
+  2. Section 2: the DEM (bundled, uploaded or auto-downloaded)
+  3. Section 3: the detector position ("Altitude from the DEM" helps)
+  4. Section 5: transport engine and material
+  5. Section 6 (optional): "Compute overburden map (DEM preview, ~30s)"
+  6. Section 7: run the terrain transport; progress appears below the button
+  7. The results (skymaps, transmission, muogram, Save T_sim) follow below
 
 FROM THE COMMAND LINE (for HPC or scripting):
 
@@ -232,7 +236,7 @@ FROM THE COMMAND LINE (for HPC or scripting):
   4.6158
   90.0
   2.65
-  1
+  3
   36
   18
   75.0
@@ -240,14 +244,16 @@ FROM THE COMMAND LINE (for HPC or scripting):
   1
   terrain_overburden.dat
   terrain_flux.dat
-  terrain_summary.dat" | python gui/cosmoaleph_terrain_driver.py
+  terrain_summary.dat
+  terrain_transmission.dat" | python gui/ucmuon_terrain_driver.py
 
 
 ================================================================================
 STEP 6 — INTERPRET THE RESULTS
 ================================================================================
 
-The engine produces three output files:
+The command-line driver produces four output files (overburden, flux,
+summary, and the transmission map T_sim = Φ_rock/Φ_sky used by the Density tab):
 
 ────────────────────────────────────────────────────────────────────────────────
 terrain_overburden.dat
@@ -273,13 +279,14 @@ terrain_flux.dat
 Columns: azimuth[deg]  zenith[deg]  flux[m⁻² s⁻¹ sr⁻¹]
 
 Expected muon flux per solid angle at the detector for each direction.
-The total rate in m⁻² s⁻¹ is the sum × solid angle element.
+The rate through a horizontal 1 m² detector is Σ Φ(az, ze) cos(ze) ΔΩ(ze),
+ΔΩ the solid angle of each (az, ze) bin; terrain_summary.dat gives it.
 
-Typical values:
-  Open sky, vertical:           ~170 m⁻² s⁻¹ sr⁻¹
-  Open sky, ze=60°:             ~40 m⁻² s⁻¹ sr⁻¹
-  100m rock overburden:         ~1×10⁻³ m⁻² s⁻¹ sr⁻¹
-  1000m rock overburden:        ~1×10⁻⁸ m⁻² s⁻¹ sr⁻¹
+Typical values (Guan, 1-5000 GeV, CSDA + stochastic):
+  Open sky, vertical:           58 m⁻² s⁻¹ sr⁻¹
+  Open sky, ze=60°:             17 m⁻² s⁻¹ sr⁻¹
+  100 m of rock, vertical:      0.34 m⁻² s⁻¹ sr⁻¹
+  1000 m of rock, vertical:     2.6×10⁻⁴ m⁻² s⁻¹ sr⁻¹
 
 ────────────────────────────────────────────────────────────────────────────────
 terrain_summary.dat
@@ -394,10 +401,9 @@ KNOWN LIMITATIONS AND FUTURE IMPROVEMENTS
 FILES REFERENCE
 ================================================================================
 
-gui/cosmoaleph_terrain_driver.py    Physics driver (subprocess target)
-gui/gui_terrain_engine.py           Streamlit GUI panel
-gui/cosmoaleph_backward_mc.py       Required: backward CSDA physics
-PATCH_engine6_terrain.txt           4-edit patch for cosmoaleph_gui.py
+gui/ucmuon_terrain_driver.py        Command-line driver (DEM ray tracing, flux maps)
+gui/gui_terrain_engine.py           Streamlit GUI panel (Terrain tab)
+gui/ucmuon_backward_mc.py           Backward CSDA physics used by the driver
 
 DEM sources:
   https://portal.opentopography.org   (SRTM, free, no account for SRTM)

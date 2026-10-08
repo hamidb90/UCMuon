@@ -171,15 +171,20 @@ def compute_flux_spectrum(event_file: str, n_bins: int = 50,
     cos_mean       = np.zeros(n_bins)
     counts         = np.zeros(n_bins, dtype=int)
 
+    # Each event's flux_contribution is Φ/pdf (the energy is sampled
+    # log-uniformly), so the mean over ALL events is ∫Φ dE and a bin's
+    # dΦ/dE is Σ_bin fv / (N ΔE). The mean over the bin's own events would be
+    # Φ·E·ln(Emax/Emin), not Φ.
     for b in range(n_bins):
-        mask = (E_det >= edges[b]) & (E_det < edges[b + 1])
+        last = b == n_bins - 1
+        mask = (E_det >= edges[b]) & ((E_det <= edges[b + 1]) if last else (E_det < edges[b + 1]))
         n_b  = mask.sum()
         if n_b == 0:
             continue
         counts[b]      = n_b
         fv             = flux_val[mask]
-        flux_binned[b] = fv.mean()          # dΦ/dE per sr [m-2 s-1 GeV-1 sr-1]
-        flux_err_binned[b] = fv.std() / math.sqrt(n_b) if n_b > 1 else 0.
+        flux_binned[b] = fv.sum() / (n_total * dE[b])          # dΦ/dE per sr [m-2 s-1 GeV-1 sr-1]
+        flux_err_binned[b] = math.sqrt(float((fv ** 2).sum())) / (n_total * dE[b])
         E_surf_mean[b]     = E_surf[mask].mean()
         cos_mean[b]        = cos_theta[mask].mean()
 
@@ -319,12 +324,15 @@ def main():
         print(f"ERROR: cannot launch {_BINARY}: {exc}", file=sys.stderr, flush=True)
         sys.exit(1)
 
-    stdout_data, _ = proc.communicate(input=stdin_str)
+    # Stream the binary's output line by line (the GUI reads the
+    # "Transported:" lines for its progress bar; up to 1.3.0 communicate()
+    # held everything until the run ended).
+    proc.stdin.write(stdin_str)
+    proc.stdin.close()
+    for line in proc.stdout:
+        print(line.rstrip("\n"), flush=True)
+    proc.wait()
     elapsed = time.perf_counter() - t_start
-
-    # Echo C binary output to our stdout (GUI reads this for progress)
-    for line in stdout_data.splitlines():
-        print(line, flush=True)
 
     if proc.returncode != 0:
         print(f"ERROR: binary exited with code {proc.returncode}",

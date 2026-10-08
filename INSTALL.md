@@ -24,7 +24,7 @@ This guide covers installation on **Linux**, **macOS**, and **Windows**, plus th
 | Component | Needed for | Linux | macOS | Windows |
 |---|---|:---:|:---:|:---:|
 | **Python ≥ 3.9** + pip | GUI and Engines ① ⑤ ⑥ | required | required | required |
-| **gfortran with OpenMP** + make | Engines ② (MUSIC), ③ (Bethe-Bloch Fortran) | `apt install gfortran` | `brew install gcc` | MSYS2 |
+| **gfortran with OpenMP** + make | the surface generator (Standard workflow), Engines ② (MUSIC), ③ (Bethe-Bloch Fortran) | `apt install gfortran` | `brew install gcc` | MSYS2 |
 | **gcc (C compiler)** | Engine ⑦ (PUMAS, optional) | ✓ | ✓ | MSYS2 |
 | **rasterio** (pip, optional) | Engine ⑥ (UCMuon Terrain / DEM) | ✓ | ✓ | ✓ |
 | **PROPOSAL** (pip, optional) | Engine ④ | ✓ | ✓ (system venv) | not supported |

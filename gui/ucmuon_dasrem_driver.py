@@ -214,7 +214,7 @@ def generate_dasrem(N, spectrum_mode, e_min, e_max, angular_mode, theta_max,
             if spectrum_mode == 1:
                 p = _cosmo_sample(p_min, p_max, n_batch, rng)
             elif spectrum_mode == 2:
-                p = _power_sample(p_min, p_max, n_batch, rng, alpha=-2.7)
+                p = _power_sample(p_min, p_max, n_batch, rng, alpha=-3.7)   # dN/dp ∝ p^-3.7, as the Fortran
             elif spectrum_mode in _flux_fns:
                 th_mean = math.degrees(float(np.mean(theta)))
                 p = _rejection_sample(_flux_fns[spectrum_mode], th_mean,

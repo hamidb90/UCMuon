@@ -50,7 +50,7 @@ Mt. Vesuvius in a single script:
 | Summit direction from detector | az = 105.1°, el = 16.6° above horizon |
 | Cone model | truncated frustum, apex at summit, base radius 1900 m at 150 m a.s.l. |
 
-**Spectrum**: Guan et al. 2015 (mode 4), E_min = 1 GeV — required for the
+**Spectrum**: Guan et al. 2015 (spectrum 3 in the backward-MC numbering), E_min = 1 GeV — required for the
 low-elevation signal zone (el < 25°) where muons penetrate 100–1600 m of rock.
 
 ---
@@ -131,7 +131,7 @@ see open sky (black = 0 m) — the Vesuvius cone subtends only ~40° × 12° of 
 angle from the detector.
 
 **Right panel:** Slice through the summit azimuth (az = 105°). Rock thickness
-drops sharply from ~1600 m at el = 5° to zero at el ≈ 18° — the upper edge of
+drops sharply from ~1600 m at el = 5° to zero at el ≈ 16° — the upper edge of
 the cone. Above that elevation the ray exits the cone entirely.
 
 ---
@@ -186,7 +186,7 @@ scale the whole band below el ≈ 20° is pale, so the cone shadow on the right 
 faint; Fig 4 shows it clearly.
 
 **Right** (through-rock flux, ρ = 2.65 g/cm³): identical to the left panel
-everywhere except at the cone location (az ≈ 90–130°, el ≈ 8–18°) where the
+everywhere except at the cone location (az ≈ 85–126°, el ≈ 5–16°) where the
 flux collapses to near zero (white/yellow region = T_sim ≈ 0). The cone shadow
 is the small bright triangular feature; bright here means near-zero flux because
 the YlGn colormap runs white (low) → green (high).
@@ -204,7 +204,7 @@ the YlGn colormap runs white (low) → green (high).
 
 `T_sim = Φ_rock / Φ_sky` per (az, el) pixel. Yellow = T_sim ≈ 1 (open sky,
 ~99% of the sky). Dark blue/purple = T_sim ≈ 0 (cone shadow). The cone
-footprint is clearly triangular at az ≈ 88–128°, el ≈ 7–18°, with the apex
+footprint is clearly triangular at az ≈ 85–126°, el ≈ 5–16°, with the apex
 at the summit (white star).
 
 Inside the cone at ρ = 2.65 g/cm³ the median transmission is 7 × 10⁻⁴: 57 % of
@@ -257,7 +257,8 @@ done
 
 Spectrum 3 is Guan 2015. The CLI integrates the spectrum over 1–5000 GeV (1 GeV
 is the lower end of Guan's fit); `make_tsim_library.py` uses 1–2500 GeV, which
-gives the same T_sim within 1 %. Each run ray-traces the DEM, which
+gives the same T_sim: the median ratio is within 1 %, pixels with
+T > 10⁻³ within 3 %. Each run ray-traces the DEM, which
 takes minutes at this resolution.
 
 ### Inversion — GUI
@@ -345,7 +346,7 @@ eio clip -o vesuvius_dem.tif --bounds 14.35 40.76 14.52 40.90
 4. Download GeoTIFF → save as `vesuvius_dem.tif`
 
 **Option C — GUI Auto-download:**
-Terrain tab → Section 1 → ⬇️ Auto-download → set the bounds above → Download.
+Terrain tab (Advanced mode) → Section 2 "Geometry source" → auto-download → set the bounds above and an OpenTopography API key (or the demo key) → Download DEM.
 
 Verify after downloading:
 ```bash
@@ -370,6 +371,6 @@ EOF
 | `ModuleNotFoundError: rasterio` | DEM mode without rasterio | `pip install rasterio` |
 | Figures not found | Wrong working directory | Run from project root; figs go to `examples/vesuvius/figs/` |
 | All T_sim ≈ 0 everywhere | Ray step too coarse for thin outer flanks | Use `--step 10` |
-| All density status = 4 (blue) | Expected for Vesuvius cone | Only el ≈ 13–18° at summit az is invertible |
+| Many pixels have status 4 (low sensitivity) | Expected deep inside the mountain: too little transmission | The 381 thinner-rock pixels at el 5.5–16.5° invert (see Expected inversion results) |
 | Density curves identical in Fig 2 | Cone edge narrower than bin width | Use default 360×85 grid (1° bins) |
 | Summit at wrong azimuth vs MURAVES | Different convention | Add 75° to azimuth: MURAVES puts summit at 180°, here it is at 105° |

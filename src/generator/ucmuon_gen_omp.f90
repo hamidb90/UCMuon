@@ -506,7 +506,7 @@ program ucmuon_gen_omp
 
     if (sum_p + sum_m < 1.0d-30) then
       write(*,*) ' ERROR: PARMA muon spectrum integral is zero.'
-      stop
+      error stop 1
     end if
 
     if (sum_p > 0.0d0) parma_cdf_plus  = parma_cdf_plus  / sum_p
@@ -574,7 +574,7 @@ program ucmuon_gen_omp
   else
     if (e_min <= MUON_MASS) then
       write(*,*) ' ERROR: E_min must be > 0.106 GeV. Stopping.'
-      stop
+      error stop 1
     end if
     p_min = sqrt(e_min**2 - MUON_MASS**2)
     p_max = sqrt(e_max**2 - MUON_MASS**2)
@@ -645,7 +645,7 @@ program ucmuon_gen_omp
     if (source_mode == 1) then
       write(*,'(A,F9.2,A,F9.2,A)') '  Disk center:    (', src_disk_cx_m, ',', src_disk_cy_m, ') m'
       write(*,'(A,F9.2,A)')         '  Disk radius:    ', src_disk_r_m, ' m'
-      write(*,'(A,F9.2,A)')         '  W fixed:        ', src_w_m, ' m'
+      write(*,'(A,F9.2,A)')         '  Plane at W =    ', src_w_m, ' m'
       if (src_tilt_deg > 0.01d0) then
         write(*,'(A,F7.2,A)')       '  Tilt angle:     ', src_tilt_deg, ' deg'
         write(*,'(A,F7.2,A)')       '  Tilt azimuth:   ', src_tilt_az_deg, ' deg'
@@ -1076,9 +1076,16 @@ program ucmuon_gen_omp
       end if
 
       if (mod(i, progress_interval) == 0_8) then
-        write(*,'(A,I10,A,I16,A,F8.4,A)') &
-          '  Saved', i, ' / tried', ntry, &
-          '  (', 100d0*dble(i)/dble(ntry), '%)'
+        ! Without the filter every try is kept: report i (ntry can run a
+        ! few ahead across threads and is reset to i at the end).
+        if (use_detector == 1) then
+          write(*,'(A,I10,A,I16,A,F8.4,A)') &
+            '  Saved', i, ' / tried', ntry, &
+            '  (', 100d0*dble(i)/dble(ntry), '%)'
+        else
+          write(*,'(A,I10,A,I16,A,F8.4,A)') &
+            '  Saved', i, ' / tried', i, '  (', 100d0, '%)'
+        end if
         flush(6)
       end if
     end if
@@ -1109,7 +1116,8 @@ program ucmuon_gen_omp
   if (ntry > 0_8) &
     write(*,'(A,F8.4,A)') '  Rate:  ', 100d0*dble(i)/dble(ntry), ' %'
   call report_live_time(ntry)
-  write(*,'(A,A)')       '  File:  ', trim(output_all)
+  if (write_surface == 1) write(*,'(A,A)') '  File:  ', trim(output_all)
+  if (use_detector  == 1) write(*,'(A,A)') '  Hits:  ', trim(output_sel)
   write(*,*) ' ============================================================'
 
   stop

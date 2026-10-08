@@ -346,6 +346,15 @@ def render_backward_mc_tab(script_dir):
             "Results output file", "backward_mc_results.dat", key="bmc_outfile",
             help="Written to the project root directory (CWD).",
         )
+    # The spectrum's fitted range (the same warning the Terrain cross-check
+    # shows; the defaults, CosmoALEPH from 0.5 GeV, are far below it).
+    try:
+        import ucmuon_backward_mc as _bmc_w
+        _range_note = _bmc_w.spectrum_range_warning(int(bmc_spec), float(bmc_Emin))
+        if _range_note:
+            st.warning("⚠️  " + _range_note)
+    except Exception:
+        pass
 
     # ── Run ───────────────────────────────────────────────────────────────────
     if st.button("▶  Compute Backward MC Flux", type="primary",
@@ -433,7 +442,7 @@ def render_backward_mc_tab(script_dir):
         yaxis=dict(type="log", title="dΦ/dE  [m⁻² s⁻¹ GeV⁻¹]", gridcolor="#2a2a3a"),
         title=dict(
             text=(f"Backward MC — Muon flux at {info['depth_m']:.0f} m depth  |  "
-                  f"Spectrum {info['spectrum_mode']}  |  {info['mode']}  |  "
+                  f"{ {1: 'CosmoALEPH', 2: 'power law', 3: 'Guan 2015', 4: 'Frosin 2025'}.get(int(info['spectrum_mode']), info['spectrum_mode']) }  |  {info['mode']}  |  "
                   f"computed in {elapsed:.1f} s"),
             font=dict(size=12),
         ),

@@ -34,7 +34,7 @@ Additional physics:
                            dead instantly.  Muons between the mean-loss CSDA
                            range and this bound are transported stochastically
                            (they survive if they avoid hard radiative events).
-  · Adaptive stepping    : per-muon step count targets dx ≈ 5 g/cm²
+  · Adaptive stepping    : per-muon step count targets dx ≈ 20 g/cm²
                            (near-horizontal muons no longer get oversized steps)
 
 Position update (lateral displacement bug fix)
@@ -937,7 +937,7 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     rho        : density [g/cm³]
     mat        : material dict from _MAT_DB
     n_steps    : integration steps per muon; 0 = auto (per-muon adaptive:
-                 dx ≈ 5 g/cm², clipped to [300, 20000] steps per muon)
+                 dx ≈ 20 g/cm², clipped to [300, 20000] steps per muon)
     v_cut      : catastrophic event threshold (fraction of E_tot)
     ms_enable    : Highland multiple scattering deflections
     rng          : np.random.default_rng
@@ -1031,6 +1031,8 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
             _csda_range(muons["Ekin_MeV"], mat["a_scale"],
                         _PDG24_T_FINE, _PDG24_R_FINE),
             R_det)
+        x_acc[range_cut] = muons["cx"][range_cut] * (R_stop[range_cut] / rho)
+        y_acc[range_cut] = muons["cy"][range_cut] * (R_stop[range_cut] / rho)
         z_acc[range_cut] = muons["cz"][range_cut] * (R_stop[range_cut] / rho)
 
     E_stop = 1.0                                # stop if Ekin < 1 MeV
@@ -1230,6 +1232,8 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     # integrated position — same convention as the PROPOSAL/MUSIC drivers.
     alive_arr = alive.astype(int)
     z_stop = np.where(alive_arr == 0, muons["z"] + z_acc, z_f)
+    x_stop = np.where(alive_arr == 0, muons["x"] + x_acc, x_f)
+    y_stop = np.where(alive_arr == 0, muons["y"] + y_acc, y_f)
 
     return dict(
         alive=alive_arr,
@@ -1237,6 +1241,7 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
         cx_f=cx_c, cy_f=cy_c, cz_f=cz_c,
         x_f=x_f, y_f=y_f, z_f=z_f,
         z_stop=z_stop,                               # stopping depth for dead muons
+        x_stop=x_stop, y_stop=y_stop,                # and where it stopped laterally
         theta_f=theta_f, phi_f=phi_f,
     )
 
@@ -1328,10 +1333,11 @@ def _write_output(muons, result, fpath):
                 th_i = result["theta_f"][i]
                 ph_i = result["phi_f"][i]
             else:
-                # Spec: alive=0 → x=xs, y=ys, z=stop_depth, E=0,
-                #                  cx=0, cy=0, cz=-1, theta=0, phi=0
-                x_i  = muons["x"][i]
-                y_i  = muons["y"][i]
+                # alive=0 → (x, y, z) = where it stopped (as every engine
+                # writes it since 1.3.1; up to 1.3.0 x, y were the surface
+                # point here), E=0, cx=0, cy=0, cz=-1, theta=0, phi=0
+                x_i  = result.get("x_stop", muons["x"])[i]
+                y_i  = result.get("y_stop", muons["y"])[i]
                 z_i  = result["z_stop"][i]
                 E_i  = 0.0
                 cx_i, cy_i, cz_i = 0.0, 0.0, -1.0

@@ -10,7 +10,8 @@ Usage
 -----
   python3 ucmuon_to_geant4.py <input.dat> [output.txt] [--mode gen|transport|auto]
 
-  mode=gen        (default) reads 13- or 14-col generator format
+  mode=auto       (default) picks gen or transport from the column count
+  mode=gen        reads 13- or 14-col generator format
                   → surface positions and directions
   mode=transport  reads 18-col transport output (alive muons only)
                   → underground positions and directions

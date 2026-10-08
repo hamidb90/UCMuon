@@ -41,7 +41,7 @@ Uses a flat-Earth approximation valid for distances < ~100 km.  For each
   • At each step, convert ENU offset to (lat, lon) and look up DEM elevation.
   • If ray altitude drops below DEM elevation → ray entered terrain.
   • Bisect to find the entry point to ±10 m accuracy.
-  • Overburden = entry_distance × cos(ze) × rho  [g/cm²] vertical equivalent.
+  • Overburden = slant path length through rock × rho  [g/cm²] (along the ray).
   • Directions that never hit terrain → open sky (overburden = 0).
 
 Dependencies
@@ -61,8 +61,8 @@ Stdin protocol (one value per line):
    5  rho                   rock/material density [g/cm³]
    6  spectrum_mode         1=CosmoALEPH  2=Power-law  3=Guan  4=Frosin
    7  n_az                  number of azimuth bins  (default 36 = 10° steps)
-   8  n_ze                  number of zenith bins   (default 18 = 5° steps)
-   9  ze_max_deg            maximum zenith angle    (default 80°)
+   8  n_ze                  number of zenith bins   (default 18, i.e. ze_max/18 steps)
+   9  ze_max_deg            maximum zenith angle    (default 85°)
   10  step_m                ray-trace step size [m] (default 50)
   11  mode                  0=CSDA only  1=+stochastic P_surv  (default 1)
   12  outfile_overburden    output overburden map        (default terrain_overburden.dat)
@@ -319,7 +319,8 @@ def _load_dem_geotiff(dem_path):
 
 def dem_elevation_at(elev, transform, lat, lon):
     """
-    Bilinear interpolation of DEM elevation [m] at (lat, lon).
+    DEM elevation [m] of the pixel containing (lat, lon) (nearest pixel:
+    rowcol returns integer indices).
     Returns NaN if outside the DEM extent.
     """
     rio = _import_rasterio()
@@ -684,7 +685,9 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
         fh.write("# UCMuon Terrain Engine — Summary\n")
         fh.write(f"# Detector lat={det_lat:.6f} lon={det_lon:.6f}"
                  f" alt={det_alt_m:.1f} m  rho={rho:.3f} g/cm3\n")
-        fh.write(f"# Spectrum mode: {spectrum_mode}\n")
+        _names = {1: "CosmoALEPH", 2: "power law", 3: "Guan 2015", 4: "Frosin 2025"}
+        fh.write(f"# Spectrum: {_names.get(int(spectrum_mode), spectrum_mode)} "
+                 f"(backward-MC number {spectrum_mode})\n")
         fh.write(f"# Computed in {elapsed:.1f} s\n")
         fh.write(f"#\n")
         fh.write(f"# Open-sky directions : {n_open} / {open_sky_map.size}\n")

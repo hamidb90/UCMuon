@@ -204,7 +204,7 @@ program ucmuon_transport_music
     read(*,*) rho
     if (rho <= 0.d0) rho = 2.65d0
 
-    write(*,*) ' Radiation length [cm]  (e.g. 26.48 std rock, 36.08 water):'
+    write(*,*) ' Radiation length [g/cm^2]  (e.g. 26.48 std rock, 36.08 water):'
     read(*,*) rad
     if (rad <= 0.d0) rad = 26.48d0
 
@@ -290,7 +290,7 @@ program ucmuon_transport_music
     write(*,'(A,A)')       '  Output prefix:     ', trim(outfile)
     write(*,'(A,A)')       '  Material:          ', trim(mat_suffix)
     write(*,'(A,F7.3,A)')  '  Density:           ', rho, ' g/cm³'
-    write(*,'(A,F7.2,A)')  '  Radiation length:  ', rad, ' cm'
+    write(*,'(A,F7.2,A)')  '  Radiation length:  ', rad, ' g/cm2'
     write(*,'(A,F8.2,A)')  '  Vertical depth:    ', depth_m, ' m'
     write(*,'(A,F10.1,A)') '  Depth (w.e.):      ', depth_cm*rho, ' g/cm²'
     write(*,'(A,I2,A,I2)') '  idim=', idim, '  idim1=', idim1

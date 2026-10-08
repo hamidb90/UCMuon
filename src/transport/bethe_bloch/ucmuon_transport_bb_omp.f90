@@ -128,6 +128,7 @@ program ucmuon_transport_bb_omp
   !---------------------------------------------------------------------------
   integer :: nthreads, tid, iranlux_base
   real(8) :: x, y, z, cx, cy, cz, emu, slant_cm, slant_gcm2, theta_ug, phi_ug
+  real(8) :: range_cm
   real(8) :: eff_cz          ! effective depth-direction cosine (plane-aware)
   real(8) :: t_start, elapsed
   real(8), external :: csda_range
@@ -237,7 +238,7 @@ program ucmuon_transport_bb_omp
   !===========================================================================
   open(unit=10, file=trim(infile), form='formatted', status='old', iostat=ios)
   if (ios /= 0) then
-    write(*,*) ' ERROR: cannot open input file: ', trim(infile); stop
+    write(*,*) ' ERROR: cannot open input file: ', trim(infile); error stop 1
   end if
 
   ncols = 0
@@ -255,7 +256,7 @@ program ucmuon_transport_bb_omp
       if (ios2==0) then
         ncols = 13
       else
-        write(*,*) ' ERROR: cannot parse first data line.'; stop
+        write(*,*) ' ERROR: cannot parse first data line.'; error stop 1
       end if
     end if
     exit
@@ -292,7 +293,7 @@ program ucmuon_transport_bb_omp
   if (ncols==14) write(*,'(A,I12)') '  Skipped (miss):    ', nskip_mu
 
   if (nmuon == 0) then
-    write(*,*) ' ERROR: no muons found in input file.'; stop
+    write(*,*) ' ERROR: no muons found in input file.'; error stop 1
   end if
 
   !===========================================================================
@@ -395,7 +396,7 @@ program ucmuon_transport_bb_omp
 
   !$OMP PARALLEL DO                                                           &
   !$OMP   DEFAULT(SHARED)                                                     &
-  !$OMP   PRIVATE(i, x, y, z, cx, cy, cz, eff_cz, emu, slant_cm, slant_gcm2, &
+  !$OMP   PRIVATE(i, x, y, z, cx, cy, cz, eff_cz, emu, slant_cm, slant_gcm2, range_cm, &
   !$OMP           alive, theta_ug, phi_ug)                                    &
   !$OMP   REDUCTION(+:nsurvive, nstop)                                        &
   !$OMP   SCHEDULE(DYNAMIC, 1)
@@ -439,9 +440,15 @@ program ucmuon_transport_bb_omp
 
     !-- CSDA range cut: skip transport when range < required slant depth --
     slant_gcm2 = rho_mat * slant_cm
-    if (csda_range(emu, I_eV, Z_eff, A_eff, b_rad, C_dens) < slant_gcm2) then
+    range_cm = csda_range(emu, I_eV, Z_eff, A_eff, b_rad, C_dens) / rho_mat
+    if (range_cm * rho_mat < slant_gcm2) then
       out_alive(i) = 0;  out_e_ug(i) = 0.d0;  nstop = nstop + 1
-      out_x_ug(i) = in_xs(i);  out_y_ug(i) = in_ys(i);  out_z_ug(i) = in_zs(i)
+      ! where it stops: its CSDA range along the initial direction (cz is
+      ! flipped here, > 0 = down), as every engine writes stopped muons since
+      ! 1.3.1 (up to 1.3.0 the surface point)
+      out_x_ug(i) = in_xs(i) + cx * range_cm
+      out_y_ug(i) = in_ys(i) + cy * range_cm
+      out_z_ug(i) = in_zs(i) - cz * range_cm
       out_cx_ug(i) = cx;  out_cy_ug(i) = cy;  out_cz_ug(i) = -cz
       out_theta_ug(i) = in_theta_s(i);  out_phi_ug(i) = in_phi_s(i)
       cycle

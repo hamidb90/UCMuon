@@ -212,7 +212,7 @@ Reyna 1.42 at 75° and 1 TeV/c. Isotropic sits inside that spread. Two
 alternatives were rejected. Reyna's scaling applied to the power law gives
 cos^−0.195 θ, which diverges at the horizon and evaluates the fit below
 100 GeV/c. cos²θ gives 0.07 at 75°, x12-38 below both models. **UCMuGen is
-left isotropic.** The cos²θ that the Fortran/GUI path and the paper's Table 3
+left isotropic.** The cos²θ that the Fortran/GUI path and the paper's spectrum table
 attach to Mode 1 is the wrong choice for thick targets, which is the use
 Mode 1 is recommended for.
 
@@ -457,8 +457,11 @@ and statements this audit showed to be wrong.
 
 1. Done: PDG values now cited from PDG 2022 Sec. 30.3.1 / Eq. 30.4; the
    fast estimator's `gaisser_tang` replaced by Tang et al. 2006 (Section 3.8).
-2. **Regenerate** what Section 17 lists (terrain T_sim libraries, MURAVES
-   maps, Density-tab inversions made with the fast estimator).
+2. Done in 1.2.0 for what ships (the Vesuvius T_sim library, the MURAVES
+   figures and guide; Section 17). T_sim libraries and Density-tab
+   inversions made elsewhere with older versions must be redone by their
+   users. In 1.3.1 the fast estimator's CSDA range table was corrected above
+   100 GeV (it was 1-11 % long up to 1 TeV and ended there).
 3. The fast estimator's altitude factor exp(h/8500 m) has no reference.
 4. The charge-ratio table applies each CosmoALEPH bin value up to the bin
    centre (a half-bin shift; negligible for rates).
@@ -466,8 +469,7 @@ and statements this audit showed to be wrong.
    rank after its target, when the filter is off (the OpenMP version gates
    them). Harmless for rates (the tried count is the reduced total), noted
    for completeness.
-6. `tools/check_consistency.py` reports the public tree out of step until the
-   mirror (prepared, not pushed) is committed.
+6. Done: the public tree was mirrored and released with 1.2.0.
 
 ## 11. Reproduce
 

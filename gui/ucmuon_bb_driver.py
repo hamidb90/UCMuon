@@ -158,6 +158,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
         R0 = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab) * a_scale
         range_cut = R0 < slant_gcm2
         alive[range_cut] = False
+        x_acc[range_cut] = cx_c[range_cut] * (R0[range_cut] / rho)
+        y_acc[range_cut] = cy_c[range_cut] * (R0[range_cut] / rho)
         z_acc[range_cut] = cz_c[range_cut] * (R0[range_cut] / rho)
 
         # Adaptive step: 100 g/cm² default (26× larger than Fortran's 10 g/cm²)
@@ -195,7 +197,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
             if la.any():
                 oi     = idx[la]
                 E_ms   = E_cur[oi]
-                p_GeV  = np.sqrt(np.maximum(E_ms**2 - M_MU**2, 0.0)) / 1000.0
+                # E_ms is the KINETIC energy [MeV]: p^2 = T^2 + 2 T m.
+                p_GeV  = np.sqrt(E_ms**2 + 2.0 * E_ms * M_MU) / 1000.0
                 beta   = p_GeV / np.sqrt(p_GeV**2 + M_MU_GEV**2)
                 t_X0   = dx[oi] / X0_gcm2
                 theta0 = (13.6e-3 / (beta * p_GeV)
@@ -251,6 +254,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     y_f = muons["y"] + y_acc
     z_f = (muons["z"] + z_acc) if depth_axis != 2 else np.full(N, -d_cm)
     z_stop  = np.where(alive == 0, muons["z"] + z_acc, z_f)
+    x_stop  = np.where(alive == 0, muons["x"] + x_acc, x_f)
+    y_stop  = np.where(alive == 0, muons["y"] + y_acc, y_f)
     theta_f = np.arccos(np.clip(-cz_c, -1.0, 1.0))
     phi_f   = np.arctan2(cy_c, cx_c)
 
@@ -260,6 +265,7 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
         cx_f=cx_c, cy_f=cy_c, cz_f=cz_c,
         x_f=x_f, y_f=y_f, z_f=z_f,
         z_stop=z_stop,
+        x_stop=x_stop, y_stop=y_stop,
         theta_f=theta_f, phi_f=phi_f,
     )
 

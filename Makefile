@@ -12,7 +12,7 @@
 #    make veryclean                   clean + remove bin/ contents
 #    make help                        print this summary
 #
-#  MUSIC engine (Engine 1) is OPTIONAL.
+#  MUSIC engine (Engine 2) is OPTIONAL.
 #  If src/transport/music/music.f is absent the MUSIC targets are skipped.
 #  See docs/MUSIC_FILES.md
 #
@@ -134,9 +134,9 @@ pumas:                     $(BIN)/ucmuon_transport_pumas
 music-status:
 ifeq ($(MUSIC_AVAIL),no)
 	@echo ""
-	@echo "  NOTE: Engine 1 (MUSIC) was not built — music.f not found."
-	@echo "        Engines 2–6 are fully functional."
-	@echo "        See docs/MUSIC_FILES.md to enable Engine 1."
+	@echo "  NOTE: Engine 2 (MUSIC) was not built — music.f not found."
+	@echo "        Engines 1 and 3-7 are fully functional."
+	@echo "        See docs/MUSIC_FILES.md to enable Engine 2."
 	@echo ""
 endif
 ifeq ($(PUMAS_AVAIL),no)
