@@ -1290,9 +1290,10 @@ def load_file(path, mtime=None):
             df = df.iloc[:, 1:].reset_index(drop=True)
 
         # Fortran D exponents ("1.3D+01": the generator's PHITS dump, the PHITS
-        # exports) come back as strings; read them as numbers.
+        # exports) come back as strings; read them as numbers. Any non-numeric
+        # column: pandas 3 gives text the "str" dtype, not object.
         for c in df.columns:
-            if df[c].dtype == object:
+            if not pd.api.types.is_numeric_dtype(df[c]):
                 num = pd.to_numeric(df[c].astype(str).str.replace("D", "E", regex=False)
                                     .str.replace("d", "e", regex=False), errors="coerce")
                 if num.notna().all():

@@ -352,6 +352,10 @@ Found by a code audit (2026-10-14):
   `source_1TeV.dat` (1.5 TeV truncated); TeV is used for whole TeV only.
 - The Makefile relinked the MUSIC binaries on every `make` (the phony
   `data-links` was a normal prerequisite; it is order-only now).
+- **pandas 3:** the GUI read Fortran D exponents ("1.3D+01", PHITS dumps)
+  only in columns of the object dtype; pandas 3.0 gives text the new "str"
+  dtype, so with a current install a PHITS dump could not be loaded. Found by
+  CI on the release branch.
 - `run_gui.bat` started the GUI with `python` from PATH, which is not the
   interpreter `install.ps1` used when Python was found only in `C:\Python31x`;
   it now takes the first of `python`, `C:\Python31x\python.exe` and `py -3`
