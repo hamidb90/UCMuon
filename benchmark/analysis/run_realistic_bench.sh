@@ -10,6 +10,8 @@
 #  Usage:
 #    bash run_realistic_bench.sh "1 10 25 50 100 200"     # depths (m), space-sep
 #    bash run_realistic_bench.sh 1                        # smoke test, 1 m only
+#    ENGINES="BB UCMuon" bash run_realistic_bench.sh "1 10 25 50 100 200"
+#                                                         # only those engines
 #
 #  Driver stdin schemas verified against current gui/*.py (2026-06-14).
 # =============================================================================
@@ -34,12 +36,16 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 PROP_PY="${HOME}/venvs/ucmuon/bin/python3"; [[ -x "$PROP_PY" ]] || PROP_PY="python3"
 PROP_TABLES="${HOME}/.proposal_tables"
 
+ENGINES="${ENGINES:-BB MUSIC PROPOSAL UCMuon}"
+want() { [[ " ${ENGINES} " == *" $1 "* ]]; }
+
 mkdir -p "${OUTDIR}/BB" "${OUTDIR}/MUSIC" "${OUTDIR}/PROPOSAL" "${OUTDIR}/UCMuon"
 
 echo "============================================================"
 echo "  Source : ${SOURCE_FILE}"
 echo "  Outdir : ${OUTDIR}"
 echo "  Depths : ${DEPTHS[*]} m"
+echo "  Engines: ${ENGINES}"
 echo "  Started: $(date)"
 echo "============================================================"
 
@@ -48,6 +54,7 @@ for DEPTH in "${DEPTHS[@]}"; do
   echo "######################## depth = ${DEPTH} m ########################"
 
   # ── BB (Python CSDA driver) : infile,outfile,transport_all,ncols,depth,mat,ms
+  if want BB; then
   echo -n "  [BB]       "; t0=$(date +%s)
   python3 "${GUI_DIR}/ucmuon_bb_driver.py" > /dev/null 2>"${OUTDIR}/BB/BB_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -59,8 +66,10 @@ ${DEPTH}
 1
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
   # ── MUSIC (Fortran, run from bin/ for table files)
+  if want MUSIC; then
   echo -n "  [MUSIC]    "; t0=$(date +%s)
   ( cd "${BIN_DIR}" && "${BIN_DIR}/ucmuon_transport_music_omp" > /dev/null 2>"${OUTDIR}/MUSIC/MUSIC_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -78,8 +87,10 @@ ${DEPTH}
 EOF
   )
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
   # ── PROPOSAL (Moliere MCS) : infile,outfile,depth,mat,transport_all,e_cut,v_cut,scat,tables
+  if want PROPOSAL; then
   echo -n "  [PROPOSAL] "; t0=$(date +%s)
   "${PROP_PY}" "${GUI_DIR}/proposal_driver.py" > /dev/null 2>"${OUTDIR}/PROPOSAL/PROPOSAL_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -93,8 +104,10 @@ ${DEPTH}
 ${PROP_TABLES}
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
   # ── UCMuon-MC (current v2 per-process loss model; auto workers for speed)
+  if want UCMuon; then
   echo -n "  [UCMuon]   "; t0=$(date +%s)
   python3 "${GUI_DIR}/ucmuon_stochastic_driver.py" > /dev/null 2>"${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -119,6 +132,7 @@ ${DEPTH}
 1
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 done
 
 echo ""

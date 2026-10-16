@@ -6,7 +6,7 @@ comparison figures and summary tables.
 | Script | What it does | Output |
 |---|---|---|
 | `benchmark_analysis.py` | reads all 6 codes' outputs, builds the comparison figures + summary CSV | `../figures/`, `benchmark_summary.csv` |
-| `run_benchmark.sh` | convenience wrapper: picks the latest Geant4 CSV and calls `benchmark_analysis.py` with all engines | — |
+| `run_benchmark.sh` | calls `benchmark_analysis.py` with the reference Geant4 run (given on the command line), PHITS's summary and the four UCMuon engines | `../figures/v2_six_code/` |
 | `analyze_output.py` | single-code depth-stats helper (transmission, energy loss, angles) | `muon_depth_stats.csv` |
 | `presentation_figures.py` | slide-ready figures | `../figures/` |
 
@@ -17,14 +17,12 @@ from the scratch tree.
 
 ## Run
 ```bash
-# From the scratch working tree (where the raw per-engine .dat live):
-python3 benchmark_analysis.py \
-    --geant4 <g4_csv_prefix> --phits phits/ \
-    --music MUSIC/ --proposal PROPOSAL/ --bb BB/ --ucmuon UCMuon/ \
-    --outdir figures_benchmark/
-# …or simply:
-bash run_benchmark.sh
+# From anywhere; the argument is the reference Geant4 run (600 000 muons):
+bash benchmark/analysis/run_benchmark.sh \
+    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_file_20260522_210114
 ```
+It writes `../figures/v2_six_code/`, whose `benchmark_summary.csv` equals
+`../results/benchmark_summary_v2.csv`.
 
 > These scripts expect the ~6 GB of raw `*_bench_<depth>m.dat` files, which live
 > only in the git-ignored scratch tree `geant4_muon_rock_v5/`. Regenerate them

@@ -18,9 +18,13 @@ two independent external Monte Carlo references.
 25, 50, 100, 200 m. Every code receives the **identical** source population
 (`benchmark_surface.dat`, converted per code).
 
-> **Authoritative run: v2 (2026-05-25)** — `reports/BENCHMARK_FEEDBACK.md`.
-> Its 100 m (265 MWE) transmissions (G4 32.7 %, PHITS 32.6 %, MUSIC 32.9 %,
-> PROPOSAL 32.8 %, BB 33.3 %, UCMuon 33.0 %) are the survival table of the manuscript.
+> **Authoritative data:** Geant4 run `run_file_20260522_210114` and PHITS
+> (May 2026, `reports/BENCHMARK_FEEDBACK.md`); MUSIC and PROPOSAL from the July
+> 2026 run, Bethe-Bloch and UCMuon-MC re-run on 2026-10-16 with the multiple
+> scattering accumulated along the path (survival and energies unchanged).
+> Summary: `results/benchmark_summary_v2.csv`; figures: `figures/v2_six_code/`.
+> 100 m (265 MWE) transmissions: G4 32.7 %, PHITS 32.6 %, MUSIC 32.9 %,
+> PROPOSAL 32.8 %, BB 33.3 %, UCMuon-MC 33.0 %.
 > Raw `.dat` files live in the git-ignored scratch directory
 > `benchmark/geant4_muon_rock_v5/` (≈8 GB, never tracked).
 
@@ -62,8 +66,9 @@ benchmark/
    - UCMuon engines: `bash analysis/run_mono_bench.sh "1 10 25 50 100 200"` runs
      Bethe-Bloch, MUSIC, PROPOSAL and UCMuon-MC at each depth
      (`analysis/run_realistic_bench.sh` does the same for the realistic source).
-3. **Analyse.** `cd analysis && bash run_benchmark.sh` → comparison figures
-   (`figures/`) + `benchmark_summary.csv`.
+3. **Analyse.** `bash analysis/run_benchmark.sh <Geant4 run prefix>` → the
+   comparison figures and summary in `figures/v2_six_code/` (see
+   `analysis/README.md`).
 4. **Paper tables.** `python3 manuscript/scripts/make_survival_table.py`
    regenerates the depth-resolved survival table (it reads the raw per-event
    files from `benchmark/geant4_muon_rock_v5/`, so step 2 has to have been run).

@@ -1,0 +1,55 @@
+# UCMuon engine timing, re-measured 2026-10-16 with v1.4.0 (multiple scattering
+# accumulated along the path in UCMuon-MC and Bethe-Bloch). Supersedes
+# engine_timing_20260730.csv for the MONOENERGETIC suite.
+#
+# Monoenergetic benchmark source (6 vertical beams, 5/10/20/50/100/300 GeV,
+# 100k muons each = 6e5 total), Standard Rock rho = 2.65 g/cm^3, Apple Silicon
+# Mac (load average 1.4 at the start). Single thread:
+# OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1. Inputs are the stdin
+# blocks of benchmark/analysis/run_mono_bench.sh verbatim, outputs written
+# outside the archive and compared with it: Bethe-Bloch, UCMuon-MC and MUSIC
+# reproduce their archived outputs bit for bit; PROPOSAL's survivors are bit
+# for bit identical, and only the x, y of stopped muons differ (since 1.3.1
+# they carry the stopping point; the July outputs predate that), so its
+# archived files were replaced by these.
+#
+# CONTROL: MUSIC is untouched since July. It re-measures at 206.9 s against
+# 207.0 s (52.1 s against 52.0 s at d = 100 m), so the machine is unchanged.
+# UCMuon-MC 102.2 -> 97.9 s and Bethe-Bloch 45.6 -> 47.3 s: the accumulated
+# scattering variance costs nothing measurable; PROPOSAL 1776.6 -> 1761.6 s is
+# run-to-run variation.
+#
+# seconds_per_1e5 = seconds_6e5 / 6, the unit used in the paper's tables.
+#
+# make_fig10_timing.py reads the totals from the gitignored
+# benchmark/geant4_muon_rock_v5/<code>/<code>_timing.txt, which were rewritten
+# with the values below; this file is the durable record.
+engine,depth_m,seconds_6e5,seconds_per_1e5
+UCMuon-MC,1,10.55,1.76
+UCMuon-MC,10,11.28,1.88
+UCMuon-MC,25,10.92,1.82
+UCMuon-MC,50,13.41,2.23
+UCMuon-MC,100,21.33,3.55
+UCMuon-MC,200,30.43,5.07
+UCMuon-MC,TOTAL,97.92,
+BetheBloch,1,8.45,1.41
+BetheBloch,10,6.71,1.12
+BetheBloch,25,6.94,1.16
+BetheBloch,50,8.03,1.34
+BetheBloch,100,8.79,1.46
+BetheBloch,200,8.39,1.40
+BetheBloch,TOTAL,47.31,
+MUSIC,1,5.98,1.00
+MUSIC,10,16.58,2.76
+MUSIC,25,27.66,4.61
+MUSIC,50,37.74,6.29
+MUSIC,100,52.13,8.69
+MUSIC,200,66.80,11.13
+MUSIC,TOTAL,206.89,
+PROPOSAL,1,15.44,2.57
+PROPOSAL,10,121.35,20.22
+PROPOSAL,25,233.40,38.90
+PROPOSAL,50,338.15,56.36
+PROPOSAL,100,461.36,76.89
+PROPOSAL,200,591.90,98.65
+PROPOSAL,TOTAL,1761.60,

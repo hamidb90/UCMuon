@@ -4,10 +4,12 @@
 # Geant4 : single run over all depths, serial (wall = CPU).
 # PHITS  : single run over all depths, total CPU summed over 10 OpenMP threads
 #          (Case A, full default physics; from phits.out total cpu time).
+# Engines re-measured in one session on 2026-10-16 with v1.4.0 (seconds
+# rounded; June 2026 values: PROPOSAL 195, UCMuon 53, MUSIC 28, BB 14).
 code,seconds
 Geant4,10851.95
 PHITS,198855.84
-PROPOSAL,195
-UCMuon,53
-MUSIC,28
+PROPOSAL,194
+UCMuon,56
+MUSIC,32
 BB,14

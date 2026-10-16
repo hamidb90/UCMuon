@@ -2,46 +2,40 @@
   Source : /Users/basiri/Codes/GitHub/UCMuon/benchmark/sources/muons_surface_real100.dat
   Outdir : /Users/basiri/Codes/GitHub/UCMuon/benchmark/run_realistic_20260614
   Depths : 1 10 25 50 100 200 m
-  Started: Sun Jul  5 16:06:52 CEST 2026
+  Engines: BB MUSIC PROPOSAL UCMuon
+  Started: Fri Oct 16 21:25:27 CEST 2026
 ============================================================
-
 ######################## depth = 1 m ########################
-  [BB]       2s
-  [MUSIC]    2s
-  [PROPOSAL] 4s
-  [UCMuon]   4s
-
+  [BB]       1.58s
+  [MUSIC]    1.12s
+  [PROPOSAL] 2.74s
+  [UCMuon]   2.37s
 ######################## depth = 10 m ########################
-  [BB]       3s
-  [MUSIC]    2s
-  [PROPOSAL] 8s
-  [UCMuon]   6s
-
+  [BB]       1.39s
+  [MUSIC]    1.42s
+  [PROPOSAL] 3.89s
+  [UCMuon]   3.25s
 ######################## depth = 25 m ########################
-  [BB]       3s
-  [MUSIC]    3s
-  [PROPOSAL] 15s
-  [UCMuon]   10s
-
+  [BB]       1.75s
+  [MUSIC]    2.08s
+  [PROPOSAL] 7.38s
+  [UCMuon]   5.50s
 ######################## depth = 50 m ########################
-  [BB]       5s
-  [MUSIC]    6s
-  [PROPOSAL] 31s
-  [UCMuon]   19s
-
+  [BB]       2.67s
+  [MUSIC]    3.53s
+  [PROPOSAL] 15.70s
+  [UCMuon]   9.85s
 ######################## depth = 100 m ########################
-  [BB]       7s
-  [MUSIC]    12s
-  [PROPOSAL] 86s
-  [UCMuon]   28s
-
+  [BB]       3.97s
+  [MUSIC]    7.58s
+  [PROPOSAL] 43.70s
+  [UCMuon]   15.52s
 ######################## depth = 200 m ########################
-  [BB]       5s
-  [MUSIC]    27s
-  [PROPOSAL] 230s
-  [UCMuon]   31s
-
+  [BB]       2.74s
+  [MUSIC]    16.35s
+  [PROPOSAL] 120.13s
+  [UCMuon]   19.29s
 ============================================================
-  Finished: Sun Jul  5 16:16:01 CEST 2026
+  Finished: Fri Oct 16 21:30:22 CEST 2026
   Outputs : /Users/basiri/Codes/GitHub/UCMuon/benchmark/run_realistic_20260614/{BB,MUSIC,PROPOSAL,UCMuon}/
 ============================================================

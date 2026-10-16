@@ -1,5 +1,48 @@
 # Changelog
 
+## [1.4.1] — 2026-10-16
+
+The benchmark data and records that go with the paper, regenerated with 1.4.0.
+No change to the generators, the transport engines, the GUI or UCMuGen.
+
+### Fixed
+- `benchmark/figures/v2_six_code/`, published as "the canonical comparison
+  plots", dated from June 2026: they showed the June UCMuon-MC (mean angles
+  28 to 44 % below the current run, survival 1 to 2.5 % low) and the pre-July
+  Bethe-Bloch (angles 35 % low, exit energy up to 5 % high at 200 m), and the
+  old angle analysis for MUSIC and PROPOSAL (up to 4 % at 1 m). Regenerated;
+  their summary now equals `benchmark/results/benchmark_summary_v2.csv`.
+- `benchmark/analysis/run_benchmark.sh` took the most recently modified Geant4
+  file and the `phits/` folder of the scratch tree, which held the
+  realistic-source runs, so it could not reproduce those figures; it ran only
+  from inside that tree and used lower-case engine folders. It now takes the
+  reference Geant4 run as an argument and the monoenergetic PHITS summary from
+  `benchmark/codes/phits/`, from anywhere.
+- `benchmark/results/comparison_metrics.csv` was from an early test with
+  another source (Geant4 15.6 % at 26.5 m w.e.); it is the current one now.
+- `ucmugen/examples/geant4/README.md`: the measured hit rate (325.234 Hz) was
+  computed with the 0.2 live time; re-run with 0.3.0: 99 910 of 10⁵ muons,
+  325.079 Hz against 325.372 Hz predicted (0.09 %).
+
+### Benchmark data
+- Engine timings re-measured in one session with 1.4.0
+  (`benchmark/results/engine_timing_20261016.csv`; MUSIC as the control,
+  every output checked against the archive): UCMuon-MC 3.6 s, Bethe-Bloch
+  1.5 s, MUSIC 8.7 s and PROPOSAL 77 s per 10⁵ muons at 100 m.
+- Realistic-source benchmark: Bethe-Bloch (Python and Fortran) and UCMuon-MC
+  re-run with the accumulated scattering variance (survival and energies
+  unchanged, lateral spreads within 0.05 %); `realistic_timing.csv` and
+  `run.log` from one session of all four engines. `run_realistic_bench.sh`
+  takes `ENGINES="..."` as `run_mono_bench.sh` does.
+- UCMuGen against EcoMug re-measured with UCMuGen 0.3.0
+  (`ucmugen/comparison/RESULTS_20261016.txt`): the rate cross-check
+  reproduces digit for digit; the two plane references of the cylinder test
+  move by 1.5 sigma and now agree with the capped cylinder to 0.2 %.
+
+### Documentation
+- `benchmark/results/README.md` says what each file is and from which run;
+  the benchmark README names the data the summary and figures come from.
+
 ## [1.4.0] — 2026-10-16
 
 Fixes from a line-by-line review of the paper against the code (2026-10-08)

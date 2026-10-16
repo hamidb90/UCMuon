@@ -41,10 +41,10 @@ file does not matter.
 [UCMuGen] 1e6 muons correspond to: 3073.41 s of live time
 ---------------- UCMuGen example ----------------
   generated muons        : 100000
-  muons entering the plate: 99913  (99.913 %)
+  muons entering the plate: 99910  (99.91 %)
   rate into the detector : 325.372 Hz
   live time of this run  : 307.341 s
-  measured hit rate      : 325.234 Hz
+  measured hit rate      : 325.079 Hz
 -------------------------------------------------
 ```
 
@@ -75,7 +75,7 @@ one draws from `G4UniformRand`, so the per-thread streams are the ones Geant4
 has already made independent.
 
 The same run on this machine takes 23 s on one thread and 4 s on ten, and gives
-*identical* output: 99913 muons into the plate and 325.234 Hz measured, either
+*identical* output: 99910 muons into the plate and 325.079 Hz measured, either
 way. Geant4 seeds per event rather than per thread, so results do not depend on
 how many threads you used.
 
