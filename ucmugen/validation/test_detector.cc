@@ -203,6 +203,71 @@ int main() {
                 per_muon[0] / per_muon[1]);
   }
 
+  // 5. A small detector close under a large surface. The largest cone it
+  //    subtends was sampled (20 000 surface points): for a 1 cm sphere 2 cm
+  //    under a 10 m disk it came out 0.05 sr instead of 0.84, and the events
+  //    near the closest point were under-weighted (6.5 % within 2 cm of the
+  //    axis instead of 29 %). CosmoALEPH is isotropic, so the fraction of
+  //    events within rho of the axis is analytic: F(rho)/F(R) with
+  //    F(rho) = 1 - h / sqrt(h^2 + rho^2). UCMuGen 0.3.
+  std::printf("\n5. detector close under a large surface\n");
+  {
+    const double R = 1000.0, rs = 1.0, h = 2.0;
+    Generator g;
+    g.setSpectrum(Spectrum::CosmoALEPH).setEnergyRange(100.0, 1000.0)
+        .setPrintWarnings(false)
+        .setSurface(std::make_shared<Disk>(R, Vec3{0, 0, 0}))
+        .setDetector(std::make_shared<SphereDetector>(Vec3{0, 0, -h}, rs));
+    const double s = rs / h, om = 2.0 * kPi * (1.0 - std::sqrt(1.0 - s * s));
+    check("largest cone is the analytic one", g.coneSolidAngleMax(), om, 1e-6);
+    const int n = 20000;
+    int near = 0;
+    for (int i = 0; i < n; ++i) {
+      const Muon m = g.generate();
+      if (std::hypot(m.position.x, m.position.y) < h) ++near;
+    }
+    auto F = [&](double r) { return 1.0 - h / std::sqrt(h * h + r * r); };
+    const double expect = F(h) / F(R), got = double(near) / n;
+    const double sig = std::sqrt(expect * (1.0 - expect) / n);
+    char note[80];
+    std::snprintf(note, sizeof(note), "[4 sigma = %.1e]", 4.0 * sig / expect);
+    check("events within h of the axis", got, expect, 4.0 * sig / expect, note);
+    checkExact("no envelope violations", g.envelopeViolations(), 0);
+
+    // setSurface() rebuilds the cone envelope: up to 0.2 the old one was kept.
+    Generator g2;
+    g2.setSpectrum(Spectrum::CosmoALEPH).setEnergyRange(100.0, 1000.0)
+        .setPrintWarnings(false)
+        .setSurface(std::make_shared<Disk>(R, Vec3{0, 0, 2000.0}))
+        .setDetector(std::make_shared<SphereDetector>(Vec3{0, 0, -h}, rs));
+    (void)g2.generate();
+    g2.setSurface(std::make_shared<Disk>(R, Vec3{0, 0, 0}));
+    check("cone envelope follows setSurface()", g2.coneSolidAngleMax(), om, 1e-6);
+  }
+
+  // 6. Plane axes and the energy range (UCMuGen 0.3).
+  std::printf("\n6. Plane axes and energy range\n");
+  {
+    Plane plane(100.0, 1.0, Vec3{0, 0, 0});
+    UCMuonLcg rng(3);
+    double xmax = 0.0, ymax = 0.0;
+    for (int i = 0; i < 2000; ++i) {
+      const SurfacePoint p = plane.sample(rng);
+      xmax = std::fmax(xmax, std::fabs(p.position.x));
+      ymax = std::fmax(ymax, std::fabs(p.position.y));
+    }
+    checkExact("Plane(100, 1): half_x along x", xmax > 99.0 && ymax <= 1.0, 1);
+    int thrown = 0;
+    for (const double e_min : {0.0, 0.1, 2000.0}) {
+      Generator g;
+      g.setSurface(std::make_shared<Disk>(100.0, Vec3{0, 0, 0}))
+          .setEnergyRange(e_min, 1000.0).setPrintWarnings(false);
+      // rate(), not generate(): with 0.2 generate() never returned here
+      try { (void)g.rate(1000); } catch (const std::invalid_argument&) { ++thrown; }
+    }
+    checkExact("E_min <= mass or > E_max throws", thrown, 3);
+  }
+
   std::printf("\n%s (%d failure%s)\n",
               g_failures ? "FAILURES PRESENT" : "ALL PASSED", g_failures,
               g_failures == 1 ? "" : "s");

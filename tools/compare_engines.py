@@ -179,7 +179,7 @@ bb_stdin = "\n".join([
     "0",             # transport_all: hit_flag=1 only
     str(ncols),      # ncols hint
     str(DEPTH_M),    # depth [m]
-    str(MAT_ID),     # material (1=Standard Rock)
+    f"{MAT_ID} {RHO}",  # material (1=Standard Rock) at the density of the run
     "1",             # multiple scattering ON
 ]) + "\n"
 
@@ -225,7 +225,7 @@ prop_stdin = "\n".join([
     str(INFILE),     # infile
     str(PROP_OUT),   # outfile
     str(DEPTH_M),    # depth [m]
-    str(MAT_ID),     # medium_type (1=StandardRock)
+    f"{MAT_ID} {RHO}",  # medium_type (1=StandardRock) at the density of the run
     "0",             # transport_all
     "500",           # e_cut [MeV]
     "0.001",         # v_cut

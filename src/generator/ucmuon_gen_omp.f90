@@ -150,7 +150,7 @@ program ucmuon_gen_omp
   real(8) :: parma_env = 1.0d0              ! PARMA mode-6 acceptance envelope
   real(8) :: surf_rate = -1.0d0             ! R [s^-1] through the source surface
   integer :: ibin, k                ! k = inner energy loop index (init only)
-  real(4) :: rnd4
+  real(8) :: rnd4
 
   !---------------------------------------------------------------------------
   ! OMP-specific variables
@@ -447,7 +447,7 @@ program ucmuon_gen_omp
       ! latest earlier day that has neutron-monitor data instead, and say so.
       if (parma_year >= 1951 .and. (parma_ic == 2 .or. parma_ic == 4)) then
         wy = parma_year; wm = parma_month; wd = parma_day
-        do k_back = 1, 3700
+        do k_back = 1, 40000   ! ~110 years: reaches the table from any GUI date (<= 2050)
           wd = wd - 1
           if (wd < 1) then
             wd = 31; wm = wm - 1
@@ -677,6 +677,8 @@ program ucmuon_gen_omp
 
   ! Altitude correction — Cecchini & Spurio (2012) §3
   ! I_μ(H) = I_μ(0)·exp(+H/L(p)),  L(p) = 4900 + 750·p [m],  p in GeV/c
+  ! The paper prints exp(-H/L(p)); the flux rises with altitude (H above sea
+  ! level), so the sign is + here on purpose. Do not "fix" it.
   ! Valid for p > 10 GeV/c, 0 < H < 1000 m above sea level.
   if (source_mode == 3) then
     alt_z_m = hemi_cz_m
@@ -1020,6 +1022,18 @@ program ucmuon_gen_omp
     my_ntry = ntry
     !$OMP END ATOMIC
 
+    ! No straight ray from the source reaching any detector makes this loop
+    ! run forever without a word: say so at 1e7, 1e8 and 1e9 tries.
+    if (use_detector == 1 .and. i == 0_8) then
+      if (my_ntry == 10000000_8 .or. my_ntry == 100000000_8 .or. &
+          my_ntry == 1000000000_8) then
+        write(*,'(A,I0,A)') '  WARNING: ', my_ntry, &
+          ' muons tried and none has hit a detector yet. Check the detector'
+        write(*,'(A)') '           position and size, the source size and theta_max.'
+        flush(6)
+      end if
+    end if
+
     !==========================================================================
     ! WRITE SURFACE FILE — only when detector filter is ON (logs all attempts,
     ! including misses).  When no detector filter is used, the write happens
@@ -1134,7 +1148,7 @@ contains
     real(8), intent(in)  :: r_cm, lx_cm, ly_cm, sz_cm
     real(8), intent(out) :: xo, yo, zo
     real(8) :: r1, r2, r3, rr, ang, pol, lu, lv
-    real(4) :: s1, s2, s3
+    real(8) :: s1, s2, s3
     call par_ranlux(s1);  r1 = dble(s1)
     call par_ranlux(s2);  r2 = dble(s2)
     if (smode == 1) then
@@ -1290,7 +1304,7 @@ contains
   subroutine parma_generate_joint(xo, yo, zo, eo, dxo, dyo, dzo, qo)
     real(8), intent(out) :: xo, yo, zo, eo, dxo, dyo, dzo
     integer, intent(out) :: qo
-    real(4) :: r4
+    real(8) :: r4
     real(8) :: r, e_mev, c, s, ph, nx, ny, nz, proj, w, cmin
     cmin = cos(theta_max)
     do

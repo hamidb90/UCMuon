@@ -19,8 +19,11 @@ COORDINATE CONVENTION (internal)
   Zenith:  0 = straight up, 90 = horizontal
 
   PHITS/MCNP files use cm.  All distances are converted to metres
-  on load.  The user specifies the detector position in the geometry's
-  own coordinate system (before conversion) using the GUI fields.
+  on load.  The overburden preview, the single-ray check and the 3D marker
+  trace from a point inside the first detector cell selected in the Terrain
+  tab (gui_csg_transport.render_detector_cell_selector); before a cell is
+  selected, and for STL meshes (no cells), from the origin of the geometry's
+  own frame.
 
   STL files are assumed to be in metres unless the user ticks "cm".
 
@@ -160,6 +163,10 @@ class CSGCell:
     tokens : list of (sign: int, surf_id: int) OR the string 'OR'
              sign = -1 → inside (f < 0), +1 → outside (f > 0)
              'OR' is the union operator between groups
+             (the surfaces only; used for bounding boxes and the detector
+             cell analysis)
+    expr   : the parsed expression (_parse_cell_expr), with parentheses and
+             complements (#N, #(...)); contains() evaluates it when set
     density : g/cm³ (0 = void / outside world)
     mat_id  : material identifier (for multi-material geometries)
     cell_id : integer cell number from the input file
@@ -169,15 +176,27 @@ class CSGCell:
     density : float                      # g/cm³; 0 = void
     tokens  : list                       # [(sign, surf_id), ...] with 'OR' separators
     label   : str = ""
+    expr    : object = None
+    cell_map: dict = field(default=None, repr=False)   # cell_id → CSGCell, for #N
 
     def contains(self, point: np.ndarray,
-                 surf_map: Dict[int, _SurfaceBase]) -> bool:
+                 surf_map: Dict[int, _SurfaceBase], _depth: int = 0) -> bool:
         """
         Return True if point is inside this cell.
 
-        Each token group (separated by 'OR') is evaluated as an AND of
-        half-space tests. The cell contains the point if ANY group is True.
+        With an expression (every PHITS/MCNP cell): juxtaposition is an
+        intersection, ':' a union, parentheses group, '#N' is the complement
+        of cell N and '#(...)' of an expression. Up to 1.3.2 the complements
+        were dropped and the parentheses flattened, so a cavity or detector
+        cut out of the rock with #N read as rock, and '-1 (2 : 3)' as
+        '(-1 2) : 3'.
+
+        Without one: each token group (separated by 'OR') is evaluated as an
+        AND of half-space tests, and the cell contains the point if ANY group
+        is True.
         """
+        if self.expr is not None:
+            return _eval_cell_expr(self.expr, point, surf_map, self.cell_map, _depth)
         group_result = True
         any_group_true = False
 
@@ -235,6 +254,9 @@ class CSGGeometry:
 
         # Coordinate scale applied on load
         self._cm_to_m: bool = True   # True if source file uses cm
+
+        # What the loader could not represent (unsupported surfaces, ...)
+        self.warnings: List[str] = []
 
     # ── Info ─────────────────────────────────────────────────────────────────
 
@@ -310,40 +332,40 @@ class CSGGeometry:
         ], dtype=float)
 
         # ── STL: exact ray-mesh intersection ─────────────────────────────
+        # Up to 1.3.2 any error here (e.g. trimesh without rtree, which its
+        # ray queries need) came back as open sky, and a detector inside the
+        # mesh (one exit hit per ray) was open sky too: the hit count was
+        # tested before the inside check.
         if self._mesh is not None:
-            try:
-                locs, ray_idx, _ = self._mesh.ray.intersects_location(
-                    ray_origins    = [det_pos_m],
-                    ray_directions = [direction],
-                )
-                if len(locs) < 2:
-                    return 0.0, 0.0, True
-                # Sort intersections by distance from detector
-                dists = np.linalg.norm(locs - det_pos_m, axis=1)
-                order = np.argsort(dists)
-                dists = dists[order]
-                # If detector is already inside the mesh, first intersection
-                # is an exit; handle by prepending dist=0 as entry
-                inside_start = self._mesh.contains([det_pos_m])[0]
-                if inside_start:
-                    dists = np.concatenate([[0.0], dists])
-                # Pair (entry, exit): 0-1, 2-3, ...
-                total_m = 0.0
-                for i in range(0, len(dists) - 1, 2):
-                    seg = dists[i+1] - dists[i]
-                    if seg > 0:
-                        total_m += seg
-                if total_m <= 0:
-                    return 0.0, 0.0, True
-                ob = total_m * 100.0 * self._stl_density
-                return ob, total_m, False
-            except Exception:
+            locs, _, _ = self._mesh.ray.intersects_location(
+                ray_origins    = [det_pos_m],
+                ray_directions = [direction],
+            )
+            locs  = np.asarray(locs, dtype=float).reshape(-1, 3)
+            dists = np.sort(np.linalg.norm(locs - det_pos_m, axis=1))
+            # A ray through an edge or vertex shared by several triangles
+            # reports the same point once per triangle.
+            if len(dists) > 1:
+                keep  = np.concatenate(([True], np.diff(dists) > 1e-6 * np.maximum(1.0, dists[1:])))
+                dists = dists[keep]
+            # Detector inside the mesh: the first hit is an exit
+            if self._mesh.contains([det_pos_m])[0]:
+                dists = np.concatenate([[0.0], dists])
+            # Pair (entry, exit): 0-1, 2-3, ...
+            n_pair  = len(dists) // 2
+            total_m = float(np.sum(dists[1:2 * n_pair:2] - dists[0:2 * n_pair:2]))
+            if total_m <= 0:
                 return 0.0, 0.0, True
+            ob = total_m * 100.0 * self._stl_density
+            return ob, total_m, False
 
         # ── CSG: step-march density integration ──────────────────────────
         total_m  = 0.0
         total_ob = 0.0
-        pos = det_pos_m.copy().astype(float)
+        # Each step is sampled at its midpoint (up to 1.3.2 at its end, which
+        # lost half a step at every boundary on the step grid: 39.5 m of rock
+        # above a point 40 m deep at the 0.5 m default).
+        pos = det_pos_m.copy().astype(float) - direction * (0.5 * step_m)
 
         for _ in range(int(max_dist_m / step_m) + 1):
             pos += direction * step_m
@@ -454,10 +476,56 @@ class CSGGeometry:
                     lo[2] = max(lo[2], cz - r)
                     hi[2] = min(hi[2], cz + r)
 
+            elif stype in ("PlaneX", "PlaneY"):
+                k, v = (0, surf.x0) if stype == "PlaneX" else (1, surf.y0)
+                if sign == -1:
+                    hi[k] = min(hi[k], v)
+                else:
+                    lo[k] = max(lo[k], v)
+
+            elif stype in ("CylinderX", "CylinderY") and sign == -1:
+                import math
+                r = math.sqrt(surf.r2)
+                for k, c in ((1, surf.y0), (2, surf.z0)) if stype == "CylinderX" \
+                        else ((0, surf.x0), (2, surf.z0)):
+                    lo[k] = max(lo[k], c - r)
+                    hi[k] = min(hi[k], c + r)
+
+            elif stype == "_RPP" and sign == -1:
+                lo = np.maximum(lo, [surf.xmin, surf.ymin, surf.zmin])
+                hi = np.minimum(hi, [surf.xmax, surf.ymax, surf.zmax])
+
+            elif stype in ("_RCC", "_TRC") and sign == -1:
+                # the two end discs, each inside a sphere of the largest radius
+                import math
+                r = math.sqrt(surf.r2) if stype == "_RCC" else max(surf.rb, surf.rt)
+                ends = np.array([surf.v, surf.v + surf.h])
+                lo = np.maximum(lo, ends.min(axis=0) - r)
+                hi = np.minimum(hi, ends.max(axis=0) + r)
+
         # Clamp to global bbox
         lo = np.maximum(lo, self.bbox_min)
         hi = np.minimum(hi, self.bbox_max)
         return lo, hi
+
+    def cell_interior_point(self, cell: "CSGCell") -> Optional[np.ndarray]:
+        """A point [m] inside the cell, near the middle of its bounding box,
+        or None if none is found: the centre of the box when it is inside,
+        else the inside point of a 21x21x21 grid over the box closest to the
+        centroid of the inside points."""
+        lo, hi = self.cell_bbox_analytical(cell)
+        if np.any(hi < lo):
+            return None
+        centre = 0.5 * (lo + hi)
+        if cell.contains(centre, self._surf_map):
+            return centre
+        g = [np.linspace(a, b, 21) for a, b in zip(lo, hi)]
+        pts = np.stack(np.meshgrid(*g, indexing="ij"), axis=-1).reshape(-1, 3)
+        inside = pts[[cell.contains(p, self._surf_map) for p in pts]]
+        if len(inside) == 0:
+            return None
+        mid = inside.mean(axis=0)
+        return inside[np.argmin(np.sum((inside - mid) ** 2, axis=1))]
 
     # ── Plotly 3D preview ─────────────────────────────────────────────────────
 
@@ -671,7 +739,7 @@ def load_stl(path: str, density: float = 2.65, units_cm: bool = False) -> CSGGeo
     except ImportError:
         raise ImportError(
             "trimesh is required to load STL files.\n"
-            "Install with:  pip install trimesh"
+            "Install with:  pip install trimesh rtree"
         )
 
     mesh = trimesh.load(path, force="mesh")
@@ -687,6 +755,17 @@ def load_stl(path: str, density: float = 2.65, units_cm: bool = False) -> CSGGeo
         # Attempt to heal
         trimesh.repair.fix_normals(mesh)
         trimesh.repair.fill_holes(mesh)
+
+    # trimesh's ray queries (and contains) need rtree; without it every ray
+    # raised and, up to 1.3.2, came back as open sky. Fail here instead.
+    try:
+        mesh.ray.intersects_location(ray_origins=[mesh.bounds[0] - 1.0],
+                                     ray_directions=[[0.0, 0.0, 1.0]])
+        mesh.contains([mesh.bounds[0] - 1.0])
+    except Exception as exc:
+        raise ImportError(
+            f"STL ray tracing failed ({exc}). trimesh needs the rtree package "
+            "for ray queries; install it with:  pip install rtree") from exc
 
     geom = CSGGeometry()
     geom.source_format = "STL"
@@ -933,7 +1012,8 @@ def _parse_cell_tokens(expr: str) -> List:
     """
     Parse a PHITS/MCNP geometry expression string into tokens.
 
-    Input:  "-1 2 -3 : -4 5"  (space=AND, :=OR, #=complement not yet supported)
+    Input:  "-1 2 -3 : -4 5"  (space=AND, :=OR; complements and nested
+            parentheses are in _parse_cell_expr, which contains() uses)
             "(-1 2) : (-3 4)"  (parentheses are stripped)
     Output: [(-1,1),(+1,2),(-1,3), 'OR', (-1,4),(+1,5)]
     Each non-OR token is (sign, surf_id_abs).
@@ -960,6 +1040,142 @@ def _parse_cell_tokens(expr: str) -> List:
         except ValueError:
             pass   # skip unknown tokens (like region keywords)
     return tokens
+
+
+_CELL_TOKEN = re.compile(r"#\s*\(|#\s*\d+|[():|]|[+-]?\d+")
+
+
+def _parse_cell_expr(expr: str):
+    """
+    Parse a PHITS/MCNP cell expression into a tree:
+      ('s', sign, surf_id)   half-space of a surface
+      ('and', [nodes])       juxtaposition (intersection)
+      ('or', [nodes])        ':' (union)
+      ('notcell', cell_id)   '#N', the complement of cell N
+      ('not', node)          '#(...)', the complement of an expression
+    Precedence as in PHITS and MCNP: complement, then intersection, then
+    union; parentheses group. Words (keywords such as vol=, u=, imp:n=1,
+    already stripped by the loaders) are skipped. Returns None for an empty
+    expression.
+    """
+    # Words with letters or '=' are cell parameters (u=1, vol=..., imp:n=1,
+    # like ... but): drop them before reading the numbers.
+    expr = " ".join(w for w in expr.split() if not re.search(r"[A-Za-z=]", w))
+    toks = [t.replace(" ", "") for t in _CELL_TOKEN.findall(expr)]
+    pos = 0
+
+    def union():
+        nonlocal pos
+        terms = [inter()]
+        while pos < len(toks) and toks[pos] in (":", "|"):
+            pos += 1
+            terms.append(inter())
+        terms = [t for t in terms if t is not None]
+        if not terms:
+            return None
+        return terms[0] if len(terms) == 1 else ("or", terms)
+
+    def inter():
+        nonlocal pos
+        facs = []
+        while pos < len(toks) and toks[pos] not in (":", "|", ")"):
+            f = factor()
+            if f is not None:
+                facs.append(f)
+        if not facs:
+            return None
+        return facs[0] if len(facs) == 1 else ("and", facs)
+
+    def factor():
+        nonlocal pos
+        t = toks[pos]
+        pos += 1
+        if t in ("(", "#("):
+            node = union()
+            if pos < len(toks) and toks[pos] == ")":
+                pos += 1
+            if node is None:
+                return None
+            return ("not", node) if t == "#(" else node
+        if t.startswith("#"):
+            return ("notcell", int(t[1:]))
+        n = int(t)
+        return ("s", -1 if n < 0 else 1, abs(n))
+
+    node = union()
+    while pos < len(toks):                 # unbalanced ')': skip it and go on
+        pos += 1
+        rest = union()
+        if rest is not None:
+            node = rest if node is None else ("and", [node, rest])
+    return node
+
+
+def _eval_cell_expr(node, point, surf_map, cell_map, depth=0) -> bool:
+    """Evaluate a _parse_cell_expr tree at a point. A half-space of a surface
+    the loader did not know is false, so the part of the cell that needs it
+    is left out (the loaders list such surfaces in CSGGeometry.warnings). Up
+    to 1.3.2 it was true: a cell made of an unsupported body (BOX, ...) then
+    filled every point no earlier cell claimed, the sky included."""
+    kind = node[0]
+    if kind == "s":
+        surf = surf_map.get(node[2])
+        if surf is None:
+            return False
+        fval = surf.f(point)
+        return (fval < 0) if node[1] < 0 else (fval > 0)
+    if kind == "and":
+        return all(_eval_cell_expr(n, point, surf_map, cell_map, depth) for n in node[1])
+    if kind == "or":
+        return any(_eval_cell_expr(n, point, surf_map, cell_map, depth) for n in node[1])
+    if kind == "not":
+        return not _eval_cell_expr(node[1], point, surf_map, cell_map, depth)
+    other = (cell_map or {}).get(node[1])
+    if other is None or depth > 50:        # unknown cell, or #A in B and #B in A
+        return True
+    return not other.contains(point, surf_map, depth + 1)
+
+
+def _cell_expr_refs(node, surfs, cells):
+    """Collect the surface and cell numbers a tree refers to."""
+    if node is None:
+        return
+    if node[0] == "s":
+        surfs.add(node[2])
+    elif node[0] == "notcell":
+        cells.add(node[1])
+    elif node[0] == "not":
+        _cell_expr_refs(node[1], surfs, cells)
+    else:
+        for n in node[1]:
+            _cell_expr_refs(n, surfs, cells)
+
+
+def _finish_cells(geom: "CSGGeometry", surf_raw: Dict[int, Tuple[str, List[float]]],
+                  positive_density: List[int]) -> None:
+    """Link #N complements and list what the loader could not represent in
+    geom.warnings (shown by the GUI after loading)."""
+    cell_map = {c.cell_id: c for c in geom._cells}
+    bad_surf, bad_cell = {}, set()
+    for c in geom._cells:
+        c.cell_map = cell_map
+        s, n = set(), set()
+        _cell_expr_refs(c.expr, s, n)
+        for sid in s - set(geom._surf_map):
+            bad_surf.setdefault(sid, []).append(c.cell_id)
+        bad_cell |= n - set(cell_map)
+    for sid in sorted(bad_surf):
+        stype = surf_raw.get(sid, ("undefined",))[0]
+        geom.warnings.append(
+            f"Surface {sid} ({stype}) is not supported: the parts of cell(s) "
+            f"{', '.join(map(str, bad_surf[sid]))} bounded by it are left out.")
+    if bad_cell:
+        geom.warnings.append(
+            f"Complement of undefined cell(s) {', '.join(map(str, sorted(bad_cell)))} ignored.")
+    if positive_density:
+        geom.warnings.append(
+            f"Cell(s) {', '.join(map(str, positive_density))} give a positive density, "
+            f"which PHITS and MCNP read as atoms per barn-cm; it is used as g/cm³ here.")
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1002,6 +1218,7 @@ def load_phits(path: str) -> CSGGeometry:
 
     surf_raw: Dict[int, Tuple[str, List[float]]] = {}   # sid → (type, vals_m)
     cell_raw: List[Dict] = []
+    positive_density: List[int] = []
 
     # ── Pass 1: section-by-section parse ─────────────────────────────────────
     lines = text.splitlines()
@@ -1074,6 +1291,8 @@ def load_phits(path: str) -> CSGGeometry:
                 try:
                     rho = abs(float(parts[2]))
                     geom_start = 3
+                    if float(parts[2]) > 0:
+                        positive_density.append(cid)
                 except ValueError:
                     pass
             geom_expr = ' '.join(parts[geom_start:])
@@ -1081,7 +1300,8 @@ def load_phits(path: str) -> CSGGeometry:
             geom_expr = re.sub(r'\s+imp:\w+=\S+', '', geom_expr)
             geom_expr = re.sub(r'\s+imp=\S+', '', geom_expr)
             tokens = _parse_cell_tokens(geom_expr)
-            cell_raw.append(dict(cid=cid, mat=mat_id, rho=rho, tokens=tokens))
+            cell_raw.append(dict(cid=cid, mat=mat_id, rho=rho, tokens=tokens,
+                                 expr=_parse_cell_expr(geom_expr)))
 
     # ── Build surface map ─────────────────────────────────────────────────────
     for sid, (stype, vals_m) in surf_raw.items():
@@ -1097,8 +1317,10 @@ def load_phits(path: str) -> CSGGeometry:
             density = cd['rho'],
             tokens  = cd['tokens'],
             label   = f"Cell {cd['cid']} mat={cd['mat']} ρ={cd['rho']:.2f}",
+            expr    = cd['expr'],
         )
         geom._cells.append(cell)
+    _finish_cells(geom, surf_raw, positive_density)
 
     # ── Estimate bounding box from surface extents ────────────────────────────
     _estimate_bbox(geom)
@@ -1200,6 +1422,7 @@ def load_mcnp(path: str) -> CSGGeometry:
 
     # ── Parse cell block ──────────────────────────────────────────────────────
     cell_raw: List[Dict] = []
+    positive_density: List[int] = []
     for line in cell_lines:
         parts = line.split()
         if len(parts) < 3: continue
@@ -1216,13 +1439,16 @@ def load_mcnp(path: str) -> CSGGeometry:
         if mat_id not in (0, -1):
             try:
                 rho = abs(float(parts[2])); geom_start = 3
+                if float(parts[2]) > 0:
+                    positive_density.append(cid)
             except ValueError:
                 pass
         geom_expr = ' '.join(parts[geom_start:])
         # Strip MCNP keywords: imp:n=, imp:p=, vol=, etc.
         geom_expr = re.sub(r'\s+\w+[:=]\S+', '', geom_expr)
         tokens = _parse_cell_tokens(geom_expr)
-        cell_raw.append(dict(cid=cid, mat=mat_id, rho=rho, tokens=tokens))
+        cell_raw.append(dict(cid=cid, mat=mat_id, rho=rho, tokens=tokens,
+                             expr=_parse_cell_expr(geom_expr)))
 
     for sid, (stype, vals_m) in surf_raw.items():
         s = _parse_surface_card(sid, stype, vals_m)
@@ -1234,7 +1460,9 @@ def load_mcnp(path: str) -> CSGGeometry:
             cell_id=cd['cid'], mat_id=cd['mat'], density=cd['rho'],
             tokens=cd['tokens'],
             label=f"Cell {cd['cid']} mat={cd['mat']} ρ={cd['rho']:.2f}",
+            expr=cd['expr'],
         ))
+    _finish_cells(geom, surf_raw, positive_density)
 
     _estimate_bbox(geom)
 
@@ -1367,6 +1595,9 @@ def render_csg_builder() -> Optional[CSGGeometry]:
 
     # ── Success banner ────────────────────────────────────────────────────────
     st.success(f"✅  {geom.summary()}", icon="🔩")
+    if getattr(geom, "warnings", None):
+        st.warning("⚠️ Parts of this geometry are not represented:\n\n"
+                   + "\n".join(f"- {w}" for w in geom.warnings))
 
     # ── 3D geometry viewer ────────────────────────────────────────────────────
     st.markdown("#### 🗺️ Geometry Preview")
@@ -1461,8 +1692,9 @@ def render_csg_builder() -> Optional[CSGGeometry]:
         if st.button("▶ Trace ray", key="csg_test_ray"):
             ob, slant, sky = geom.ray_overburden(
                 test_az, test_ze, det_pos,
-                step_m    = float(st.session_state.get("csg_step", 0.5)),
-                max_dist_m= float(st.session_state.get("csg_maxdist", 5000.0)),
+                # the step and range the CSG transport panel sets (in cm)
+                step_m    = float(st.session_state.get("_csg_step_cm", 50.0)) / 100.0,
+                max_dist_m= float(st.session_state.get("_csg_maxdist_cm", 500_000.0)) / 100.0,
             )
             if sky:
                 st.info(f"Az={test_az:.0f}°  Ze={test_ze:.0f}°  →  open geometry (no rock)")

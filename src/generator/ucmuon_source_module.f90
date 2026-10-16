@@ -305,7 +305,7 @@ contains
 
     real(8) :: p, u, r, tc, theta, phi, s_th
     real(8) :: charge_ratio, pos_frac
-    real(4) :: yfl      ! real(4) buffer — par_ranlux writes real(4)
+    real(8) :: yfl      ! real(8) buffer — par_ranlux writes real(8)
 
     !--- Momentum sampling ---
     call par_ranlux(yfl)           ! <-- OMP change
@@ -490,7 +490,7 @@ contains
   function sample_cos2(theta_max) result(theta)
     real(8), intent(in) :: theta_max
     real(8) :: theta
-    real(4) :: yfl
+    real(8) :: yfl
     real(8) :: pdf, u
     real(8), parameter :: MAX_PDF = 0.385d0
     logical :: accepted
@@ -514,7 +514,7 @@ contains
   function sample_cos3(theta_max) result(theta)
     real(8), intent(in) :: theta_max
     real(8) :: theta
-    real(4) :: yfl
+    real(8) :: yfl
     real(8) :: u, cos4_max
     call par_ranlux(yfl)
     u        = dble(yfl)
@@ -534,7 +534,7 @@ contains
     real(8) :: cos_arr(NANG), pdf_arr(NANG), cdf_arr(NANG)
     real(8) :: cos_min, dc, c, frac, total
     real(8) :: a_p, b_p
-    real(4) :: yfl
+    real(8) :: yfl
     real(8) :: u
     integer :: k
 
@@ -815,7 +815,7 @@ contains
     real(8), intent(in)  :: tilt_rad, tilt_az_rad, theta_max
     real(8), intent(out) :: x, y, z, emu, cx, cy, cz
     integer, intent(out) :: muon_charge
-    real(4) :: yfl
+    real(8) :: yfl
     real(8) :: p, r1, r2, lu, lv, tc, rr, ct, st, c, s, ph, cmin
     real(8) :: nx, ny, nz, proj, w, charge_ratio, pos_frac
 

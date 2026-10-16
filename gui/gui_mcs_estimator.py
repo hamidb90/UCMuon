@@ -73,7 +73,7 @@ def lateral_sigma_cm(theta0_rad: np.ndarray,
 
 
 def _cylinder_closest_approach(x0_cm, y0_cm, cx, cy, cz,
-                                ax, ay, az, bx, by, bz):
+                                ax, ay, az, bx, by, bz, z0_cm=None):
     """
     For each muon (vectorised), compute the nominal transverse distance
     from the cylinder axis at the CLOSEST APPROACH point along the track,
@@ -107,17 +107,20 @@ def _cylinder_closest_approach(x0_cm, y0_cm, cx, cy, cz,
 
     ahat = ab / ab_len  # unit axis direction
 
-    # Muon track: r(t) = r0 + t*d  (r0 at z=0)
-    r0 = np.stack([x0_cm, y0_cm, np.zeros(n_mu)], axis=1)   # (n, 3)
+    # Muon track: r(t) = r0 + t*d  (r0 at the muon's start, z = 0 if not given)
+    z0 = np.zeros(n_mu) if z0_cm is None else np.asarray(z0_cm, float)
+    r0 = np.stack([x0_cm, y0_cm, z0], axis=1)                 # (n, 3)
     d  = np.stack([cx, cy, cz], axis=1)                       # (n, 3)
     A  = np.array([ax, ay, az], dtype=float)
 
     # Vector from axis origin A to muon surface position
     p = r0 - A[np.newaxis, :]                                 # (n, 3)
 
-    # Projections along axis
-    p_da = p @ ahat      # (n,)
-    d_da = d @ ahat      # (n,)
+    # Projections along axis (errstate: Accelerate's matmul raises spurious
+    # floating-point flags on macOS)
+    with np.errstate(all="ignore"):
+        p_da = p @ ahat      # (n,)
+        d_da = d @ ahat      # (n,)
 
     # Perpendicular components (to axis)
     p_perp = p - p_da[:, np.newaxis] * ahat[np.newaxis, :]   # (n, 3)
@@ -149,7 +152,8 @@ def _cylinder_closest_approach(x0_cm, y0_cm, cx, cy, cz,
 
     # Transverse components (displacement from axis at the closest point)
     r_from_A  = r_nom - A[np.newaxis, :]                        # (n, 3)
-    along_ax  = (r_from_A @ ahat)[:, np.newaxis] * ahat        # (n, 3) along axis
+    with np.errstate(all="ignore"):
+        along_ax  = (r_from_A @ ahat)[:, np.newaxis] * ahat    # (n, 3) along axis
     r_transv  = r_from_A - along_ax                             # (n, 3) perpendicular
 
     # Nominal impact in lab frame (add back axis origin)
@@ -173,22 +177,36 @@ def estimate_mcs_acceptance(df: pd.DataFrame,
                              n_mc: int = 500,
                              seed: int = 42) -> dict | None:
     """
-    Per-muon Monte Carlo MCS acceptance estimate using the Highland formula.
+    How many of the selected muons reach the detector itself after the
+    overburden, and how many of its true hits the safety margin loses.
 
-    For each selected muon the nominal trajectory (already confirmed to hit
-    the detector by the Fortran ray-caster) is displaced by a 2-D Gaussian
-    representing the MCS smearing:
+    The selected muons are those whose straight line crosses the detector
+    inflated by the safety margin. Per muon, along its straight line from the
+    source to the detector's top face (rock all the way, as the transport
+    assumes):
+      - it ranges out when its CSDA range is shorter than the path
+        (Groom 2001, Standard Rock);
+      - otherwise multiple scattering moves it sideways by a 2-D Gaussian of
+        RMS σ_r (gui/mcs_margin.py: Highland integrated with CSDA energy
+        loss, the upper envelope the margin rule uses);
+      - it is a hit when its displaced position at the nominal impact point
+        (closest approach to the cylinder axis; entry face for a box) lies
+        inside the detector itself, not the inflated one.
+    Hits lost to the margin (muons outside the inflated detector scattered
+    into the detector) are not in the sample; for a locally uniform flux they
+    equal the muons that start inside the detector and scatter out beyond the
+    margin, which are. MCS acceptance = expected hits / (expected hits + lost).
 
-        δx, δy  ∼  𝒩(0, σ_⊥²)  independent per projected plane
-
-    The nominal impact position is computed as the CLOSEST-APPROACH point
-    to the cylinder axis, clipped to the cylinder z-range (not the mid-plane
-    projection, which is incorrect for oblique tracks).
-
-    Path length per muon:  L = D_det / |cos θ_z|   (flat-slab)
+    Up to 1.3.2 this tested the scattered position against the inflated
+    detector, evaluated Highland at the surface momentum and counted muons
+    that range out: for the Basic default detector (r 50 cm, 30 m deep) it
+    expected 5620 hits of 20000 selected muons where UCMuon-MC transport gave
+    113, and advised raising the margin.
     """
     if df is None or len(df) == 0 or not detectors:
         return None
+    import mcs_margin as _mm
+    import fast_flux_estimator as _ffe
 
     rng = np.random.default_rng(seed)
 
@@ -201,15 +219,16 @@ def estimate_mcs_acceptance(df: pd.DataFrame,
         cx = df["px"].values.astype(float) / p_safe
         cy = df["py"].values.astype(float) / p_safe
         cz = df["pz"].values.astype(float) / p_safe
-    else:
-        th = np.radians(df["theta"].values.astype(float))
-        ph = np.radians(df["phi"].values.astype(float))
+    else:                                   # theta, phi in radians (file columns)
+        th = df["theta"].values.astype(float)
+        ph = df["phi"].values.astype(float)
         cx = np.sin(th) * np.cos(ph)
         cy = np.sin(th) * np.sin(ph)
         cz = -np.cos(th)
 
     x0_cm = df["x"].values.astype(float)
     y0_cm = df["y"].values.astype(float)
+    z0_cm = df["z"].values.astype(float) if "z" in df.columns else np.zeros(len(df))
 
     # ── Detector geometry ───────────────────────────────────────────────────────
     det    = detectors[0]
@@ -219,63 +238,66 @@ def estimate_mcs_acceptance(df: pd.DataFrame,
     if det["shape"] == 1:   # ── Cylinder ──────────────────────────────────────
         ax_, ay_, az_ = float(det["ax"]), float(det["ay"]), float(det["az"])
         bx_, by_, bz_ = float(det["bx"]), float(det["by"]), float(det["bz"])
-        R_eff = float(det["r"]) + margin
-
-        # Nominal impact: closest approach to cylinder axis (not mid-plane!)
-        x_nom, y_nom, depth_cm = _cylinder_closest_approach(
-            x0_cm, y0_cm, cx, cy, cz,
-            ax_, ay_, az_, bx_, by_, bz_
-        )
-
-        # Axis origin for transverse distance check
+        R_det = float(det["r"])
+        x_nom, y_nom, _ = _cylinder_closest_approach(
+            x0_cm, y0_cm, cx, cy, cz, ax_, ay_, az_, bx_, by_, bz_, z0_cm)
         det_cx, det_cy = ax_, ay_
-
+        z_top = max(az_, bz_)
     else:   # ── AABB box ──────────────────────────────────────────────────────
         xn, xx = float(det["xmin"]), float(det["xmax"])
         yn, yx = float(det["ymin"]), float(det["ymax"])
         zn, zx = float(det["zmin"]), float(det["zmax"])
         det_cx = (xn + xx) / 2.0
         det_cy = (yn + yx) / 2.0
-        depth_cm = abs((zn + zx) / 2.0) or 1000.0
-        hx = (xx - xn) / 2.0 + margin
-        hy = (yx - yn) / 2.0 + margin
-
-        # Project to entry face (z = zmax for downward muons)
+        hx, hy = (xx - xn) / 2.0, (yx - yn) / 2.0
+        z_top = max(zn, zx)
         with np.errstate(divide="ignore", invalid="ignore"):
-            t_entry = np.where(np.abs(cz) > 1e-8, zx / cz, 0.0)
+            t_entry = np.where(np.abs(cz) > 1e-8, (z_top - z0_cm) / cz, 0.0)
         t_entry = np.maximum(t_entry, 0.0)
         x_nom = x0_cm + t_entry * cx
         y_nom = y0_cm + t_entry * cy
 
-    # ── Path length and overburden ─────────────────────────────────────────────
-    cos_zen = np.maximum(np.abs(cz), 0.02)
-    path_cm = depth_cm / cos_zen
-    x_gcm2  = rho * path_cm
+    # ── Rock path: from the start to the detector's top face ──────────────────
+    depth_cm = np.maximum(z0_cm - z_top, 0.0)
+    cos_zen  = np.maximum(np.abs(cz), 0.02)
+    path_cm  = depth_cm / cos_zen
+    x_gcm2   = rho * path_cm
+    survive  = np.asarray(_ffe._R_of_T(np.maximum(E_arr - _M_MU_GEV, 1e-6)), float) > x_gcm2
+    sigma_r  = _mm.sigma_r_cm_many(E_arr, path_cm, rho, X0)
+    survive &= np.isfinite(sigma_r) | (path_cm <= 0.0)
+    sigma_r  = np.where(np.isfinite(sigma_r), sigma_r, 0.0)
+    sigma_perp = sigma_r / np.sqrt(2.0)
+    theta0 = np.where(path_cm > 0, np.sqrt(3.0) * sigma_perp / np.maximum(path_cm, 1e-9), 0.0)
 
-    # ── Highland scattering ────────────────────────────────────────────────────
-    theta0              = highland_theta0(p_arr, x_gcm2, X0)
-    sigma_perp, sigma_r = lateral_sigma_cm(theta0, path_cm)
-
-    # ── Monte Carlo miss probability ───────────────────────────────────────────
-    dx_mc = rng.normal(0.0, 1.0, (n_mc, n_mu)) * sigma_perp[np.newaxis, :]
-    dy_mc = rng.normal(0.0, 1.0, (n_mc, n_mu)) * sigma_perp[np.newaxis, :]
-
-    x_sc = x_nom[np.newaxis, :] + dx_mc  # (n_mc, n_mu)
-    y_sc = y_nom[np.newaxis, :] + dy_mc
-
-    if det["shape"] == 1:
-        r_sc    = np.sqrt((x_sc - det_cx)**2 + (y_sc - det_cy)**2)
-        miss_mc = r_sc > R_eff
-    else:
-        miss_mc = ((np.abs(x_sc - det_cx) > hx) |
-                   (np.abs(y_sc - det_cy) > hy))
-
-    miss_prob = miss_mc.mean(axis=0)
-    hit_prob  = 1.0 - miss_prob
+    # ── Monte Carlo: where the scattered muons land ───────────────────────────
+    hit_prob  = np.zeros(n_mu)
+    lost_prob = np.zeros(n_mu)
+    chunk = max(1, 2_000_000 // max(n_mc, 1))
+    for i0 in range(0, n_mu, chunk):
+        sl = slice(i0, min(i0 + chunk, n_mu))
+        dx = rng.normal(0.0, 1.0, (n_mc, sl.stop - sl.start)) * sigma_perp[sl]
+        dy = rng.normal(0.0, 1.0, (n_mc, sl.stop - sl.start)) * sigma_perp[sl]
+        xs = x_nom[sl] - det_cx + dx
+        ys = y_nom[sl] - det_cy + dy
+        if det["shape"] == 1:
+            r_sc = np.hypot(xs, ys)
+            inside, beyond = r_sc <= R_det, r_sc > R_det + margin
+            nom_in = np.hypot(x_nom[sl] - det_cx, y_nom[sl] - det_cy) <= R_det
+        else:
+            inside = (np.abs(xs) <= hx) & (np.abs(ys) <= hy)
+            beyond = (np.abs(xs) > hx + margin) | (np.abs(ys) > hy + margin)
+            nom_in = (np.abs(x_nom[sl] - det_cx) <= hx) & (np.abs(y_nom[sl] - det_cy) <= hy)
+        hit_prob[sl]  = inside.mean(axis=0)
+        lost_prob[sl] = np.where(nom_in, beyond.mean(axis=0), 0.0)
+    hit_prob  *= survive
+    lost_prob *= survive
+    miss_prob  = 1.0 - hit_prob
 
     n_selected  = n_mu
     n_after_mcs = float(hit_prob.sum())
-    acceptance  = n_after_mcs / n_selected if n_selected > 0 else 0.0
+    n_lost      = float(lost_prob.sum())
+    acceptance  = (n_after_mcs / (n_after_mcs + n_lost)
+                   if n_after_mcs + n_lost > 0 else 0.0)
 
     # ── Per-energy-bin statistics ──────────────────────────────────────────────
     n_bins    = 10
@@ -291,23 +313,29 @@ def estimate_mcs_acceptance(df: pd.DataFrame,
     for i in range(n_bins):
         mask = (E_arr >= log_edges[i]) & (E_arr < log_edges[i + 1])
         cnt  = int(mask.sum())
-        if cnt > 0:
-            bin_acc[i] = float(hit_prob[mask].mean())
-            bin_n[i]   = cnt
-            bin_sig[i] = float(np.median(sigma_r[mask]))
-            bin_th0[i] = float(np.median(theta0[mask]) * 1e3)   # mrad
+        bin_n[i] = cnt
+        h, l = float(hit_prob[mask].sum()), float(lost_prob[mask].sum())
+        if h + l > 0:
+            bin_acc[i] = h / (h + l)
+        live = mask & survive
+        if live.any():
+            bin_sig[i] = float(np.median(sigma_r[live]))
+            bin_th0[i] = float(np.median(theta0[live]) * 1e3)   # mrad
 
     return {
         "p_arr":                  p_arr,
         "E_arr":                  E_arr,
-        "sigma_r_arr":            sigma_r,
+        "sigma_r_arr":            np.where(survive, sigma_r, np.nan),   # NaN: ranges out
         "theta0_arr":             theta0,
         "miss_prob_arr":          miss_prob,
         "hit_prob_arr":           hit_prob,
+        "survive_arr":            survive,
         "n_selected":             n_selected,
+        "n_survive":              int(survive.sum()),
         "n_after_mcs":            n_after_mcs,
+        "n_lost":                 n_lost,
         "acceptance_frac":        acceptance,
-        "depth_cm":               depth_cm,
+        "depth_cm":               float(np.median(depth_cm)),
         "path_cm_arr":            path_cm,
         "x_gcm2_arr":             x_gcm2,
         "energy_bins":            log_edges,
@@ -335,8 +363,9 @@ def render_mcs_panel(load_file_fn) -> None:
     st.markdown("#### 🎯 MCS Acceptance Estimator")
     st.caption(
         "Estimates how many selected muons still hit the detector after "
-        "multiple Coulomb scattering through the overburden — "
-        "Highland–Lynch–Dahl formula (PDG §34.3), flat-slab geometry."
+        "multiple Coulomb scattering through the overburden, and how many of its "
+        "hits the safety margin loses: Highland–Lynch–Dahl formula (PDG §34.3) "
+        "with CSDA energy loss, flat-slab geometry."
     )
 
     # ── Controls row ──────────────────────────────────────────────────────────
@@ -381,7 +410,8 @@ def render_mcs_panel(load_file_fn) -> None:
         if auto_d < 0.01:
             auto_d = 100.0
         st.metric("Detector depth", f"{auto_d:.1f} m",
-                  help="Vertical depth to detector mid-plane (from geometry).")
+                  help="Vertical depth to the detector mid-plane (from geometry). "
+                       "The rock path runs from each muon's start to the top face.")
 
     with c4:
         st.markdown("&nbsp;")
@@ -397,14 +427,27 @@ def render_mcs_panel(load_file_fn) -> None:
             r"\left[1 + 0.038\,\ln\frac{x}{X_0}\right]"
         )
         st.markdown(
-            "- **Path length:** L = D_det / |cos θ_z| — flat-slab (same as MUSIC/BB engines)  \n"
-            "- **Lateral displacement (1 plane):** σ_⊥ = (L/√3) · θ₀  \n"
-            "- **Radial displacement (2D):** σ_r = √2 · σ_⊥  \n"
+            "- **Path length:** L = (z_start − z_top) / |cos θ_z|, a flat slab of rock "
+            "from each muon's start to the detector's top face  \n"
+            "- **Range-out:** muons whose CSDA range (Groom 2001) is shorter than L "
+            "never arrive  \n"
+            "- **Radial displacement (2D):** σ_r of `gui/mcs_margin.py`, Highland "
+            "integrated along L with CSDA energy loss (the upper envelope the margin "
+            "rule uses); σ_⊥ = σ_r/√2 per plane  \n"
             "- **Nominal position:** closest-approach to cylinder axis, clipped to "
             "cylinder z-range (corrects mid-plane projection error for oblique tracks)  \n"
-            "- **MC step:** N draws of (δx, δy) ~ 𝒩(0, σ_⊥²) tested against detector  \n"
+            "- **Expected after MCS:** N draws of (δx, δy) ~ 𝒩(0, σ_⊥²); a hit lands "
+            "inside the detector itself (the margin only widens the selection)  \n"
+            "- **Lost hits / MCS acceptance:** muons from outside the inflated detector "
+            "scattered into it are not in the sample; for a uniform flux they equal the "
+            "muons starting inside the detector that scatter out beyond the margin. "
+            "Acceptance = expected hits / (expected hits + lost hits)  \n"
+            "- **Accuracy:** σ_r is an upper envelope (≈ 22 % above UCMuon-MC's "
+            "scattering, 9 % above MUSIC's), so the loss comes out high and the expected "
+            "hits about 10 % low (checked against UCMuon-MC transport through 30 m: "
+            "96 expected vs 113 hits, 322 vs 354)  \n"
             "  \n"
-            "⚠️ Flat-slab only · first detector · no energy loss during propagation"
+            "⚠️ Flat-slab only · first detector · Standard Rock range table"
         )
 
     # ── Run ───────────────────────────────────────────────────────────────────
@@ -435,7 +478,8 @@ def render_mcs_panel(load_file_fn) -> None:
     n_aft   = result["n_after_mcs"]
     acc     = result["acceptance_frac"]
     depth_m = result["depth_cm"] / 100.0
-    sig_med = float(np.median(result["sigma_r_arr"]))
+    sig_med = (float(np.nanmedian(result["sigma_r_arr"]))
+               if np.any(np.isfinite(result["sigma_r_arr"])) else float("nan"))
     mat_lbl = st.session_state.get("mcs_mat_label", "—")
     rho_s   = st.session_state.get("mcs_rho_used", rho)
     X0_s    = st.session_state.get("mcs_X0_used", X0)
@@ -445,7 +489,11 @@ def render_mcs_panel(load_file_fn) -> None:
     m1, m2, m3, m4, m5 = st.columns(5)
     m1.metric("Selected muons",     f"{n_sel:,}")
     m2.metric("Expected after MCS", f"{n_aft:,.0f}",
-              delta=f"−{n_sel - n_aft:.0f}", delta_color="inverse")
+              delta=f"−{result.get('n_lost', 0.0):.0f} lost to the margin",
+              delta_color="inverse",
+              help="Detector hits expected after transport: muons that do not range "
+                   f"out ({result.get('n_survive', n_sel):,} of {n_sel:,}) and land in the "
+                   "detector itself. Most selected muons only cross the margin.")
     m3.metric("MCS acceptance",     f"{acc*100:.1f} %",
               delta=f"−{(1-acc)*100:.1f} %", delta_color="inverse")
     m4.metric("Depth / med. σ_r",   f"{depth_m:.0f} m / {sig_med:.1f} cm",
@@ -454,15 +502,16 @@ def render_mcs_panel(load_file_fn) -> None:
 
     # Severity banner
     if acc >= 0.95:
-        st.success(f"✅  MCS effect negligible — {(1-acc)*100:.1f}% loss. "
-                   "Detector acceptance is robust against scattering.")
+        st.success(f"✅  MCS effect negligible: {(1-acc)*100:.1f}% of the detector's hits "
+                   "lost to the safety margin.")
     elif acc >= 0.80:
-        st.warning(f"⚠️  Moderate MCS loss ({(1-acc)*100:.1f}%). "
-                   "Low-energy muons are significantly affected — consider raising E_min.")
+        st.warning(f"⚠️  Moderate MCS loss ({(1-acc)*100:.1f}% of the detector's hits): the "
+                   "safety margin is smaller than the scattering of the slowest muons. "
+                   "Raise it (🧰 Helpers → 🎯 MCS margin).")
     else:
-        st.error(f"🚨  Severe MCS loss ({(1-acc)*100:.1f}%). "
-                 "E_min is likely too low for this depth/geometry. "
-                 "Raise E_min or increase the detector acceptance margin.")
+        st.error(f"🚨  Severe MCS loss ({(1-acc)*100:.1f}% of the detector's hits): the "
+                 "safety margin is much smaller than the scattering. Raise it "
+                 "(🧰 Helpers → 🎯 MCS margin), or disable the detector filter.")
 
     # ── Plots ──────────────────────────────────────────────────────────────────
     E_bins  = result["energy_bins"]
@@ -573,15 +622,16 @@ def render_mcs_panel(load_file_fn) -> None:
     with st.expander("📋  Details & export", expanded=False):
 
         sigma_r_arr = result["sigma_r_arr"]
-        p50 = float(np.median(sigma_r_arr))
-        p95 = float(np.percentile(sigma_r_arr, 95))
+        _sr_ok = sigma_r_arr[np.isfinite(sigma_r_arr)]
+        p50 = float(np.median(_sr_ok)) if _sr_ok.size else float("nan")
+        p95 = float(np.percentile(_sr_ok, 95)) if _sr_ok.size else float("nan")
 
         d1, d2, d3, d4 = st.columns(4)
         d1.metric("Median σ_r",          f"{p50:.1f} cm")
         d2.metric("95th-pct σ_r",        f"{p95:.1f} cm")
         d3.metric("Detector ref",         f"{r_ref:.0f} cm", help=r_label)
         d4.metric("σ_r > R_det fraction",
-                  f"{(sigma_r_arr > r_ref).mean()*100:.1f} %",
+                  f"{(_sr_ok > r_ref).mean()*100 if _sr_ok.size else 0.0:.1f} %",
                   help="Fraction of muons whose 1σ scatter circle exceeds the detector radius.")
 
         st.markdown("&nbsp;")

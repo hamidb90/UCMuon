@@ -110,12 +110,15 @@ def _compute(detectors, e_min, theta_max_deg, rho, X0):
     # threshold even when the user sets a lower E_min.
     E_effs = [max(float(e_min), _groom(rho * g["depth_mid"])) for g in geoms]
 
-    # MCS in-scattering margins (1.5 × σ_r at E_eff)
+    # MCS in-scattering margins: 2σ_r with energy loss at the deepest face,
+    # the rule of the Generator's margin warning (gui/mcs_margin.py). Up to
+    # 1.3.2 this was 1.5σ_r at a constant surface momentum, e.g. 102 cm where
+    # the Generator asked for 231 cm (r = 10 cm cylinder at 90 m, E_min 45).
+    import mcs_margin as _mm
     mcs_margins = []
-    for g, E_eff in zip(geoms, E_effs):
-        dx = g["cx"] - src_cx; dy = g["cy"] - src_cy
-        th = float(np.degrees(np.arctan2(np.sqrt(dx**2 + dy**2), g["depth_mid"])))
-        mcs_margins.append(1.5 * _sr(E_eff, th, g["depth_mid"], rho, X0))
+    for g in geoms:
+        _rec = _mm.suggested_margin(g["depth_bot"] / 100.0, rho, float(e_min), 0.0, X0)
+        mcs_margins.append(float(_rec["margin_cm"] or 0.0))
 
     # MCS E_min (for directional detectors)
     E_mcs_list = []
@@ -189,7 +192,12 @@ def _compute(detectors, e_min, theta_max_deg, rho, X0):
                             0.1, 88.0, xtol=0.1)
         theta_mcs_list.append(float(th_mcs))
     theta_mcs_rec = float(min(theta_mcs_list))
-    theta_rec     = float(np.clip(theta_mcs_rec, theta_geom_rec, 88.0))
+    # θ_max is the generator's sky cut: muons from beyond the MCS limit lose
+    # their direction, but cutting them biases every rate low, so the
+    # recommendation only ever raises θ_max (for coverage). Up to 1.3.2 it
+    # was clipped to the MCS limit: "Reduce to 0.7°" for the paper's
+    # 90 m example.
+    theta_rec     = float(max(float(theta_max_deg), min(theta_geom_rec, 88.0)))
     theta_conflict      = theta_geom_rec > theta_mcs_rec + 2.0
     theta_unconstrained = theta_mcs_rec >= 87.9 and theta_geom_rec <= 0.0
 
@@ -420,8 +428,9 @@ def render_combined_source_panel(
                        f"directional pointing cannot both be satisfied. The recommendation "
                        f"favours coverage; treat the detector as a flux counter at large θ.")
         elif theta_max > opt["theta_mcs_rec"] + 5:
-            st.warning(f"⚠️  θ_max = {theta_max:.0f}° exceeds MCS limit "
-                       f"({opt['theta_mcs_rec']:.1f}°). Reduce to **{opt['theta_rec']:.1f}°**.")
+            st.info(f"Above θ ≈ {opt['theta_mcs_rec']:.1f}° (MCS limit) the scattering exceeds "
+                    f"the detector size, so those muons carry little direction information. "
+                    f"Keep them in the run: lowering θ_max would bias rates and live times low.")
         elif theta_max < opt["theta_geom_rec"] - 2:
             st.warning(f"⚠️  θ_max = {theta_max:.0f}° may not cover all detector edges "
                        f"from the optimised source centre (need ≥ {opt['theta_geom_rec']:.1f}°).")

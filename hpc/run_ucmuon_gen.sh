@@ -63,6 +63,14 @@ echo "${RUN_DIR}/ucmuon_surface"  >> "${CLEAN}.tmp"
 echo "${RUN_DIR}/ucmuon_selected" >> "${CLEAN}.tmp"
 mv "${CLEAN}.tmp" "$CLEAN"
 
+# Spectrum 8 (line 4 when line 1 is 0) is cosmic e+-: the converters have to be
+# told, a generator file has no particle column.
+SPECIES_F90=""; SPECIES_PY=""
+if [[ "$(sed -n '1p' "$CLEAN" | tr -d '[:space:]')" == "0" && \
+      "$(sed -n '4p' "$CLEAN" | tr -d '[:space:]')" == "8" ]]; then
+    SPECIES_F90="electrons"; SPECIES_PY="--electrons"
+fi
+
 # -----------------------------------------------------------------------------
 NRANKS=$SLURM_NTASKS
 NTHREADS=$SLURM_CPUS_PER_TASK
@@ -129,9 +137,13 @@ if [[ -x "./bin/ucmuon_to_phits" ]]; then
     for dat in ucmuon_selected ucmuon_surface; do
         if [[ -f "$RUN_DIR/${dat}.dat" ]]; then
             echo "  Converting ${dat}.dat -> PHITS format..."
-            ./bin/ucmuon_to_phits gen < "$RUN_DIR/${dat}.dat" \
-                              > "$RUN_DIR/${dat}_phits.dat"
-            echo "  -> $RUN_DIR/${dat}_phits.dat"
+            if ./bin/ucmuon_to_phits gen $SPECIES_F90 < "$RUN_DIR/${dat}.dat" \
+                                     > "$RUN_DIR/${dat}_phits.dat"; then
+                echo "  -> $RUN_DIR/${dat}_phits.dat"
+            else
+                rm -f "$RUN_DIR/${dat}_phits.dat"
+                echo "  PHITS conversion FAILED (see the error above)"
+            fi
         fi
     done
 else
@@ -148,9 +160,9 @@ if [[ "${UCMUON_GEANT4:-0}" == "1" ]]; then
         for dat in ucmuon_selected ucmuon_surface; do
             if [[ -f "$RUN_DIR/${dat}.dat" ]]; then
                 echo "  Converting ${dat}.dat -> Geant4 ASCII format..."
-                python3 "$GEANT4_PY" "$RUN_DIR/${dat}.dat" \
-                                     "$RUN_DIR/${dat}_geant4.txt"
-                echo "  -> $RUN_DIR/${dat}_geant4.txt"
+                python3 "$GEANT4_PY" $SPECIES_PY "$RUN_DIR/${dat}.dat" \
+                                     "$RUN_DIR/${dat}_geant4.txt" \
+                    && echo "  -> $RUN_DIR/${dat}_geant4.txt"
             fi
         done
     else

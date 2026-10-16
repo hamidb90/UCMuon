@@ -5,7 +5,7 @@
 #
 #  Always use this script instead of calling streamlit directly.
 #  It automatically activates the correct Python environment so that
-#  all six engines including PROPOSAL (Engine 3) are available.
+#  PROPOSAL (Engine 4) is available.
 #
 #  Usage:
 #    bash run_gui.sh
@@ -18,20 +18,20 @@ VENV="$HOME/venvs/ucmuon"
 THREADS=""
 for a in "$@"; do case $a in --threads=*) THREADS="${a#*=}" ;; esac; done
 
-# ── Activate system Python venv (required for PROPOSAL / Engine 3) ────────────
+# ── Activate system Python venv (required for PROPOSAL / Engine 4) ────────────
 if [ -d "$VENV" ]; then
     source "$VENV/bin/activate"
     PROP_OK=0
     "$VENV/bin/python3" -c "import proposal" 2>/dev/null && PROP_OK=1 || true
     if [ "$PROP_OK" -eq 1 ]; then
-        echo "  OK  Using system Python venv — all 6 engines available"
+        echo "  OK  Using system Python venv — Engine 4 (PROPOSAL) available"
     else
-        echo "  OK  Using system Python venv — Engine 3 (PROPOSAL) not installed"
+        echo "  OK  Using system Python venv — Engine 4 (PROPOSAL) not installed"
         echo "      Run: bash setup.sh  to install it"
     fi
 else
     echo "  NOTE: System Python venv not found at $VENV"
-    echo "        Engine 3 (PROPOSAL) will be unavailable."
+    echo "        Engine 4 (PROPOSAL) will be unavailable."
     echo "        Run: bash setup.sh  to create the venv automatically."
     echo ""
 fi

@@ -1,8 +1,37 @@
 # Changelog
 
-## [Unreleased]
+## [1.4.0] — 2026-10-16
 
-Found by a line-by-line review of the paper against the code (2026-10-08).
+Fixes from a line-by-line review of the paper against the code (2026-10-08)
+and from a six-part audit of the whole code (2026-10-14 to 16: generator and
+flux, transport, terrain and density, GUI, UCMuGen, converters and tooling),
+each finding reproduced by a run and checked by an independent second pass.
+The data shipped with the code that the fixes change are regenerated.
+
+### ⚠ Changes results
+- **Multiple scattering** (UCMuon-MC, Bethe-Bloch Python and Fortran): the
+  Highland variance accumulates along the path, so angles and lateral
+  displacements no longer depend on the step size. UCMuon-MC's mean angle
+  against Geant4 goes from −15.4 % to −2.8 % at 1 m of rock and is within 5 %
+  to 200 m. Survival and energies are unchanged.
+- **Random deviates** of the Fortran generators and UCMuGen carry 53 bits
+  instead of 24: a fixed `UCMUON_SEED` gives different (statistically
+  equivalent) files than 1.3.x, and the far momentum tail is no longer cut.
+- **Terrain:** the forward transport put 1/cos²θ too much rock in front of
+  every muon; the ray tracer interpolates the DEM bilinearly and bisects rock
+  boundaries; projected DEMs are reprojected. The Vesuvius library gains 93
+  rock directions.
+- **Backward MC (Engine 5):** the range table goes to 10 TeV (was 2 TeV, which
+  left out part of the flux under more than about 1000 m w.e.); water, ice,
+  seawater and iron use their own PDG tables instead of a rescaled rock table.
+- **Density inversion** interpolates ln T between library densities (bias
+  between nodes +2.6 % → +0.5 %).
+- **PARMA dates after the end of its table** got W = 0 (+6 % rate) in the
+  generator and UCMuGen; they take the latest measured W.
+- **UCMuGen 0.3.0:** the directed-sampling cone is exact (directed
+  acceptances about 16 % higher), and the Plane's axes are the documented ones.
+- Bethe-Bloch in water and ice, pencil beams, cosmic electrons through the
+  command-line converters, MPI EventIDs: see Fixed.
 
 ### Fixed
 - **Bethe-Bloch, Python driver, ice:** the radiation length was 33.10 g/cm²;
@@ -14,6 +43,363 @@ Found by a line-by-line review of the paper against the code (2026-10-08).
 - Config tab: the survival fraction is a caption under "Survived", no longer a
   green up arrow (the same fix as for the rate in 1.3.2).
 
+Found by a code audit (2026-10-14):
+- **PARMA, W index from the date:** any date after the last year of the
+  neutron-monitor table (2026) got W = 0, solar minimum, without a warning:
+  `getHP` took the 0.0 its table is initialised with as data. Such dates now
+  use the latest day with data and say so, as missing days inside the table
+  already did. The GUI's Advanced mode defaults to today's date, so from
+  1 January 2027 every PARMA run would have been affected (+6 % surface rate
+  at a site at 50.7° N, 0.1 km). The search back now reaches the table from
+  any date the GUI accepts (up to 2050). Dates inside the table are unchanged.
+- **MPI generator (`bin/ucmuon_gen`):** an E_min below 1 GeV was silently
+  raised to 1 GeV, and spectrum 8 (cosmic electrons, listed in
+  `hpc/input_params.dat`) silently became CosmoALEPH muons. It now keeps the
+  energy window and generates electrons, as the OpenMP generator does.
+  Without a detector, each rank's file now holds exactly its share of rows
+  and "Total tried" equals "Total saved" (the extra muons the threads drew
+  past the target were written before; the live time was consistent).
+- **GUI, loading a PHITS dump:** a dump written with Fortran D exponents (the
+  generator's own, the GUI's PHITS export, `ucmuon_to_phits.f90`) could not
+  be loaded ("unsupported operand type(s)"); it now loads. Electrons (kf ±11)
+  now get their own charge and mass, not the muon ones.
+- **Bethe-Bloch in water and ice:** the Python driver rescaled the Standard
+  Rock table by 1.046 (Z/A 0.523; water's is 0.555, and its radiative loss is
+  25 % below rock's), and the Fortran engine (OpenMP and MPI) used Z/A 0.495
+  and b = 3.40e-6 (PDG 2.28e-6). Muons lost too little energy: 100 GeV
+  muons through 100 m of water, 5 % (Python) and 8 % (Fortran); 10 GeV
+  through 10 m, 10 % (Fortran). The Python driver now uses the PDG 2024 ice
+  and water tables (as UCMuon-MC), the Fortran engine H₂O's Z/A and the PDG
+  b; both now agree with the PDG table (the Fortran one within its 2 %
+  analytic-ionisation residual, as in rock). Standard Rock is unchanged.
+- **Python Bethe-Bloch, MS off and range cut:** the analytical (MS off) path
+  and the range cut multiplied the rock range by the material factor instead
+  of dividing, so for a custom material the energy loss changed when MS was
+  switched (10 GeV, Z/A 0.55: 17 %), and a material with Z/A below rock's
+  (iron) had every muon cut. Concrete and custom materials now scale
+  ionisation and radiative losses separately (as the Fortran engine and
+  UCMuon-MC). Standard Rock is unchanged.
+- **Exit point of survivors:** UCMuon-MC, the Python Bethe-Bloch and PROPOSAL
+  wrote it at z = -depth, while they transport a slab of that depth below
+  the source; for a source plane not at z = 0 (Advanced mode: plane
+  coordinate W, tilted disks, hemisphere) the GUI's underground detector
+  filter then shifted inclined muons by W tan θ. PROPOSAL also wrote
+  z = -depth for vertical (XZ, YZ) source planes. All engines now write it
+  depth below each muon's start, as the Fortran engines, MUSIC and PUMAS
+  did. Sources at z = 0 are unchanged.
+- **Pencil beams:** with every muon starting at one point, MUSIC and the
+  Fortran Bethe-Bloch (OpenMP and MPI) took the depth along Y and PROPOSAL
+  and PUMAS along X, so no muon survived. They now take it from the
+  momentum, as UCMuon-MC already did. Generator files are not affected.
+- **UCMuon-MC radiation length in the Terrain tab and the CSG detector step:**
+  both passed the 2.65 g/cm³ value in cm with another density, so multiple
+  scattering scaled as sqrt(2.65/ρ): +16 % in angle at ρ = 2.0, about 80x for
+  the default air detector cell. Survival and transmission were not
+  affected.
+- **Multiple scattering (UCMuon-MC, Bethe-Bloch Python and Fortran):**
+  Highland's θ₀ was computed for each step and the steps added in
+  quadrature. Highland's formula describes a whole layer, and that sum depends
+  on the step size (about 10 % in angle per tenfold change) and is too small:
+  one radiation length of rock gave 22 to 30 % (UCMuon-MC) and 11 %
+  (Fortran) less than Highland for that layer, and UCMuon-MC's mean
+  deflection in the monoenergetic Geant4 benchmark was 15 % low at 1 m
+  (its step there is 0.9 g/cm²). The variance is now accumulated along the
+  path: Highland applied to the layer crossed so far up to one radiation
+  length, growing linearly with the path beyond (the log term, a fit
+  validated to 100 X₀, would put the angles 19 to 23 % above Geant4 in 25
+  to 200 m of rock). The result no longer depends on the step (0.2 % over
+  a hundredfold range), reproduces Highland for a single layer up to one X₀,
+  and puts UCMuon-MC within 4 % of Geant4 from 1 to 200 m. UCMuon-MC also took βp from
+  p = E instead of p = √(E² − m²) (angles 0.6 % low at a total energy of
+  1 GeV, 7 % at 0.3 GeV). Survival and energies are unchanged; angles and
+  lateral displacements change.
+- **Random deviates (generators, UCMuGen.h):** only the top 24 bits of the
+  64-bit generator were used, as a single-precision value, so every deviate
+  was a multiple of 2^-24 and the far momentum tail was cut off and
+  quantised: Guan 1-10000 GeV/c never exceeded 5923 GeV/c, and 36 muons
+  above 1357 GeV/c in 4·10⁶ took only 28 distinct values. The deviates now
+  carry 53 bits. The stream advances as before and each old deviate is the
+  leading 24 bits of the new one, so seeded runs change only where a
+  decision falls within 2^-24; UCMuGen.h still agrees with the Fortran bit
+  for bit, and the test run still gives 574 of 2000 survivors (28.70 %,
+  13.562 GeV), but its files are no longer byte-identical to the reference.
+- **Terrain ray tracer (`gui/ucmuon_terrain_driver.py`):** it counted whole
+  steps where the sample was below the DEM, with no boundary refinement
+  (its docstring said it bisected). Each segment starting at the detector
+  lost about half a step: a detector 100 m under a flat surface
+  (underground deployment, default 50 m step) got 50 m of rock vertically
+  and 100 m instead of 141 m at 45°, and short paths on a flank came out as
+  0 or a multiple of the step. The ray is now sampled at a quarter of the
+  DEM pixel (finer next to the detector) and every rock boundary is
+  bisected; the flat slab is exact at any step. The DEM lookup was meant to
+  be bilinear, but rasterio's `rowcol` returns integers, so every weight was
+  zero and the surface was a staircase of pixels; with exact boundaries the
+  steps put metres of spurious rock in front of a flank detector in every
+  direction. It is now bilinear between pixel centres. On the shipped
+  Vesuvius library this blocks 95 more bins (median 38 m of rock) and
+  lengthens the paths by 3 % on average above
+  2·10⁵ g/cm² (9 % at 0.5-2·10⁵); the library is to be regenerated.
+- **DEM files in a projected CRS:** a GeoTIFF in UTM or Lambert had its
+  metre transform read as degrees, and XYZ and ASC files were converted
+  with a formula that ignored the UTM zone and false easting (Vesuvius in
+  UTM 33N landed at 5.3° E): the detector fell outside the DEM and every
+  direction was open sky. A projected GeoTIFF (or an .asc with its .prj) is
+  now reprojected to longitude/latitude; XYZ and ASC files without a CRS
+  must be in longitude/latitude and otherwise stop with an explanation.
+  ASC files in `xllcenter` convention were shifted half a cell north-east,
+  and one without the optional `NODATA_value` line lost its first row.
+- **Backward MC, water/ice, seawater and iron:** the rock range was
+  multiplied by the material factor a where it should be divided, so a
+  material acted like X/a of rock instead of a·X, and one factor stood for
+  all losses. Rates under water came out 11, 29 and 42 % too high at 10, 50
+  and 200 m, under iron 13 to 27 % too low at 2 to 30 m. These materials now
+  use their PDG 2024 tables (as UCMuon-MC), and the b of the survival
+  factor follows them. Standard Rock, and so the terrain engine and its
+  libraries, is unchanged.
+- **Density analysis, loading a transmission map:** grid keys were the
+  parsed angles but lookups rounded them to 8 decimals, so a map written at
+  full precision (`np.savetxt`'s default, with the default 18 zenith bins of
+  85/18°) loaded with 576 of 648 cells NaN. Through the GUI the library
+  check usually rejected such a file; loaded as measured data first, or
+  through the API, it went through silently.
+- **STL geometries:** any error in the ray query came back as open sky; with
+  trimesh installed as the loader asked (`pip install trimesh`) but without
+  `rtree`, which its ray queries need, every direction was open sky. A
+  detector inside the mesh (one exit per ray) also got open sky, and a ray
+  through an edge shared by two triangles could count zero rock. Loading an
+  STL now checks the ray engine and says to install `rtree`; inside
+  detectors and shared-edge hits are handled. (An STL feeds the overburden
+  preview and the single-ray check; it has no cells, so they trace from the
+  geometry origin.)
+- **Source-size panel, θ_max advice:** for the paper's underground example
+  (r = 10 cm cylinder 90 m down, E_min 45 GeV) it said "Reduce to 0.7°", the
+  angle beyond which scattering exceeds the detector size; cutting θ_max
+  there would bias every rate low by orders of magnitude. It now only ever
+  raises θ_max (for coverage) and explains the scattering limit instead. Its
+  MCS margin was 1.5 σ_r at a constant surface momentum (102 cm) where the
+  Generator's warning asks for 2 σ_r with energy loss (231 cm); it now uses
+  the same rule. The CSG preview and single-ray check ignored the step and
+  range set in the CSG panel (they read keys nothing writes); they use them.
+- **UCMuGen (0.3.0), PARMA W index of a date:** `parma::w_index_from_date`
+  returned W = 0 (solar minimum) for every date after the last measured day of
+  the neutron-monitor table (2026-03-26, so also today) and for every later
+  year, where the Fortran generator uses the latest measured W (107.4): the
+  PARMA rate came out 5.9 % high (sea level, 50.7°N 4.4°E, 1-1000 GeV). It
+  now falls back the same way; dates before 1951 use JAEA's yearly table
+  (they returned 0), and W is clamped at -135.4 as in the Fortran (one
+  ground-level-event day held -752, which made the spectrum unusable). A
+  sixth mechanical edit in `tools/make_parma_header.py`; the header is
+  regenerated from JAEA's source. The `Site` documentation called W = 0
+  "mean activity"; it is a deep solar minimum (yearly means 6.6 in 2009,
+  long-term mean 58.5).
+- **UCMuGen, detector-directed sampling:** the largest cone the detector
+  subtends over the generation surface, the bound of the acceptance test,
+  was found by sampling 20 000 surface points. For a small detector close
+  under a large surface it missed the true value (a 1 cm sphere 2 cm under a
+  10 m disk: 0.05 sr instead of 0.84), so the events near the closest point
+  were under-weighted: 6.5 % within 2 cm of the axis instead of 29 %. It is
+  now exact for the built-in surfaces (`Surface::distanceTo`); the rate was
+  not affected. `setSurface()` and `setSeed()` now rebuild the envelope
+  (after a first run a new surface kept the old one: 14 000 envelope
+  violations in 20 000 events).
+- **UCMuGen, `Plane(half_x, half_y, ...)`:** half_x ran along y for the default
+  normal, so `Plane(200, 20)` over a bar along x gave a quarter of the rate
+  into it (8.4 instead of 31.0 /s). Every Plane in the repository is square.
+- **UCMuGen, energy range:** E_min at or below the particle mass gave a NaN
+  momentum table and a `generate()` that never returned; E_min > E_max became
+  a beam at E_min. Both now throw. The acceptance envelope also scans
+  log-spaced zenith cosines near the horizon, where Reyna's weight peaks above
+  10 TeV (outside its validity), and `liveTime()` takes the number of
+  integration points.
+- **UCMuon-MC, where a range-cut muon stops (water, ice, seawater, iron):**
+  a muon that cannot cross the slab is placed at its range, which was rock's
+  range times the material's ionisation factor, the inverse correction: 10
+  GeV muons stopped at 42 m in 45 m of water (stepped) but were placed at
+  51 m in 200 m (cut); in iron at 7.0 and 5.8 m. It is now the material's
+  own mean range; rock is byte-identical.
+- **Density inversion between library densities:** ρ̂ interpolated T
+  linearly between the library's densities, but T falls almost
+  exponentially with ρ, so the chord lies above the curve and densities
+  between library values came out high: +2.6, +1.5 and +0.4 % at 1.75,
+  2.25 and 2.8 g/cm³ on the Vesuvius library. The inversion, the synthetic
+  T_data and the χ² landscape interpolate ln T now (+0.5, +0.3, +0.04 %).
+  At a library density the result is unchanged.
+- **Terrain forward transport, rock in front of each muon:** the engine
+  depth of a direction bin was its slant opacity divided by cos θ where it
+  should be multiplied, so every engine (UCMuon-MC, MUSIC, Bethe-Bloch,
+  PROPOSAL) put 1/cos²θ too much rock in front of the muons: through a flat
+  20 m slab, 2582, 1180 and 0 of 3000 muons survived at 30°, 60° and 80°
+  where 2820, 2391 and 1470 do (as the Terrain tab reported them; the
+  transmission libraries come from the backward driver and are not
+  affected). The terrain transport now agrees with the slab within its
+  statistics; the 0.5 m depth floor, which added rock to thin
+  near-horizontal paths, is 1 cm.
+- **Terrain transport with MUSIC, Bethe-Bloch or PROPOSAL, bins of one
+  muon:** each direction bin is written to a file for the engine, which
+  takes the depth axis from the start positions' plane; a single muon has
+  none, so the engines took it from the momentum, horizontal beyond 45°. A
+  20 GeV muon at 81° then crossed 10 m of rock instead of 64 m and survived
+  (Python Bethe-Bloch), or was sent away from the exit plane and lost (MUSIC,
+  Fortran Bethe-Bloch). Such a muon is now written twice, 1 cm apart, and
+  the copy dropped.
+- **Geant4 and guaranteed-hit PHITS exports:** they read the run's file
+  through the GUI's cached loader with the path as the only key, so a second
+  run to the same file (the default name) exported the first run's muons
+  (200 rows after a 300-muon run) and the success message gave the stale
+  count. The cache belongs to the server, so a new browser session could
+  export another session's run. The file's modification time is now part of
+  the key.
+- **MCS margin helper (Helpers, 🎯 MCS margin):** it took the slant-path
+  threshold at 2.65 g/cm³ whatever the Transport density, so in water and ice
+  it evaluated the scattering at too high an energy: through 100 m of water it
+  suggested 96 cm where the Generator's warning asks 376 cm (a point-like
+  detector keeps about a quarter of its slowest muons with 96 cm). It now
+  uses the Transport density, as the warning and Basic do.
+- **Safety margin, radiation length and range:** the margin rule (Basic's
+  derived margin, the Generator's warning, the helper) used Standard Rock's
+  X₀ and range table for every material. In iron (X₀ 13.84 g/cm², range per
+  g/cm² 12 % longer) the margin came out 11-13 % below the scattering
+  UCMuon-MC produces instead of above it; in water (range 13 % shorter) it
+  was a third larger than needed (376 cm through 100 m, now 281 cm). It now
+  takes the Transport material's X₀ and, for water, seawater, ice and iron,
+  the PDG 2024 range table UCMuon-MC uses. Standard Rock margins are
+  unchanged (the paper's 2.3 m).
+- **MCS acceptance estimator (Generator, after a run with a detector
+  filter):** it tested the scattered muons against the margin-inflated
+  detector, evaluated Highland at the surface momentum and counted the
+  muons that range out, so for the Basic default detector (r 50 cm, 30 m
+  deep) it expected 5620 hits of 20 000 selected muons where UCMuon-MC
+  transport gave 113, and its banner advised raising the margin. It now
+  counts the muons that survive (CSDA) and land in the detector itself, with
+  the margin rule's σ_r (energy loss included), and estimates the hits the
+  margin loses from the muons that start inside the detector and scatter
+  beyond the margin: 96 expected against 113 transported; at a 2σ_r margin
+  98.9 % estimated retention against 99.4 % measured.
+- **CSG (PHITS) cell expressions:** `#N` complements were dropped and
+  parentheses flattened, so a cavity or a detector cut out of the rock with
+  `#N` read as rock (39.5 m of rock above a point 40 m deep, through a 10 m
+  void, instead of 30 m), `-3 (1 : 2)` meant `(-3 1) : 2` and `#(...)` an
+  intersection. The CSG transport's overburden was affected, not only the
+  preview. Cells are now parsed with the PHITS/MCNP precedence and
+  complements. A body the parser does not support (BOX, REC, WED, ...) was
+  left out of its cells, so a cell made of one filled every point no earlier
+  cell claimed, the sky included; that part of the cell is now empty, and
+  the loader lists such surfaces (and positive densities, atoms per barn-cm
+  read as g/cm³) after loading.
+- **CSG overburden preview, single-ray check and 3D marker:** they read a
+  detector position that nothing set, so they traced from the geometry's
+  origin (open sky above a detector 30 m deep). They trace from a point
+  inside the first selected detector cell now. The step-march sampled each
+  step at its end and lost half a step at boundaries on the step grid; it
+  samples the midpoints.
+- **CSG runs use the selected engine:** the run applied straight-line CSDA
+  energy loss whatever engine was selected (the engine, stochastic-loss and
+  multiple-scattering options gave identical outputs). Each muon whose
+  straight line reaches a detector cell is now transported through the rock
+  in front of it (Σρ·L of the cells crossed, as Standard Rock) by the
+  selected engine, which decides survival and gives the energy, direction
+  and lateral displacement at the cell (UCMuon-MC muon by muon; MUSIC,
+  Bethe-Bloch and PROPOSAL in 2 % depth groups). Through a 30 m layer the
+  CSG run matches each engine's slab transport (survivors 3676/3679
+  UCMuon-MC, 3686/3681 Bethe-Bloch, 3677/3672 MUSIC; mean energies within
+  0.2 GeV). The results views got a placeholder overburden map, zero
+  everywhere and "open sky" wherever no muon survived, i.e. in the shielded
+  directions; the map is now traced from the detector cell. The PHITS-style
+  hit dumps were written to `gui/`; they go to `output/`.
+- **Terrain transport, steep muons:** muons at or beyond the direction grid's
+  maximum zenith (Angular grid settings) were neither transported nor
+  written, without a word (45 of 1000 muons spread to 89° with the 85°
+  default). The run now warns with their number.
+- **Command-line converters, cosmic electrons:** `src/converters/ucmuon_to_geant4.py`,
+  `ucmuon_to_phits.py` and `ucmuon_to_phits.f90` wrote every row as a muon
+  (PDG ±13, E − m_μ). A generator file has no particle column, so a
+  spectrum-8 file (cosmic e±) came out as muons, 99 % of them with zero
+  kinetic energy (1982 of 2000 at 10 MeV to 1 GeV). This is the only PHITS
+  writer of the HPC path. They now take `--electrons` (`electrons` for the
+  Fortran one: PDG ±11, the electron mass) and stop with exit code 2 when a
+  row's own E and p contradict the particle being written, either way;
+  `hpc/run_ucmuon_gen.sh` passes it for spectrum 8. Muon files convert byte
+  for byte as before. The GUI's own exports were right.
+- **MPI generator, EventIDs:** every rank numbered its muons from 1, so the
+  files `hpc/run_ucmuon_gen.sh` merges repeated EventIDs (1501 distinct in
+  3000 rows on 2 ranks; 68 in 200 selected muons on 3). The selected file now
+  runs 1..N over the ranks, as the OpenMP generator's does, and the surface
+  file interleaves the ranks' try numbers. The GUI's CSG run with MUSIC,
+  Bethe-Bloch or PROPOSAL matched the engine's output back by EventID and
+  failed on such a file; it numbers each depth bin's muons itself now.
+- **setup.sh, failed builds:** a compile error printed "SKIP" (the word for
+  absent sources), the script exited 0 and the summary counted the binary
+  left in `bin/` by an earlier build as built. A failed build is now reported
+  as FAIL, marked `[!]` in the summary, which also lists the generator, and
+  setup.sh exits 1.
+- **setup.sh, optional venv:** under `set -e`, a venv that could not be made
+  (Debian/Ubuntu without `python3-venv`) or had no pip stopped the whole
+  install before anything was compiled (exit 127), on every re-run. The
+  PROPOSAL venv is optional and its failure is now a warning; a half-made
+  venv is removed.
+- **setup.sh, Engine 6:** rasterio was installed only for `$PYTHON`, while
+  the GUI runs in `~/venvs/ucmuon` (run_gui.sh), and the summary checked
+  `$PYTHON`: with conda or miniforge as `python3` a fresh install reported
+  Engine 6 while the GUI had no rasterio. It is installed in the venv too,
+  and the summary checks the interpreter the GUI uses.
+- **`tools/compare_engines.py`:** Bethe-Bloch and PROPOSAL were given the
+  material without the density, so with a density other than 2.65 they ran
+  at 2.65 while MUSIC and UCMuon-MC ran at the given one (ρ = 2.0, 10 m:
+  40.4 and 41.0 % survival against 55.8 %; now 53.6 to 56.8 % for all four).
+- `hpc/run_proposal_bench.sh` found the repository from `$0`, which under
+  sbatch is the spool copy of the script; it uses the submit directory now.
+- `src/converters/merge_sources.py --energies 1500` looked for
+  `source_1TeV.dat` (1.5 TeV truncated); TeV is used for whole TeV only.
+- The Makefile relinked the MUSIC binaries on every `make` (the phony
+  `data-links` was a normal prerequisite; it is order-only now).
+- `run_gui.bat` started the GUI with `python` from PATH, which is not the
+  interpreter `install.ps1` used when Python was found only in `C:\Python31x`;
+  it now takes the first of `python`, `C:\Python31x\python.exe` and `py -3`
+  that has streamlit, and says so when none has. `install.ps1` passes `FC` on
+  the make command line (the Makefile's `FC = gfortran` overrode the
+  environment variable it set).
+- `tools/check_consistency.py` compared and screened only the files tracked
+  in the public tree; untracked files that `git add -A` would publish are now
+  included. `tools/bump_version.py` rewrote every `vX.Y.Z` in the paper (a
+  PROPOSAL or UCMuGen version too); it now moves only the version the code
+  states and lists the others.
+- Terrain transport (GUI) left two files per depth bin per run in the project
+  root (the bin's muons and the engine's `_stopped.dat` and `_timing.txt`);
+  they go to a temporary directory that is removed.
+
+### Changed
+- Both generators warn after 1e7, 1e8 and 1e9 tries if no muon has hit a
+  detector yet (a detector that no straight ray from the source can reach
+  made the run go on forever without a word).
+- **Backward MC (Engine 5), range table to 10 TeV:** the standard rock CSDA
+  range table ended at 2 TeV (3616 m w.e.), and flux needing a higher surface
+  energy was left out: at Vesuvius 106 of the 462 density-sensitive
+  directions of the shipped library lost more than 1 % (up to 33 %), which
+  `MURAVES_GUIDE.md` said none did. Groom's table is now continued to 10 TeV
+  (6889 m w.e.) with the PDG 2024 standard rock stopping power (UCMuon-MC's;
+  its range agrees with Groom's to 0.03 % at 2 TeV), integrated on from
+  Groom's last point. The cut is now below 1 % up to 3500 m w.e. (it was 37 %
+  at 3000) and no density-sensitive Vesuvius direction is cut. Fluxes under
+  less than 500 m w.e. rise by at most 0.25 % (detector energies of 2 to
+  2.5 TeV are now inside the table), under 1000 to 2000 m w.e. by about 3 %.
+- The Vesuvius T_sim library (`examples/vesuvius/tsim_library/`) is rebuilt
+  with the corrected ray tracer and the 10 TeV table (1059 directions cross
+  rock instead of 966); the guide's synthetic inversion gives 460
+  density-sensitive pixels, ρ̂ = 2.002 g/cm³ (scatter 0.022), D = 1.68. The
+  example's flux-vs-elevation and transmission figures are redrawn.
+- `test_run/expected/` regenerated with the 53-bit deviates and the
+  accumulated scattering variance: every number is unchanged (574 of 2000,
+  28.70 %, 13.562 GeV), the files and their SHA-256 sums are new.
+- `benchmark/results/benchmark_summary_v2.csv` rebuilt after re-running
+  UCMuon-MC and Bethe-Bloch on the monoenergetic benchmark with the scattering
+  variance accumulated along the path: survival and energies are unchanged;
+  mean angles against Geant4 are now −2.8, −0.8, −3.4, −2.8 and −5.0 % for
+  UCMuon-MC at 1, 25, 50, 100 and 200 m (were −15.4 to −1.9 %), and −2.8 to
+  −14.1 % for Bethe-Bloch. `run_mono_bench.sh` takes `ENGINES="..."` to run a
+  subset.
+- setup.sh and install.ps1 download PUMAS at a fixed commit (529976ef, tag
+  v1.2, the code UCMuon is tested with) instead of the master branch.
+
 ### Benchmark data
 - `benchmark/results/benchmark_summary_v2.csv` is rebuilt from the v3 engine
   outputs that the paper's tables use, by the new
@@ -24,6 +410,19 @@ Found by a line-by-line review of the paper against the code (2026-10-08).
   are unchanged; nothing the README quotes changes.
 
 ### Documentation
+- `docs/ENGINE6_USAGE_GUIDE.md`: the ray-trace step no longer changes the
+  result; DEM interpolation and projected DEMs explained.
+- UCMuGen README: the tilted-plane law (1 + cos α)/2 is for an isotropic sky
+  over the upper hemisphere and cos α for a vertical beam only (the README
+  also named a full-sphere field, where the rate does not depend on the
+  tilt); the PARMA header lists six edits; the documented feature-tour
+  numbers are regenerated (`validation/reference/tour_numbers.txt`: rates
+  move within their Monte Carlo error with the Plane axes, directed
+  acceptances rise about 16 % with the exact cone).
+- `gui/mcs_margin.py`: σ_r is an upper envelope of the engines' scattering,
+  measured with vertical beams through 40 and 90 m of rock: 8-10 % above
+  MUSIC's displacement and 22 % above UCMuon-MC's, so 2σ_r keeps at least
+  98 % of a point-like detector's hits with every engine.
 - README and the UCMuon-MC driver docstrings: hard radiative events are
   sampled per process for bremsstrahlung and photonuclear interactions only;
   pair production stays in the continuous term (as the code has done since
@@ -33,9 +432,61 @@ Found by a line-by-line review of the paper against the code (2026-10-08).
 - `benchmark/codes/geant4/README.md` and `benchmark/reports/BENCHMARK_FEEDBACK.md`:
   the Geant4 reference uses `FTFP_BERT` with its default electromagnetic
   physics, not `G4EmStandardPhysics_option4` (`MuonRock.cc` replaces nothing).
+- `benchmark/README.md` and `benchmark/codes/{music,bethe_bloch,proposal,ucmuon_stochastic}/README.md`
+  gave a `compare_engines.py --engine ... --depths ...` command that no
+  script accepts; the benchmark outputs come from
+  `benchmark/analysis/run_mono_bench.sh`, which runs the Python Bethe-Bloch
+  driver (as the paper says), not the Fortran binary.
+- `hpc/README_HPC.md`: `logs/` has to exist before the first sbatch (SLURM
+  opens the log files before the job script runs; it said "auto-created");
+  the converter's `electrons` option.
+- `run_gui.sh` called PROPOSAL Engine 3; it is Engine 4.
+- `benchmark/codes/bethe_bloch/README.md` and `ucmuon_stochastic/README.md`:
+  the notes on agreement with Geant4 were from older runs ("±2 % energy at all
+  depths", "MCS angles −40 %", "Groom dE/dx", "lowest survivor"); they now
+  give the measured values.
 
 ### Tests
 - Two regression tests (`tests/gui/test_fixes_v133.py`), each failing on 1.3.2.
+- `tests/flux/test_generator_fixes.py` (PARMA date, MPI parity; in CI, which
+  now also runs on changes to `src/parma/`) and a PHITS-dump test in
+  `tests/gui/test_fixes_v133.py`, each failing on 1.3.2.
+- `tests/transport/test_transport_fixes.py` (Bethe-Bloch water, pencil beams;
+  in the test-run CI job) and three transport tests in
+  `tests/gui/test_fixes_v133.py`, each failing on 1.3.2.
+- Multiple scattering against Highland for one radiation length, at two step
+  sizes (UCMuon-MC and Python Bethe-Bloch in `tests/gui/test_fixes_v133.py`,
+  Fortran OpenMP and MPI in `tests/transport/test_transport_fixes.py`), and
+  the resolution of the random deviates of the Fortran generator and UCMuGen
+  (`tests/flux/test_generator_fixes.py`), each failing on 1.3.2.
+- Six terrain and density tests in `tests/gui/test_fixes_v133.py` (flat-slab
+  ray tracing, projected and ASC DEMs, backward MC materials against the
+  PDG tables, full-precision transmission maps, STL from inside the mesh,
+  θ_max advice), each failing on 1.3.2.
+- Ten GUI tests in `tests/gui/test_fixes_v133.py` (Geant4 export after a
+  second run, the margin helper and Basic margin for water and iron, CSG
+  complements, the preview position and the engine transport, the MCS
+  estimator, the terrain zenith warning, the terrain depth against a flat
+  slab, a terrain bin of one muon), one for the density inversion between
+  library densities and one for range-cut stopping depths, each failing on
+  1.3.2.
+- UCMuGen: `validation/test_parma.cc` section 7 (W index of dates after the
+  table), `validation/test_detector.cc` sections 5 and 6 (detector close under
+  a large surface, setSurface, Plane axes, energy range), each failing on
+  UCMuGen 0.2.
+- `tests/converters/test_converters.py` (in the test-run CI job): cosmic
+  electrons and muons through the three converters and both refusals; the
+  electron checks fail on 1.3.2. MPI EventIDs in
+  `tests/flux/test_generator_fixes.py` and a CSG run with repeated EventIDs in
+  `tests/gui/test_fixes_v133.py`, each failing on 1.3.2.
+
+### Benchmark analysis
+- `benchmark/analysis/benchmark_analysis.py` took an engine's deflection
+  angle as the arccos of a dot product of direction cosines written with 6
+  decimals, so angles below about 1 mrad came out as 0 or 1.4 mrad: the
+  engines' mean angles were 4 to 6 % low at 1 m and 0.4 to 1 % low at depth
+  (Geant4's, from full-precision momenta, were not affected). It now uses
+  atan2(|s × c|, s · c).
 
 ## [1.3.2] — 2026-10-08
 

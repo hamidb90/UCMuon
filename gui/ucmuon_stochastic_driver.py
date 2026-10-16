@@ -29,7 +29,9 @@ Total energy loss per step dx [g/cm²]:
   (1/v, Bethe-Heitler) remain selectable for reproducibility.
 
 Additional physics:
-  · Multiple scattering  : Highland (1975) projected angles per step
+  · Multiple scattering  : Highland (1975) accumulated along the path (exact
+                           Highland up to one X0, variance linear beyond;
+                           independent of the step size, see _ms_theta0)
   · Muon decay           : Poisson probability per step (p·cτ, p = √(E²−m²))
   · Range cut            : muons whose *deterministic-loss* range (a_ion +
                            v_cut·L_rad only — a strict upper bound on
@@ -729,6 +731,26 @@ def _csda_range(E_MeV, a_scale=1.0, t_fine=None, r_fine=None):
     return np.interp(E, t_fine, r_fine) * a_scale
 
 
+def _mean_range(E_MeV, mat):
+    """Mean-loss CSDA range [g/cm²] in the material: Standard Rock's PDG 2024
+    table, and for the other materials their own per-process tables
+    integrated (as _det_range does for the deterministic part).
+
+    Used for where a range-cut muon stops. Up to 1.3.2 that was rock's range
+    times a_scale, the inverse of the material correction: 10 GeV muons
+    stopped at 42 m in 45 m of water but at 51 m in 200 m, and in iron at
+    7.0 m in an 8 m slab but at 5.8 m in a 30 m one."""
+    if mat.get("proc", "rock") == "rock" and mat.get("a_scale", 1.0) == 1.0:
+        return _csda_range(E_MeV, 1.0, _PDG24_T_FINE, _PDG24_R_FINE)
+    a_ion, Lb, Lp, Ln = _loss_components(_PROC_T, mat)
+    inv = 1.0 / np.maximum(a_ion + Lb + Lp + Ln, 1e-12)
+    tab, s_a, _ = _select_proc(mat)
+    R_grid = tab["R10"] / s_a + np.concatenate(
+        ([0.0], np.cumsum(0.5 * (inv[1:] + inv[:-1]) * np.diff(_PROC_T))))
+    E = np.clip(np.asarray(E_MeV, float), _PROC_T[0], _PROC_T[-1])
+    return np.interp(E, _PROC_T, R_grid)
+
+
 def _det_range(E_MeV, mat, v_cut, delta_rays=False):
     """
     Deterministic-loss range [g/cm²]: range integrated with only the
@@ -912,6 +934,40 @@ def _read_input(fpath, transport_all):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Multiple scattering
+# ─────────────────────────────────────────────────────────────────────────────
+
+def _ms_theta0(S_acc, t_acc, dt, beta_p):
+    """
+    Projected scattering angle RMS [rad] added by one step, and the updated
+    path sums (S_acc, t_acc).
+
+    Highland's θ0 = 13.6 MeV/(βp)·√t·(1 + 0.038 ln t) describes a whole layer
+    of t radiation lengths.  Adding it per step in quadrature (up to 1.3.2)
+    made the angles depend on the step size, ~10 % per decade, and is
+    systematically too small (PDG).  The variance is accumulated along the
+    path instead,
+        θ0²(path) = (13.6 MeV)² · F(t)² · Σ Δt_i/(β_i p_i)²,
+        F(t)      = 1 + 0.038 ln(min(t, 1)),
+    and each step adds the increase of θ0²(path).  Up to one radiation length
+    this is Highland applied once to the layer crossed so far; beyond it the
+    variance grows linearly with the path at Highland's one-X0 value, the
+    Gaussian regime of thick absorbers.  (Letting the log term grow, a fit
+    validated only to 100 X0, puts the angles 20 % above Geant4 in 25-200 m
+    of rock; this form is within 4 % of it from 1 to 200 m.)
+
+    S_acc : Σ Δt/(βp)² so far [GeV⁻²]   t_acc : path so far [X0]
+    dt    : step [X0]                   beta_p : βp at the step [GeV]
+    """
+    S_new = S_acc + dt / beta_p**2
+    t_new = t_acc + dt
+    F_old = np.maximum(1.0 + 0.038 * np.log(np.clip(t_acc, 1e-300, 1.0)), 0.0)
+    F_new = np.maximum(1.0 + 0.038 * np.log(np.clip(t_new, 1e-300, 1.0)), 0.0)
+    var   = S_new * F_new**2 - S_acc * F_old**2
+    return 13.6e-3 * np.sqrt(np.maximum(var, 0.0)), S_new, t_new
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Core transport
 # ─────────────────────────────────────────────────────────────────────────────
 
@@ -1005,7 +1061,8 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     # muons with remaining steps are processed each iteration.
     DX_TARGET = 20.0                            # [g/cm²]  (5->20: ~2.5x faster,
     # survival/exit-KE unchanged to <0.02 pp at 25/100/200 m; step physics is
-    # compound-Poisson and quadrature-MCS, invariant in the mean to step size;
+    # compound-Poisson, invariant in the mean to step size, and the MCS
+    # variance is accumulated along the path (_ms_theta0), step-invariant;
     # forward-Euler dE/dx verified accurate to <0.1 GeV at this step)
     if n_steps > 0:
         n_steps_i = np.full(N, int(n_steps), dtype=np.int64)
@@ -1033,16 +1090,15 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     # stopping displacement so z_stop reports a physical depth instead of 0.
     # (min with R_det: the deterministic-only range is an upper bound.)
     if range_cut.any():
-        R_stop = np.minimum(
-            _csda_range(muons["Ekin_MeV"], mat["a_scale"],
-                        _PDG24_T_FINE, _PDG24_R_FINE),
-            R_det)
+        R_stop = np.minimum(_mean_range(muons["Ekin_MeV"], mat), R_det)
         x_acc[range_cut] = muons["cx"][range_cut] * (R_stop[range_cut] / rho)
         y_acc[range_cut] = muons["cy"][range_cut] * (R_stop[range_cut] / rho)
         z_acc[range_cut] = muons["cz"][range_cut] * (R_stop[range_cut] / rho)
 
     E_stop = 1.0                                # stop if Ekin < 1 MeV
     prev_reported = 0
+    ms_S = np.zeros(N)                          # Σ Δt/(βp)² per muon  [GeV⁻²]
+    ms_t = np.zeros(N)                          # path per muon        [X0]
 
     for step in range(n_steps_max):
         act = alive & (step < n_steps_i)
@@ -1163,18 +1219,16 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
             P_dec   = -np.expm1(-dx_i[la] / np.maximum(dec_len, 1.0))
             alive[idx[la][rng.uniform(size=la.sum()) < P_dec]] = False
 
-        # 6. Highland multiple scattering
+        # 6. Multiple scattering: Highland accumulated along the path
+        #    (_ms_theta0; βp from p = √(E²−m²), up to 1.3.2 p was taken as E)
         if ms_enable:
             la2 = alive[idx]
             if la2.any():
                 oi      = idx[la2]
-                dx_ms   = dx_i[la2]
-                p_GeV2  = E_tot[la2] / 1000.0
-                beta    = p_GeV2 / np.sqrt(p_GeV2**2 + M_MU_GEV**2)
-                t_X0    = dx_ms / X0_gcm2
-                theta0  = (13.6e-3 / (beta * p_GeV2)
-                           * np.sqrt(t_X0)
-                           * (1.0 + 0.038 * np.log(np.maximum(t_X0, 1e-12))))
+                E_GeV2  = E_tot[la2] / 1000.0
+                p_GeV2  = np.sqrt(np.maximum(E_GeV2**2 - M_MU_GEV**2, 1e-12))
+                theta0, ms_S[oi], ms_t[oi] = _ms_theta0(
+                    ms_S[oi], ms_t[oi], dx_i[la2] / X0_gcm2, p_GeV2**2 / E_GeV2)
 
                 phi_az  = rng.uniform(0.0, 2.0*np.pi, size=la2.sum())
                 # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS
@@ -1231,7 +1285,10 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     if depth_axis != 2:
         z_f = muons["z"] + z_acc
     else:
-        z_f = np.full(N, -d_cm)    # depth-axis=Z: z is the exact scoring plane
+        # depth-axis=Z: the exact scoring plane, depth_m below each muon's start
+        # (as the Fortran engines, MUSIC and PUMAS write it; up to 1.3.2 this
+        # was z = -depth, wrong for a source plane not at z = 0)
+        z_f = muons["z"] - d_cm
     theta_f = np.arccos(np.clip(-cz_c, -1.0, 1.0))
     phi_f   = np.arctan2(cy_c, cx_c)
 

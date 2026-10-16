@@ -180,7 +180,7 @@ $(BIN)/ucmuon_transport_bb_omp: $(BB_OMP_OBJS)
 	@echo "  OK   bin/ucmuon_transport_bb_omp  (OMP, local)"
 
 ifeq ($(MUSIC_AVAIL),yes)
-$(BIN)/ucmuon_transport_music_omp: data-links $(MUSIC_OMP_OBJS)
+$(BIN)/ucmuon_transport_music_omp: $(MUSIC_OMP_OBJS) | data-links
 	$(FC) -O2 -fopenmp -o $@ $(MUSIC_OMP_OBJS) -lm
 	@echo "  OK   bin/ucmuon_transport_music_omp  (OMP, local)"
 endif
@@ -207,7 +207,7 @@ $(BIN)/ucmuon_to_phits: $(BUILD)/ucmuon_to_phits.o
 	@echo "  OK   bin/ucmuon_to_phits"
 
 ifeq ($(MUSIC_AVAIL),yes)
-$(BIN)/ucmuon_transport_music: data-links $(UCMUON_MUS_OBJS)
+$(BIN)/ucmuon_transport_music: $(UCMUON_MUS_OBJS) | data-links
 	$(MPIFC) -O2 -fopenmp -o $@ $(UCMUON_MUS_OBJS) -lm
 	@echo "  OK   bin/ucmuon_transport_music  (MPI+OMP)"
 endif

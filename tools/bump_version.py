@@ -40,6 +40,9 @@ def edits_for(version: str) -> list[tuple[str, str, str]]:
 
 def apply_to(root: Path, version: str, dry: bool) -> list[str]:
     changed: list[str] = []
+    cff = root / "CITATION.cff"
+    m = re.search(r'^version:\s*"([^"]+)"', cff.read_text(), re.M) if cff.is_file() else None
+    current = m.group(1) if m else None
     for rel, pattern, repl in edits_for(version):
         p = root / rel
         if not p.is_file():
@@ -60,19 +63,23 @@ def apply_to(root: Path, version: str, dry: bool) -> list[str]:
         print(f"  -> {rel}: {old}  ==>  {repl.strip()}")
 
     # The paper names the version it describes; in the public tree there is none.
+    # Only the version the code states now is moved: another vX.Y.Z in the
+    # paper may be a different code's, or a history note, and is left alone.
     paper = root / "manuscript" / "ucmuon_cpc_paper.tex"
     if paper.is_file():
         text = paper.read_text()
-        others = sorted(set(re.findall(r"v(\d+\.\d+\.\d+)", text)) - {version})
-        if others:
-            new = text
-            for old in others:
-                new = new.replace(f"v{old}", f"v{version}")
+        named = set(re.findall(r"v(\d+\.\d+\.\d+)", text))
+        if current and current != version and current in named:
+            new = re.sub(r"v%s(?![\d.]*\d)" % re.escape(current), f"v{version}", text)
             if not dry:
                 paper.write_text(new)
             changed.append("manuscript/ucmuon_cpc_paper.tex")
-            print(f"  -> manuscript/ucmuon_cpc_paper.tex: v{', v'.join(others)}  ==>  v{version}")
+            print(f"  -> manuscript/ucmuon_cpc_paper.tex: v{current}  ==>  v{version}")
             print("     (rebuild the PDF: bash manuscript/make_submission.sh)")
+        others = sorted(named - {current, version})
+        if others:
+            print(f"  !! manuscript/ucmuon_cpc_paper.tex also names v{', v'.join(others)}: "
+                  "not changed; check by hand", file=sys.stderr)
 
     # A stub, not an entry: what changed is for a person to write.
     ch = root / "CHANGELOG.md"

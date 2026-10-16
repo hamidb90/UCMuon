@@ -56,6 +56,7 @@
 //    - getSpecAngCpp: species loop restricted to muons (ip1=4)
 //    - getSpecAngCpp: memoisation cache made thread_local (8 variables)
 //    - getHPcpp: 2 file open(s) -> embedded table lookup
+//    - getHPcpp: data only inside each table's years, status code to hp_status(), no printing
 //    - getrcpp: 1 file open(s) -> embedded table lookup
 //    - getdcpp: 1 file open(s) -> embedded table lookup
 //
@@ -1774,6 +1775,11 @@ Data are calculated by NRLMSISE-00, Ap=4, F107A=100.0, F107=100.0, longitude and
 // the public interface so `table()` below can reach it.
 inline std::string& data_dir_ref() { static std::string d; return d; }
 
+// getHPcpp's status code for its last call on this thread (edit 6):
+// 1 neutron-monitor data, 2 yearly table, 3 ground-level event, 4 no data,
+// 5 no such date.
+inline int& hp_status() { static thread_local int ic = 0; return ic; }
+
 // Table lookup. Embedded tables win; anything else falls back to a real file
 // under the configured data directory, so the two large tables still work when
 // the user points at an EXPACS install. A miss returns empty, which parses
@@ -2457,7 +2463,7 @@ static int ifirst = 0;
 static int iystart,iyend,iysUs,iyeUs;
 double getHP;
 int itmp;
-int ic; // originally used in main routine, but not used in c++ version
+int& ic = hp_status(); // read by w_index_from_date()
 //  ic=1: obtain FFP from daily FFP
 //  ic=2: obtain FFP from annual FFP
 //  ic=3: suspected ground level event
@@ -2500,18 +2506,18 @@ if(ifirst == 0) {  // Initialization
 if((iy0 < iymin) || (iy0 > iymax)) {
  ic=4;
  getHP=0.0;
- cout << "Out of period" << "\n";
+ 
  return getHP;
 }
 if((im0 < 1) || (im0 > nmonth) || (id0 < 1) || (id0 > nday)) {
  ic=5;
  getHP=0.0;
- cout << "No such day" << "\n";
+ 
  return getHP;
 }
 
 // **********Determine FFP from Neutron Monitor *************
-if(FFP[iy0][im0][id0] > -99.0) { // data exist
+if((iy0 >= iystart) && (iy0 <= iyend) && FFP[iy0][im0][id0] > -99.0) { // data exist
  if((iy0 >= iystart) && (FFP[iy0][im0][id0] == -1000.0)) { // no such date
   ic=5;
   getHP=0.0;
@@ -2528,7 +2534,7 @@ if(FFP[iy0][im0][id0] > -99.0) { // data exist
 }
 
 //  ***** Determine FFP from Usoskin's data  *****
-if(FFPuso[iy0] != 0.0) {
+if((iy0 >= iysUs) && (iy0 <= iyeUs) && FFPuso[iy0] > -99.0) {
  getHP=FFPuso[iy0];
  ic=2; // determine FFP from Usoskin's data
  return getHP;
@@ -2537,7 +2543,7 @@ if(FFPuso[iy0] != 0.0) {
 //  **** No data **************************
 ic=4;
 getHP=0.0;
-if(ic==4) {cout << "No FFP data is available" << "\n";}
+
 return getHP;
 }
 
@@ -2706,17 +2712,58 @@ inline double cutoff_from_location(double lat_deg, double lon_deg) {
   return detail::getrcpp(lat_deg, lon_deg);
 }
 
+/// Lowest meaningful W index: getFFPfromW(-135.4) is the force-field floor.
+inline constexpr double kWmin = -135.4;
+
 /// Solar modulation W index for a date. Needs set_data_dir (input/FFPtable.*).
+///
+/// A date the neutron-monitor table does not cover (after its last measured
+/// day, or in a later year) gets the W of the latest earlier day that has
+/// one, with a warning on stderr, as UCMuon's Fortran generator does. Up to
+/// UCMuon 1.3.2 such a date returned W = 0, solar minimum: with the table of
+/// October 2026 every date after 2026-03-26, which raised the PARMA flux by
+/// about 6 % (1-1000 GeV at sea level, Brussels). An impossible date (30
+/// February), and a day the table leaves empty (143 in 1951-1957), get the W
+/// of the nearest earlier measured day, as in the Fortran; dates before 1951
+/// use JAEA's yearly (Usoskin) table, where up to 1.3.2 they returned 0. The
+/// result is clamped at W = -135.4, the force-field floor, as the Fortran
+/// does (one ground-level-event day, 1956-02-23, holds -752). The tables are
+/// read on the first call: make it before worker threads start.
 inline double w_index_from_date(int year, int month, int day) {
   if (data_dir().empty())
     throw std::runtime_error("ucmugen::parma: w_index_from_date needs "
                              "set_data_dir(); FFPtable is not embedded");
-  return detail::getHPcpp(year, month, day);
+  const double w = detail::getHPcpp(year, month, day);
+  const int ic = detail::hp_status();
+  if (year >= 1951 && (ic == 2 || ic == 4)) {
+    int wy = year, wm = month, wd = day;
+    for (int k = 0; k < 40000; ++k) {        // ~110 years
+      if (--wd < 1) { wd = 31; if (--wm < 1) { wm = 12; --wy; } }
+      const double wb = detail::getHPcpp(wy, wm, wd);
+      const int icb = detail::hp_status();
+      if (icb == 1 || icb == 3) {
+        std::fprintf(stderr, "ucmugen::parma: warning: no W index for "
+                     "%04d-%02d-%02d; using the latest one, %04d-%02d-%02d: "
+                     "W = %.1f\n", year, month, day, wy, wm, wd, wb);
+        return std::max(wb, kWmin);
+      }
+    }
+  }
+  if (ic >= 4) {
+    std::fprintf(stderr, "ucmugen::parma: warning: no W index for "
+                 "%04d-%02d-%02d (code %d); using W = 0\n", year, month, day, ic);
+    return 0.0;
+  }
+  return std::max(w, kWmin);
 }
 
 /// A place and a moment in the solar cycle.
 struct Site {
-  double w_index = 0.0;        ///< solar modulation W index (0 = mean activity)
+  /// Solar modulation W index. 0 is a deep solar minimum (yearly means of
+  /// FFPtable.day: 6.6 in 2009, 12.7 in 2019; cycle maxima 66-129; mean
+  /// 1951-2026 58.5). Up to UCMuon 1.3.2 this said "0 = mean activity".
+  /// Values below kWmin are used as kWmin.
+  double w_index = 0.0;
   double cutoff_GV = 3.0;      ///< vertical cutoff rigidity, GV
   double depth_gcm2 = 1033.0;  ///< atmospheric depth, g/cm^2 (sea level)
   /// Local geometry: 0..1 is the ground water fraction (0.15 is the JAEA
@@ -2728,7 +2775,7 @@ struct Site {
 /// Differential intensity of mu+ plus mu- at the site,
 /// in cm^-2 s^-1 sr^-1 (GeV/c)^-1, to match ucmugen::flux::intensity.
 ///
-/// PARMA works in total energy per MeV and splits the two charges, so this
+/// PARMA works in kinetic energy per MeV and splits the two charges, so this
 /// converts on both counts: it sums the charges and applies dE/dp = p/E along
 /// with the MeV to GeV factor.
 inline double intensity(const Site& s, double p_GeV, double cos_theta) {
@@ -2736,11 +2783,11 @@ inline double intensity(const Site& s, double p_GeV, double cos_theta) {
   const double E_GeV = std::sqrt(p_GeV * p_GeV + kMuonMass * kMuonMass);
   const double Ek_MeV = (E_GeV - kMuonMass) * 1.0e3;   // PARMA wants kinetic
   if (Ek_MeV <= 0.0) return 0.0;
-  const double plus = detail::getMuonSpecCpp(1, s.w_index, s.cutoff_GV,
+  const double plus = detail::getMuonSpecCpp(1, std::max(s.w_index, kWmin), s.cutoff_GV,
                                              s.depth_gcm2, Ek_MeV);
-  const double mins = detail::getMuonSpecCpp(2, s.w_index, s.cutoff_GV,
+  const double mins = detail::getMuonSpecCpp(2, std::max(s.w_index, kWmin), s.cutoff_GV,
                                              s.depth_gcm2, Ek_MeV);
-  const double ang = detail::getSpecAngFinalCpp(4, s.w_index, s.cutoff_GV,
+  const double ang = detail::getSpecAngFinalCpp(4, std::max(s.w_index, kWmin), s.cutoff_GV,
                                                 s.depth_gcm2, Ek_MeV,
                                                 s.local_g, cos_theta);
   const double per_MeV_per_sr = std::max(0.0, plus + mins) * std::max(0.0, ang);
@@ -2754,9 +2801,9 @@ inline double charge_ratio(const Site& s, double p_GeV) {
   const double E_GeV = std::sqrt(p_GeV * p_GeV + kMuonMass * kMuonMass);
   const double Ek_MeV = (E_GeV - kMuonMass) * 1.0e3;
   if (Ek_MeV <= 0.0) return 1.0;
-  const double plus = detail::getMuonSpecCpp(1, s.w_index, s.cutoff_GV,
+  const double plus = detail::getMuonSpecCpp(1, std::max(s.w_index, kWmin), s.cutoff_GV,
                                              s.depth_gcm2, Ek_MeV);
-  const double mins = detail::getMuonSpecCpp(2, s.w_index, s.cutoff_GV,
+  const double mins = detail::getMuonSpecCpp(2, std::max(s.w_index, kWmin), s.cutoff_GV,
                                              s.depth_gcm2, Ek_MeV);
   return (mins > 0.0) ? plus / mins : 1.0;
 }

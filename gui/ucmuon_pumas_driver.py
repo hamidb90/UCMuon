@@ -68,7 +68,7 @@ def _dump_path(mat_name: str) -> str:
 
 def _detect_depth_axis(infile: str) -> int:
     """Return 0/1/2 for which of X/Y/Z has the smallest std (= depth axis)."""
-    xs, ys, zs = [], [], []
+    xs, ys, zs, pm = [], [], [], []
     try:
         with open(infile) as fh:
             for line in fh:
@@ -81,6 +81,8 @@ def _detect_depth_axis(infile: str) -> int:
                 xs.append(float(parts[1]))
                 ys.append(float(parts[2]))
                 zs.append(float(parts[3]))
+                if len(parts) >= 8:
+                    pm.append([abs(float(v)) for v in parts[5:8]])
                 if len(xs) >= 2000:
                     break
     except Exception:
@@ -88,7 +90,15 @@ def _detect_depth_axis(infile: str) -> int:
     if not xs:
         return 2
     stds = [np.std(xs), np.std(ys), np.std(zs)]
-    axis = int(np.argmin(stds))
+    if max(stds) < 0.1 and pm:
+        # Point-like source (a pencil beam): the spread cannot tell the plane
+        # (argmin of three zeros gave X); use the dominant mean momentum
+        # component, as UCMuon-MC does.
+        axis = int(np.argmax(np.mean(pm, axis=0)))
+        print("  WARNING: point-like source (no position spread): depth axis taken "
+              "from the dominant momentum component", flush=True)
+    else:
+        axis = int(np.argmin(stds))
     names = {0: "YZ (depth=X)", 1: "XZ (depth=Y)", 2: "XY (depth=Z)"}
     print(f"  Source plane: {names[axis]}  σ(x,y,z)="
           f"{stds[0]:.1f} {stds[1]:.1f} {stds[2]:.1f} cm", flush=True)

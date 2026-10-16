@@ -21,7 +21,7 @@ UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, 
 
 ---
 
-## Status & scope (v1.3.2)
+## Status & scope (v1.4.0)
 
 The **core simulation pipeline is validated**
 against independent codes (Geant4, PHITS, MUSIC, PROPOSAL); other components are
@@ -431,7 +431,7 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 - **Native per-material tables** for Standard Rock, water, ice, and iron — no rescaling approximation (the old rock-rescale underestimated iron radiative losses by ~38% at 1 TeV); seawater uses the water table with sub-percent composition rescaling, custom materials rescale the rock table
 - Hard bremsstrahlung and photonuclear events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, photonuclear `1/v`; pair production, whose loss is spread over many small transfers (`1/v³`), stays in the continuous term
 - **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the Rutherford `1/T²` spectrum; the continuous ionisation term is restricted accordingly (ionisation straggling — the dominant fluctuation below ~100 GeV)
-- Multiple scattering: Highland (1975) per step; muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
+- Multiple scattering: Highland (1975), its variance accumulated along the path (independent of the step size); muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
 - **Per-muon adaptive stepping**: every muon gets `dx ≈ 20 g/cm²` regardless of zenith angle
 - Deterministic-bound range cut: only muons that cannot survive even with zero stochastic losses are killed instantly (strict upper bound on penetration — does not bias survival)
 - Multiprocess-parallel: muons split across worker processes with independent RNG streams (`0 = auto`, near-linear speedup; reproducible for a fixed seed + worker count)
@@ -525,7 +525,7 @@ Paste the file paths into the T_sim Library section and click Load. The tab vali
 Upload a file in the same format, or use the synthetic generator (Poisson noise at a chosen true density and number of events) for testing and validation.
 
 **Step 4 — Run inversion.**
-For each pixel `(az, el)`, the code finds `ρ̂` such that `T_sim(ρ̂) = T_data` by monotone interpolation over the T_sim library. Uncertainty `σ_ρ = σ_T / |dT_sim/dρ|` is propagated analytically. Status codes flag pixels with no sensitivity (T_sim ≈ 0 at all densities, i.e. too-thick rock) or out-of-range results.
+For each pixel `(az, el)`, the code finds `ρ̂` such that `T_sim(ρ̂) = T_data` by monotone interpolation of ln T over the T_sim library (ln T falls almost linearly with ρ; interpolating T itself read densities between library values up to 2.6 % high). Uncertainty `σ_ρ = σ_T / |dT_sim/dρ|` is propagated analytically. Status codes flag pixels with no sensitivity (T_sim ≈ 0 at all densities, i.e. too-thick rock) or out-of-range results.
 
 **Step 5 — Inspect results.**
 Four interactive maps are shown: reconstructed density (g/cm³), statistical uncertainty, double ratio `D = T_data / T_sim(ρ_ref)` (D > 1 → lower density than reference), and status map. A chi-squared landscape at any selected pixel is also available. Results are downloadable as `density_map.dat`.

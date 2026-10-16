@@ -4,13 +4,14 @@
 !=============================================================================
 !
 ! INTERFACE NOTE
-!   The dummy argument is a plain SCALAR (real(4) :: r), NOT an array.
+!   The dummy argument is a plain SCALAR (real(8) :: r), NOT an array.
 !   This avoids the rank-mismatch error that gfortran raises when an explicit
 !   Fortran-90 module interface is present and a scalar is passed to an
 !   assumed-size array dummy (real(4)(*)).
 !
 !   Every call site uses:   call par_ranlux(yfl)      (n argument dropped)
 !   Replaces:               call RANLUX(yfl, 1)
+!   The argument is real(8) (53-bit deviate); up to 1.3.2 it was real(4).
 !
 ! THREAD-SAFETY
 !   tl_seed is !$OMP THREADPRIVATE — each thread owns its own private copy.
@@ -96,15 +97,22 @@ contains
       '  RNG streams initialised for ', omp_get_max_threads(), ' thread(s).'
   end subroutine par_init_rng
 
-  ! Generate ONE real(4) in (0,1).  Scalar dummy — no rank mismatch.
+  ! Generate ONE real(8) in (0,1): the top 53 bits of the LCG state, scaled
+  ! by 2^-53.  Scalar dummy — no rank mismatch.
+  ! Up to 1.3.2 this returned the top 24 bits as a real(4) (2^-24 steps,
+  ! smallest value 6e-8), which truncated and quantised the steeply mapped
+  ! far momentum tail: Guan 1-10000 GeV/c never exceeded 5923 GeV/c and took
+  ! only 64 distinct values above 1357.  The stream advances exactly as
+  ! before (one LCG step per draw) and the old value is the first 24 bits of
+  ! the new one, so only the low bits of each deviate change.
   subroutine par_ranlux(r)
-    real(4), intent(out) :: r
+    real(8), intent(out) :: r
     integer(8) :: bits
-    real(4), parameter :: INV24 = 5.96046448e-8_4
+    real(8), parameter :: INV53 = 1.0d0 / 9007199254740992.0d0   ! 2^-53
     tl_seed = tl_seed * 6364136223846793005_8 + 1442695040888963407_8
-    bits    = ibits(tl_seed, 40, 24)
+    bits    = ibits(tl_seed, 11, 53)
     if (bits == 0_8) bits = 1_8
-    r = real(bits, 4) * INV24
+    r = real(bits, 8) * INV53
   end subroutine par_ranlux
 
 end module rng_parallel

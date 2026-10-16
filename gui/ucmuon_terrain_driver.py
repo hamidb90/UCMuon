@@ -37,11 +37,12 @@ Ray-tracing algorithm
 Uses a flat-Earth approximation valid for distances < ~100 km.  For each
 (az, ze) direction:
   • Parametrise the ray in local East-North-Up (ENU) coordinates.
-  • Walk at 50 m steps (configurable).
-  • At each step, convert ENU offset to (lat, lon) and look up DEM elevation.
-  • If ray altitude drops below DEM elevation → ray entered terrain.
-  • Bisect to find the entry point to ±10 m accuracy.
-  • Overburden = slant path length through rock × rho  [g/cm²] (along the ray).
+  • Sample the ray from the detector every min(step, DEM pixel / 4) metres
+    (step configurable, default 50 m), converting the ENU offset to (lat, lon)
+    and looking up the DEM elevation of the pixel.
+  • Where the ray passes between rock (altitude below the DEM) and air from
+    one sample to the next, locate the boundary by bisection.
+  • Overburden = total slant path through rock × rho  [g/cm²] (all segments).
   • Directions that never hit terrain → open sky (overburden = 0).
 
 Dependencies
@@ -63,7 +64,8 @@ Stdin protocol (one value per line):
    7  n_az                  number of azimuth bins  (default 36 = 10° steps)
    8  n_ze                  number of zenith bins   (default 18, i.e. ze_max/18 steps)
    9  ze_max_deg            maximum zenith angle    (default 85°)
-  10  step_m                ray-trace step size [m] (default 50)
+  10  step_m                largest ray sampling step [m] (default 50; refined
+                            to a quarter DEM pixel, boundaries bisected)
   11  mode                  0=CSDA only  1=+stochastic P_surv  (default 1)
   12  outfile_overburden    output overburden map        (default terrain_overburden.dat)
   13  outfile_flux          output flux map              (default terrain_flux.dat)
@@ -126,12 +128,13 @@ def load_dem_xyz(xyz_path):
     Comment lines starting with # are skipped.
     No header is required.
 
-    Auto-detects coordinate type:
-      • If X values are in the range ±180 and Y in ±90 → geographic (lon/lat, WGS84).
-      • Otherwise assumed projected (e.g. UTM metres).
-        In the projected case the grid is re-indexed into lon/lat using a
-        simple flat-earth approximation centred on the data centroid.
-        This is accurate to < 1 m over the ~10 km scale of a volcano DEM.
+    Coordinates must be geographic (lon/lat, WGS84): X in ±180, Y in ±90.
+    An XYZ file carries no coordinate reference system, so projected
+    coordinates (e.g. UTM metres) cannot be placed on the map and raise a
+    ValueError; convert them to lon/lat, or use a GeoTIFF that records its
+    CRS. (Up to 1.3.2 they were converted with a flat-earth formula that
+    ignored the UTM zone and false easting: Vesuvius in UTM 33N landed at
+    5.3° E instead of 14.4° E, every direction then saw open sky.)
 
     Returns:
         elev      : 2-D float32 array (nrows × ncols), rows sorted N→S
@@ -152,16 +155,10 @@ def load_dem_xyz(xyz_path):
     _geo = (xs.min() >= -180.01 and xs.max() <= 180.01 and
             ys.min() >=  -90.01 and ys.max() <=  90.01)
 
-    if _geo:
-        lons = xs
-        lats = ys
-    else:
-        # Projected (e.g. UTM): convert to approximate lon/lat
-        x0   = xs.mean()
-        y0   = ys.mean()
-        lat0 = y0 / 111_320.0          # rough latitude of centroid
-        lons = x0 / (111_320.0 * max(np.cos(np.radians(lat0)), 0.001)) + (xs - x0) / (111_320.0 * max(np.cos(np.radians(lat0)), 0.001))
-        lats = lat0 + (ys - y0) / 111_320.0
+    if not _geo:
+        raise ValueError(_projected_message(xyz_path, "an XYZ file"))
+    lons = xs
+    lats = ys
 
     # Build regular grid
     lon_unique = np.unique(np.round(lons, 8))
@@ -188,8 +185,15 @@ def load_dem_xyz(xyz_path):
     print(f"  XYZ DEM loaded: {Path(xyz_path).name}  "
           f"shape={elev.shape}  "
           f"min={np.nanmin(elev):.0f} m  max={np.nanmax(elev):.0f} m"
-          f"  ({'geographic' if _geo else 'projected→geo'})", flush=True)
+          f"  (geographic)", flush=True)
     return elev, transform
+
+
+def _projected_message(path, what):
+    return (f"{Path(path).name}: the coordinates look projected (metres, e.g. UTM), "
+            f"and {what} has no coordinate reference system to place them on the "
+            "map. Convert the DEM to longitude/latitude (WGS84), or to a GeoTIFF "
+            "that records its CRS (for an .asc, a .prj file next to it is enough).")
 
 
 def load_dem_asc(asc_path):
@@ -205,7 +209,10 @@ def load_dem_asc(asc_path):
         NODATA_value  <float>   (optional)
 
     Values are elevation [m], stored row by row top-to-bottom (N→S).
-    Coordinate units: same auto-detect logic as load_dem_xyz.
+    Geographic (lon/lat) grids are read directly. A projected grid needs its
+    CRS from a .prj file next to it (it is then read through rasterio and
+    reprojected, as a GeoTIFF); without one it raises a ValueError, as in
+    load_dem_xyz.
 
     Returns:
         elev      : 2-D float32 array (nrows × ncols)
@@ -215,23 +222,33 @@ def load_dem_asc(asc_path):
 
     with open(asc_path) as fh:
         header = {}
+        first_data = []
         while len(header) < 6:
             ln = fh.readline()
             if not ln:
                 break
             parts = ln.strip().split()
-            if len(parts) == 2:
+            if len(parts) == 2 and parts[0][:1].isalpha():
                 header[parts[0].lower()] = parts[1]
             else:
-                break   # hit data rows
-        data_lines = fh.readlines()
+                # hit the data rows: keep this one (up to 1.3.2 a header
+                # without the optional NODATA_value line lost its first row)
+                first_data = [ln]
+                break
+        data_lines = first_data + fh.readlines()
 
     ncols    = int(header["ncols"])
     nrows    = int(header["nrows"])
-    # xllcorner = lower-left corner; xllcenter = lower-left pixel centre
+    cellsize = float(header["cellsize"])
+    # xllcorner = lower-left corner; xllcenter = lower-left pixel centre, half
+    # a cell further in (up to 1.3.2 the centre was used as the corner, which
+    # shifted the grid half a cell north-east).
     xll      = float(header.get("xllcenter", header.get("xllcorner", 0)))
     yll      = float(header.get("yllcenter", header.get("yllcorner", 0)))
-    cellsize = float(header["cellsize"])
+    if "xllcenter" in header:
+        xll -= cellsize / 2.0
+    if "yllcenter" in header:
+        yll -= cellsize / 2.0
     nodata   = float(header.get("nodata_value", -9999))
 
     rows = []
@@ -248,15 +265,10 @@ def load_dem_asc(asc_path):
     _geo  = (xll >= -181 and x_max <= 181 and yll >= -91 and y_max <= 91)
 
     if not _geo:
-        # Convert projected lower-left corner to approximate lon/lat
-        lat0  = (yll + nrows * cellsize / 2) / 111_320.0
-        cos_l = max(np.cos(np.radians(lat0)), 0.001)
-        xll   = xll  / (111_320.0 * cos_l)
-        yll   = yll  / 111_320.0
-        cellsize_lon = cellsize / (111_320.0 * cos_l)
-        cellsize_lat = cellsize / 111_320.0
-    else:
-        cellsize_lon = cellsize_lat = cellsize
+        if Path(asc_path).with_suffix(".prj").exists():
+            return _load_dem_geotiff(asc_path)      # GDAL reads the grid + .prj
+        raise ValueError(_projected_message(asc_path, "an .asc file without a .prj"))
+    cellsize_lon = cellsize_lat = cellsize
 
     # ASC stores top row first (N→S); transform origin is top-left
     transform = _rt.from_origin(
@@ -267,7 +279,7 @@ def load_dem_asc(asc_path):
     print(f"  ASC DEM loaded: {Path(asc_path).name}  "
           f"shape={elev.shape}  "
           f"min={np.nanmin(elev):.0f} m  max={np.nanmax(elev):.0f} m"
-          f"  ({'geographic' if _geo else 'projected→geo'})", flush=True)
+          f"  (geographic)", flush=True)
     return elev, transform
 
 
@@ -303,49 +315,80 @@ def load_dem(dem_path):
 
 
 def _load_dem_geotiff(dem_path):
-    """Internal: load GeoTIFF via rasterio (original load_dem logic)."""
+    """Internal: load a raster via rasterio, as lon/lat.
+
+    The ray tracer works in longitude/latitude, so a raster in a projected
+    CRS (UTM, Lambert, ...) is reprojected to WGS84 (bilinear). Up to 1.3.2 its
+    metre transform was taken as degrees: the detector fell outside the DEM
+    and every direction saw open sky. A raster with no CRS must be in lon/lat.
+    """
     rio = _import_rasterio()
+    note = ""
     with rio.open(dem_path) as ds:
-        elev = ds.read(1).astype(np.float32)
-        transform = ds.transform
         nodata = ds.nodata
-    if nodata is not None:
-        elev[elev == nodata] = np.nan
+        elev = ds.read(1).astype(np.float32)
+        if nodata is not None:
+            elev[elev == nodata] = np.nan
+        transform = ds.transform
+        if ds.crs is not None and not ds.crs.is_geographic:
+            from rasterio.warp import calculate_default_transform, reproject, Resampling
+            dst_t, w, h = calculate_default_transform(ds.crs, "EPSG:4326", ds.width,
+                                                      ds.height, *ds.bounds)
+            dst = np.full((h, w), np.nan, dtype=np.float32)
+            reproject(elev, dst, src_transform=ds.transform, src_crs=ds.crs,
+                      dst_transform=dst_t, dst_crs="EPSG:4326",
+                      resampling=Resampling.bilinear, src_nodata=np.nan, dst_nodata=np.nan)
+            note = f"  (reprojected from {ds.crs.to_string()} to WGS84 lon/lat)"
+            elev, transform = dst, dst_t
+        elif ds.crs is None:
+            b = ds.bounds
+            if not (b.left >= -181 and b.right <= 181 and b.bottom >= -91 and b.top <= 91):
+                raise ValueError(_projected_message(dem_path, "this raster"))
     print(f"  GeoTIFF DEM loaded: {Path(dem_path).name}  "
           f"shape={elev.shape}  "
-          f"min={np.nanmin(elev):.0f} m  max={np.nanmax(elev):.0f} m", flush=True)
+          f"min={np.nanmin(elev):.0f} m  max={np.nanmax(elev):.0f} m{note}", flush=True)
     return elev, transform
+
+
+def _dem_elevations(elev, transform, lat, lon):
+    """DEM elevation [m] at arrays of points: bilinear interpolation between
+    pixel centres, i.e. a continuous surface (NaN outside the grid; next to a
+    NaN pixel, the weighted mean of the valid neighbours).
+
+    Up to 1.3.2 the lookup was meant to be bilinear, but its fractional
+    position came from rasterio's rowcol, which returns integers, so every
+    weight was zero and the surface was a staircase of 30 m pixels. With
+    boundaries located exactly (ray_overburden), the steps put metres of
+    spurious rock in front of a detector on a slope in every direction.
+    """
+    colf, rowf = (~transform) * (np.asarray(lon, float), np.asarray(lat, float))
+    u, v = colf - 0.5, rowf - 0.5                      # pixel-centre coordinates
+    c0 = np.floor(u).astype(np.int64)
+    r0 = np.floor(v).astype(np.int64)
+    nr, nc = elev.shape
+    ok = (r0 >= 0) & (r0 < nr - 1) & (c0 >= 0) & (c0 < nc - 1)
+    out = np.full(np.shape(c0), np.nan)
+    r, c = r0[ok], c0[ok]
+    fu, fv = (u - c0)[ok], (v - r0)[ok]
+    q = np.stack([elev[r, c], elev[r, c + 1], elev[r + 1, c], elev[r + 1, c + 1]]).astype(float)
+    w = np.stack([(1 - fu) * (1 - fv), fu * (1 - fv), (1 - fu) * fv, fu * fv])
+    good = ~np.isnan(q)
+    num = np.sum(w * np.where(good, q, 0.0), axis=0)
+    den = np.sum(w * good, axis=0)
+    with np.errstate(invalid="ignore", divide="ignore"):
+        val = np.where(good.all(axis=0), num, num / den)
+    val[~good.any(axis=0) | (den <= 0)] = np.nan
+    out[ok] = val
+    return out
 
 
 def dem_elevation_at(elev, transform, lat, lon):
     """
-    DEM elevation [m] of the pixel containing (lat, lon) (nearest pixel:
-    rowcol returns integer indices).
-    Returns NaN if outside the DEM extent.
+    DEM elevation [m] at (lat, lon): bilinear between pixel centres
+    (_dem_elevations). Returns NaN if outside the DEM extent.
     """
-    rio = _import_rasterio()
-    # rasterio transform maps (col, row) → (lon, lat) in geographic CRS
-    row_f, col_f = rio.transform.rowcol(transform, lon, lat)
-
-    row0, col0 = int(row_f), int(col_f)
-    nr, nc = elev.shape
-
-    if row0 < 0 or row0 >= nr - 1 or col0 < 0 or col0 >= nc - 1:
-        return np.nan
-
-    # Bilinear weights
-    dr = row_f - row0
-    dc = col_f - col0
-    e00 = elev[row0,     col0    ]
-    e01 = elev[row0,     col0 + 1]
-    e10 = elev[row0 + 1, col0    ]
-    e11 = elev[row0 + 1, col0 + 1]
-
-    if any(np.isnan(v) for v in (e00, e01, e10, e11)):
-        return float(np.nanmean([e00, e01, e10, e11]))
-
-    return float((1 - dr) * ((1 - dc) * e00 + dc * e01) +
-                 dr       * ((1 - dc) * e10 + dc * e11))
+    return float(_dem_elevations(elev, transform, np.array([lat], float),
+                                 np.array([lon], float))[0])
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -386,9 +429,10 @@ def ray_overburden(elev, transform,
     Vesuvius demo), producing entry_dist ≈ 0 → opacity ≈ 6 g/cm² for all
     blocked bins regardless of the true overburden.
 
-    The accumulator approach sums every step_m interval where the ray flies
-    below the DEM surface, giving the correct total column for any topology
-    (flat slab, single peak, complex ridge, detector on flank, etc.).
+    The accumulator approach sums every segment where the ray flies below
+    the DEM surface, each bounded by bisection, giving the correct total
+    column for any topology (flat slab, single peak, complex ridge, detector
+    on flank, etc.).
     """
     az  = np.radians(azimuth_deg)
     ze  = np.radians(zenith_deg)
@@ -431,23 +475,64 @@ def ray_overburden(elev, transform,
                           float(dem_at_det) + 0.5)
 
     # ------------------------------------------------------------------
-    # Walk the ray at step_m intervals, accumulating all underground steps
+    # Sample the ray, then locate every rock boundary by bisection.
+    #
+    # The ray is sampled every h = min(step_m, a quarter of the DEM pixel)
+    # (64 times finer over the first four pixels) from the detector itself
+    # (d = 0) to the edge of the DEM, and each change
+    # between rock and air from one sample to the next is located by
+    # bisection, so every segment is measured to ~1e-6 h whatever the step.
+    # Up to 1.3.2 the walk counted whole steps of step_m where the sample was
+    # below the DEM: a detector 100 m under a flat surface got 50 m of rock
+    # vertically with the default 50 m step, and on a flank, rock within the
+    # first step of the detector was missed (open sky).
     # ------------------------------------------------------------------
-    total_underground_m = 0.0
-    dist = 0.0
+    pix_m = min(abs(transform.a) * _M_PER_DEG_LAT * max(np.cos(np.radians(det_lat)), 1e-6),
+                abs(transform.e) * _M_PER_DEG_LAT)
+    h = min(float(step_m), 0.25 * pix_m) if pix_m > 0 else float(step_m)
+    h = max(h, 0.05)
 
-    while dist < max_dist_m:
-        dist += step_m
-        lat     = det_lat    + dx_n * dist * lat_per_m
-        lon     = det_lon    + dx_e * dist * lon_per_m
-        alt     = det_alt_eff + dx_u * dist
-        dem_alt = dem_elevation_at(elev, transform, lat, lon)
+    def _inside(dist):
+        lat = det_lat + dx_n * dist * lat_per_m
+        lon = det_lon + dx_e * dist * lon_per_m
+        dem = _dem_elevations(elev, transform, lat, lon)
+        with np.errstate(invalid="ignore"):
+            return (det_alt_eff + dx_u * dist) < dem, np.isfinite(dem)
 
-        if np.isnan(dem_alt):
-            break   # exited DEM extent — assume open sky beyond
+    # Finer sampling over the first four pixels, where every ray starts at
+    # the ground and a pixel corner can put a few metres of rock in front
+    # of the detector.
+    near = min(4.0 * pix_m, max_dist_m) if pix_m > 0 else 0.0
+    d = np.concatenate((np.arange(0.0, near, max(min(h, pix_m / 64.0), 0.05)),
+                        np.arange(near, max_dist_m + h, h)))
+    ins, valid = _inside(d)
+    if not valid.all():                       # the ray leaves the DEM extent:
+        n = int(np.argmin(valid))             # assume open sky beyond
+        d, ins = d[:n], ins[:n]
+    if len(d) == 0:
+        return 0.0, 0.0, True
 
-        if alt < dem_alt:
-            total_underground_m += step_m
+    # Boundaries between samples k-1 and k, refined by bisection
+    k = np.nonzero(ins[1:] != ins[:-1])[0] + 1
+    lo, hi = d[k - 1].copy(), d[k].copy()
+    s_lo = ins[k - 1]
+    for _ in range(25):
+        mid = 0.5 * (lo + hi)
+        m_in, _ = _inside(mid)
+        same = m_in == s_lo
+        lo = np.where(same, mid, lo)
+        hi = np.where(same, hi, mid)
+    cross = 0.5 * (lo + hi)
+
+    # Rock segments: from an air->rock boundary (or the detector, if it is in
+    # rock) to the next rock->air boundary (or the last sample in the DEM)
+    starts = list(cross[~s_lo])
+    ends = list(cross[s_lo])
+    if ins[0]:
+        starts.insert(0, 0.0)
+    if ins[-1]:
+        ends.append(float(d[-1]))
+    total_underground_m = float(np.sum(np.asarray(ends) - np.asarray(starts))) if starts else 0.0
 
     if total_underground_m <= 0.0:
         return 0.0, 0.0, True

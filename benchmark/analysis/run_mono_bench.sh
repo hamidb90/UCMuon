@@ -10,6 +10,8 @@
 #  Usage:
 #    bash run_mono_bench.sh "1 10 25 50 100 200"    # depths (m)
 #    bash run_mono_bench.sh 1                       # smoke test
+#    ENGINES="BB UCMuon" bash run_mono_bench.sh "1 10 25 50 100 200"
+#                                                   # only those engines
 # =============================================================================
 set -uo pipefail
 
@@ -27,10 +29,14 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 PROP_PY="${HOME}/venvs/ucmuon/bin/python3"; [[ -x "$PROP_PY" ]] || PROP_PY="python3"
 PROP_TABLES="${HOME}/.proposal_tables"
 
+ENGINES="${ENGINES:-BB MUSIC PROPOSAL UCMuon}"
+want() { [[ " ${ENGINES} " == *" $1 "* ]]; }
+
 echo "============================================================"
 echo "  Source : ${SOURCE_FILE}"
 echo "  Outdir : ${OUTDIR}"
 echo "  Depths : ${DEPTHS[*]} m"
+echo "  Engines: ${ENGINES}"
 echo "  Started: $(date)"
 echo "============================================================"
 
@@ -38,6 +44,7 @@ for DEPTH in "${DEPTHS[@]}"; do
   echo ""
   echo "######################## depth = ${DEPTH} m ########################"
 
+  if want BB; then
   echo -n "  [BB]       "; t0=$(date +%s)
   python3 "${GUI_DIR}/ucmuon_bb_driver.py" > /dev/null 2>"${OUTDIR}/BB/BB_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -49,7 +56,9 @@ ${DEPTH}
 1
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
+  if want MUSIC; then
   echo -n "  [MUSIC]    "; t0=$(date +%s)
   ( cd "${BIN_DIR}" && "${BIN_DIR}/ucmuon_transport_music_omp" > /dev/null 2>"${OUTDIR}/MUSIC/MUSIC_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -67,7 +76,9 @@ ${DEPTH}
 EOF
   )
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
+  if want PROPOSAL; then
   echo -n "  [PROPOSAL] "; t0=$(date +%s)
   "${PROP_PY}" "${GUI_DIR}/proposal_driver.py" > /dev/null 2>"${OUTDIR}/PROPOSAL/PROPOSAL_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -81,7 +92,9 @@ ${DEPTH}
 ${PROP_TABLES}
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 
+  if want UCMuon; then
   echo -n "  [UCMuon]   "; t0=$(date +%s)
   python3 "${GUI_DIR}/ucmuon_stochastic_driver.py" > /dev/null 2>"${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
@@ -106,6 +119,7 @@ ${DEPTH}
 1
 EOF
   echo "$(( $(date +%s) - t0 ))s"
+  fi
 done
 
 echo ""

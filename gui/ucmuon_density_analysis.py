@@ -107,8 +107,12 @@ def load_transmission_map(filepath, require_density=True):
         raise ValueError(f"No data rows found in {filepath}")
 
     data = np.array(rows, dtype=np.float64)
-    az_vals = data[:, 0]
-    el_vals = data[:, 1]
+    # Angles rounded to 1e-6 deg for both the grid and the lookups below (up
+    # to 1.3.2 the grid kept the parsed values and the lookups rounded to 8
+    # decimals, so a file written at full precision, e.g. with the default
+    # 18 zenith bins of 85/18 deg, loaded with most cells NaN, silently).
+    az_vals = np.round(data[:, 0], 6)
+    el_vals = np.round(data[:, 1], 6)
     T_vals  = data[:, 2]
 
     az_c = np.unique(az_vals)
@@ -129,9 +133,9 @@ def load_transmission_map(filepath, require_density=True):
     el_idx = {v: i for i, v in enumerate(el_c)}
 
     T_2d = np.full((n_az, n_el), np.nan, dtype=np.float64)
-    for az, el, T in rows:
-        ia = az_idx.get(np.round(az, 8))
-        ie = el_idx.get(np.round(el, 8))
+    for az, el, T in zip(az_vals, el_vals, T_vals):
+        ia = az_idx.get(az)
+        ie = el_idx.get(el)
         if ia is not None and ie is not None:
             T_2d[ia, ie] = T
 
@@ -313,8 +317,15 @@ def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
                 status_map[ia, ie] = 3
             else:
                 # Interpolate: T_sim is decreasing in ρ, so reverse for np.interp
-                # np.interp requires xp to be increasing
-                rho_hat = np.interp(td, T_vec[::-1], rho_vec[::-1])
+                # np.interp requires xp to be increasing. In ln T, which falls
+                # almost linearly with ρ: interpolated in T (up to 1.3.2) the
+                # chord between library densities lies above the curve, and ρ̂
+                # came out +2.6/+1.5/+0.4 % at ρ = 1.75/2.25/2.8 g/cm³ on the
+                # Vesuvius library (+0.5/+0.3/+0.04 % in ln T).
+                if td > 0.0 and np.all(T_vec > 0.0):
+                    rho_hat = np.interp(np.log(td), np.log(T_vec[::-1]), rho_vec[::-1])
+                else:
+                    rho_hat = np.interp(td, T_vec[::-1], rho_vec[::-1])
                 rho_map[ia, ie] = rho_hat
 
                 # Estimate gradient dT/dρ at ρ̂ using finite differences on T_vec
@@ -384,7 +395,10 @@ def compute_chi2_landscape(T_data, tsim_lib, sigma_T, az_idx, el_idx,
 
     rho_fine = np.linspace(rho_vec[0], rho_vec[-1], n_rho_fine)
 
-    if _SCIPY_OK and len(rho_vec) >= 4:
+    if np.all(T_pixel > 0.0):
+        # in ln T, as invert_density_map, so the minimum is at its ρ̂
+        T_interp = np.exp(np.interp(rho_fine, rho_vec, np.log(T_pixel)))
+    elif _SCIPY_OK and len(rho_vec) >= 4:
         _fn      = _scipy_interp1d(rho_vec, T_pixel, kind="cubic",
                                    bounds_error=False, fill_value="extrapolate")
         T_interp = np.clip(_fn(rho_fine), 0.0, 1.0)
@@ -441,8 +455,11 @@ def generate_synthetic_tdata(tsim_lib, true_rho, n_events=10_000, seed=42):
                 sigma_T[ia, ie] = np.nan
                 continue
 
-            # Interpolate true transmission
-            T_true = float(np.interp(rho_true_pix, rho_vec, T_vec))
+            # Interpolate true transmission (in ln T, as invert_density_map)
+            if np.all(T_vec > 0.0):
+                T_true = float(np.exp(np.interp(rho_true_pix, rho_vec, np.log(T_vec))))
+            else:
+                T_true = float(np.interp(rho_true_pix, rho_vec, T_vec))
             T_true = float(np.clip(T_true, 0.0, 1.0))
 
             if T_true >= _OPENSKY_THRESHOLD:

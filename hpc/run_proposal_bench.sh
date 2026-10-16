@@ -29,7 +29,10 @@
 set -euo pipefail
 
 # ─── paths ───────────────────────────────────────────────────────────────────
-REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+# sbatch runs a copy of this script from its spool directory, so $0 does not
+# point into the repository there; the submit directory (the project root, see
+# Usage) does.
+REPO_ROOT="${SLURM_SUBMIT_DIR:-$(cd "$(dirname "$0")/.." && pwd)}"
 GUI_DIR="${REPO_ROOT}/gui"
 OUTDIR="${REPO_ROOT}/benchmark/geant4_muon_rock_v5/PROPOSAL"
 SOURCES="${REPO_ROOT}/benchmark/geant4_muon_rock_v5/sources/benchmark_surface.dat"

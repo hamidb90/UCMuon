@@ -36,8 +36,8 @@ cannot go stale without the build failing. See
 
 ## Three things in the output worth reading twice
 
-**Rates add up.** Zenith 0-30 deg gives 173.3 Hz and 30-70 deg gives 150.1 Hz,
-and the full 0-70 deg range gives 323.4 Hz. Halving the azimuth range halves the
+**Rates add up.** Zenith 0-30 deg gives 173.5 Hz and 30-70 deg gives 149.6 Hz,
+and the full 0-70 deg range gives 323.1 Hz. Halving the azimuth range halves the
 rate; taking a quadrant quarters it. Nothing enforces this: the restricted
 generators each run their own integral over their own region. That they sum
 correctly is a check that the angular ranges are honoured by the normalisation
@@ -53,12 +53,15 @@ as the detector covers less of the sky:
 
 ```
   plate (full size)     acc dir  acc blind  dir us/mu blind us/mu  speed-up
-  200 x 200 cm         6.89e-02   1.42e-02       1.86        4.6        2x
-  60 x 60 cm           8.33e-02   1.52e-03       1.64       35.1       21x
-  20 x 20 cm           8.22e-02   2.33e-04       1.98      213.5      108x
-  6 x 6 cm             3.69e-02   3.94e-05       2.88     1257.7      436x
-  2 x 2 cm             1.15e-02   1.23e-05       6.82     3965.9      581x
+  200 x 200 cm         8.03e-02   1.43e-02       1.69        4.8        3x
+  60 x 60 cm           9.60e-02   1.52e-03       1.53       34.6       23x
+  20 x 20 cm           9.44e-02   2.42e-04       1.58      208.3      132x
+  6 x 6 cm             4.26e-02   4.63e-05       2.67     1085.4      407x
+  2 x 2 cm             1.33e-02   1.18e-05       6.07     4189.7      691x
 ```
+
+(Timings: Apple clang 21, `-O2`, Apple Silicon, one of three runs on
+2026-10-16 that agree within a few per cent; they depend on the machine.)
 
 A plate that fills the view from the source plane gains almost nothing, because
 blind sampling was already hitting it most of the time. Real muography detectors
@@ -66,7 +69,7 @@ sit at the bottom of that table.
 
 The acceptance columns and the speed-up column are deliberately separate
 numbers. The ratio of the acceptances is the saving in *proposals*; the
-wall-clock speed-up is about three times smaller, because a directed proposal
+wall-clock speed-up is 1.6 to 3 times smaller, because a directed proposal
 costs more than a blind one (a cone has to be built and a ray-geometry test
 run). Quoting the acceptance ratio as a speed-up would overstate the win.
 

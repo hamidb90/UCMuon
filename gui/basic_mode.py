@@ -101,14 +101,17 @@ def detector_centre_m(det):
 
 
 # ── Safety margin ────────────────────────────────────────────────────────────
-def margin_cm(det, rho, e_min_total_gev):
+def margin_cm(det, rho, e_min_total_gev, x0_gcm2=_mm.X0_STANDARD_ROCK, material=None):
     """2σ_r of multiple scattering at the detector's deepest point
-    (gui/mcs_margin.py, the rule the Generator's margin warning checks).
+    (gui/mcs_margin.py, the rule the Generator's margin warning checks), for
+    the material's density, radiation length [g/cm²] and range table
+    (material: None for rock, or "water", "seawater", "ice", "iron").
     0 for a detector that does not reach below the ground."""
     depth = bottom_depth_m(det)
     if depth <= 0.0:
         return 0.0
-    rec = _mm.suggested_margin(depth, float(rho), float(e_min_total_gev), 0.0)
+    rec = _mm.suggested_margin(depth, float(rho), float(e_min_total_gev), 0.0,
+                               float(x0_gcm2), material=material)
     return float(rec["margin_cm"] or 0.0)
 
 

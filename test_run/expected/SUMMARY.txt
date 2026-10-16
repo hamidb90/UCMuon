@@ -4,6 +4,9 @@ UCMuon comprehensive test run — reference results
 Generated 2026-08-07 on Apple Silicon macOS. muons_underground.dat regenerated
 2026-10-08 (1.3.1): stopped muons now carry their stopping x, y (up to 1.3.0
 the surface x, y); the survivors and every number below are unchanged.
+Both files regenerated 2026-10-16 (after 1.3.2): the generator's random deviates
+carry 53 bits instead of 24, and multiple scattering accumulates the Highland
+variance along the path; every number below is unchanged.
   GNU Fortran (MacPorts gcc14 14.3.0_0+stdlib_flag) 14.3.0
   Python 3.12.12, NumPy 2.2.6
   UCMUON_SEED=20260807, OMP_NUM_THREADS=1, transport seed 42, 1 worker.
@@ -26,8 +29,8 @@ Results
 
 SHA-256
 -------
-  muons_surface.dat      22bf6a219689ece3d259c81ecf1f7553a001b1d426d73752fd124187f3a64b7c
-  muons_underground.dat  ff722d76131573fe4743872c7f6125302674ef5fa2d13c208f8e20492e7fb042
+  muons_surface.dat      f862a6e938f7efbc722bdd86900ec2117c384b75defa72967a702eb462895d00
+  muons_underground.dat  a05bb23c69eaf2ebef601690db24f5b984eb1aeafe7872ce854b2ddd29028e41
 
 Reproducing
 -----------

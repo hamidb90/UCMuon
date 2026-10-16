@@ -260,12 +260,17 @@ if ($fortran_ok -and (Test-Path $pumas_src)) {
         try {
             # PS 5.1 on older Windows may default to TLS 1.0; GitHub needs 1.2+
             [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
-            $pumas_zip = Join-Path $env:TEMP "pumas-master.zip"
-            Invoke-WebRequest -Uri "https://github.com/niess/pumas/archive/refs/heads/master.zip" `
+            # Pinned to the commit UCMuon is tested with (tag v1.2, also the
+            # head of master since 2023-02-27); it unpacks to pumas-<commit>\.
+            $pumas_commit = "529976ef51bd420f37ec63b1d3f615784d35b626"
+            $pumas_zip = Join-Path $env:TEMP "pumas-$pumas_commit.zip"
+            Invoke-WebRequest -Uri "https://github.com/niess/pumas/archive/$pumas_commit.zip" `
                               -OutFile $pumas_zip -UseBasicParsing
             if (-not (Test-Path "external")) { New-Item -ItemType Directory -Path "external" | Out-Null }
             Expand-Archive -Path $pumas_zip -DestinationPath "external" -Force
             Remove-Item $pumas_zip -ErrorAction SilentlyContinue
+            if (Test-Path "external\pumas-master") { Remove-Item "external\pumas-master" -Recurse -Force }
+            Rename-Item -Path "external\pumas-$pumas_commit" -NewName "pumas-master"
         } catch {
             Write-Host "  WARN: PUMAS download failed: $($_.Exception.Message)"
         }
@@ -297,10 +302,10 @@ if ($fortran_ok) {
         & "C:\msys64\usr\bin\bash.exe" -lc "make -k local FFLAGS_F77='-O2 -std=legacy -fno-common'" 2>&1 |
             ForEach-Object { Write-Host "  $_" }
     } else {
-        # Non-MSYS2 toolchain already on PATH.
+        # Non-MSYS2 toolchain already on PATH. FC goes on the make command
+        # line: the Makefile's "FC = gfortran" overrides an environment variable.
         # Forward slashes: backslashes would be eaten as escapes by make/sh.
-        $env:FC = $gf -replace '\\', '/'
-        & $mk local 2>&1
+        & $mk local "FC=$($gf -replace '\\', '/')" 2>&1
     }
     $ErrorActionPreference = "Stop"
     if ($LASTEXITCODE -eq 0) {

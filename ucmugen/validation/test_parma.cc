@@ -1,6 +1,6 @@
 // Validation of the PARMA spectrum.
 //
-// UCMuGen_PARMA.h is generated from JAEA's own subroutines.cpp with three
+// UCMuGen_PARMA.h is generated from JAEA's own subroutines.cpp with six
 // mechanical edits (see ucmugen/tools/make_parma_header.py). Two of those edits
 // restrict species loops to muons so that only the muon tables need embedding,
 // and that is the one place where the generated header could silently diverge
@@ -28,6 +28,8 @@
 //      altitude, geomagnetic cutoff, solar modulation
 //   3. the wiring into UCMuGen: unit conversion, Spectrum::Parma dispatch,
 //      and the absolute rate that follows from it
+//   4. the W index of a date, when the UCMuon repository's PARMA data
+//      (data/EXPACS/parma) is next to this directory
 //
 // Build:
 //   c++ -std=c++17 -O2 -I../include test_parma.cc -o test_parma
@@ -37,6 +39,7 @@
 
 #include <cmath>
 #include <cstdio>
+#include <fstream>
 #include <memory>
 #include <thread>
 #include <vector>
@@ -286,6 +289,30 @@ int main() {
                   long(kThreads) * kRepeat * long(ps.size()));
     expect_true("8 threads reproduce the single-thread intensities exactly",
                 nbad == 0, detail);
+  }
+
+  // 7. W index of a date. Up to UCMuon 1.3.2 a date after the last measured
+  //    day of FFPtable.day (2026-03-26 in the table of October 2026) or in a
+  //    later year returned W = 0, solar minimum, 6 % too much flux; it now
+  //    takes the latest measured day, as the Fortran generator does.
+  std::printf("\n7. W index of a date\n");
+  {
+    const char* dir = "../../data/EXPACS/parma";
+    if (!std::ifstream(std::string(dir) + "/input/FFPtable.day")) {
+      std::printf("  skipped: %s/input/FFPtable.day not found\n", dir);
+    } else {
+      parma::set_data_dir(dir);
+      check("2026-01-01 (measured)", parma::w_index_from_date(2026, 1, 1), 110.1, 1e-12);
+      const double last = parma::w_index_from_date(2026, 3, 26);
+      check("2026-03-26 (last measured day)", last, 107.4, 1e-12);
+      check("2026-10-15 takes the latest measured W",
+            parma::w_index_from_date(2026, 10, 15), last, 1e-12);
+      check("2027-01-01 (after the table) too",
+            parma::w_index_from_date(2027, 1, 1), last, 1e-12);
+      check("2025-02-30 takes 2025-02-28",
+            parma::w_index_from_date(2025, 2, 30), parma::w_index_from_date(2025, 2, 28), 1e-12);
+      parma::set_data_dir("");
+    }
   }
 
   std::printf("\n%s (%d failure%s)\n",

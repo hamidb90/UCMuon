@@ -1505,7 +1505,11 @@ if(im0.lt.1.or.im0.gt.nmonth.or.id0.lt.1.or.id0.gt.nday) then
 endif
 
 ! ******Determine FFP from Neutron Monitor *************
-if(FFP(iy0,im0,id0).gt.-99.0) then ! data exist
+! UCMuon: years outside the tables keep the 0.0 they were initialised to,
+! which passed as "data exist" (ic=1, W=0) for any date after the last year
+! of FFPtable.day. Only years inside each table count as data now; later
+! years fall through to ic=4 and the generator uses the latest W instead.
+if(iy0.ge.iystart.and.iy0.le.iyend.and.FFP(iy0,im0,id0).gt.-99.0) then ! data exist
  if(iy0.ge.iystart.and.FFP(iy0,im0,id0).eq.-1000.0) then ! no such date
   ic=5
   getHP=0.0
@@ -1522,7 +1526,7 @@ if(FFP(iy0,im0,id0).gt.-99.0) then ! data exist
 endif
 
 !  ***** Determine FFP from Usoskin's data  *****
-if(FFPuso(iy0).gt.-99.0) then
+if(iy0.ge.iysUs.and.iy0.le.iyeUs.and.FFPuso(iy0).gt.-99.0) then
  getHP=FFPuso(iy0)
  ic=2  ! determine FFP from Usoskin's data
  return

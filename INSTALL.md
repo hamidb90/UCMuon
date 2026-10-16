@@ -238,6 +238,7 @@ Requires the PUMAS sources (LGPL, Niess et al. 2017) in `external/pumas-master/`
 
 ```bash
 git clone https://github.com/niess/pumas.git external/pumas-master
+git -C external/pumas-master checkout 529976ef   # v1.2, the tested commit
 make pumas
 ```
 
@@ -250,6 +251,7 @@ If `external/pumas-master/` is absent the target is skipped with a note. The fir
 Both installers end with an **ENGINE AVAILABILITY** summary, e.g.:
 
 ```
+  [x] Generator ucmuon_gen_omp             (bin/ucmuon_gen_omp)
   [x] Engine 1  UCMuon-MC (flagship)       (Python)
   [x] Engine 2  MUSIC stochastic MC        (bin/ucmuon_transport_music_omp)
   [x] Engine 3  Bethe-Bloch CSDA + MS      (bin/ucmuon_transport_bb_omp)
@@ -258,6 +260,10 @@ Both installers end with an **ENGINE AVAILABILITY** summary, e.g.:
   [x] Engine 6  UCMuon Terrain             (Python + rasterio)
   [x] Engine 7  PUMAS backward MC          (bin/ucmuon_transport_pumas)
 ```
+
+`[!]` (setup.sh) means the build of that binary failed and the one in `bin/` is
+from an earlier build; setup.sh then ends with exit code 1. Engine 6 is checked
+in the Python the GUI runs in (`~/venvs/ucmuon` when it exists).
 
 Re-run `bash setup.sh` (or `install.ps1`) at any time to re-check — both are idempotent.
 

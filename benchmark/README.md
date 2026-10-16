@@ -59,8 +59,9 @@ benchmark/
    scratch tree).
 2. **Run each code** using its `codes/<engine>/README.md`:
    - external: `codes/geant4/`, `codes/phits/`
-   - UCMuon engines: one `tools/compare_engines.py` call per engine (`music`,
-     `proposal`, `bb`, `ucmuon`).
+   - UCMuon engines: `bash analysis/run_mono_bench.sh "1 10 25 50 100 200"` runs
+     Bethe-Bloch, MUSIC, PROPOSAL and UCMuon-MC at each depth
+     (`analysis/run_realistic_bench.sh` does the same for the realistic source).
 3. **Analyse.** `cd analysis && bash run_benchmark.sh` → comparison figures
    (`figures/`) + `benchmark_summary.csv`.
 4. **Paper tables.** `python3 manuscript/scripts/make_survival_table.py`

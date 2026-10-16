@@ -12,7 +12,8 @@
 ! Radiative: dE/dX_rad = b_rad * b_rad_shape(E) * E; b_rad is the material
 ! value at E_tot = 100 GeV, b_rad_shape carries the PDG-2024 energy
 ! dependence (see ucmuon_transport_bb_omp.f90).
-! Multiple scattering: Highland formula (PDG 34.3), 3D rotation per step.
+! Multiple scattering: Highland formula (PDG 34.3) accumulated along the path
+! (step-size independent), 3D rotation per step.
 ! Integration: CSDA, fixed 10 g/cm2 steps along slant path.
 !
 ! Parallelisation: same MPI+OMP pattern as ucmuon_transport_music.
@@ -102,8 +103,8 @@ program ucmuon_transport_bb
     write(*,*) ' --- [2/5] Material ---'
     write(*,*) ' Material type:'
     write(*,*) '   1 = Standard Rock  (Z=11,   A=22,    rho=2.65, I=136.4 eV)'
-    write(*,*) '   2 = Ice            (Z=7.42,  A=14.99, rho=0.917, I=79.7 eV)'
-    write(*,*) '   3 = Water          (Z=7.42,  A=14.99, rho=1.000, I=79.7 eV)'
+    write(*,*) '   2 = Ice            (H2O, Z/A=0.555, rho=0.917, I=79.7 eV)'
+    write(*,*) '   3 = Water          (H2O, Z/A=0.555, rho=1.000, I=79.7 eV)'
     write(*,*) '   4 = Concrete       (Z=11.11, A=22.08, rho=2.300, I=135.2 eV)'
     write(*,*) '   5 = Custom         (you supply Z, A, rho, I)'
     read(*,*) mat_type
@@ -114,11 +115,14 @@ program ucmuon_transport_bb
         ! b_rad = value at E_tot = 100 GeV; energy dependence via b_rad_shape
         X0_gcm2=26.54d0; b_rad=3.02d-6
       case (2)
-        Z_eff=7.42d0; A_eff=14.99d0; rho_mat=0.917d0; I_eV=79.7d0
-        X0_gcm2=36.08d0; b_rad=3.40d-6
+        ! H2O: <Z/A> = 10/18.015 = 0.5551 and the PDG 2024 water b at 100 GeV.
+        ! Up to 1.3.2: Z=7.42, A=14.99 (Z/A 0.495) and b = 3.40e-6, 10 % too
+        ! little ionisation in water and ice.
+        Z_eff=10.0d0; A_eff=18.015d0; rho_mat=0.917d0; I_eV=79.7d0
+        X0_gcm2=36.08d0; b_rad=2.28d-6
       case (3)
-        Z_eff=7.42d0; A_eff=14.99d0; rho_mat=1.000d0; I_eV=79.7d0
-        X0_gcm2=36.08d0; b_rad=3.40d-6
+        Z_eff=10.0d0; A_eff=18.015d0; rho_mat=1.000d0; I_eV=79.7d0
+        X0_gcm2=36.08d0; b_rad=2.28d-6
       case (4)
         Z_eff=11.11d0; A_eff=22.08d0; rho_mat=2.300d0; I_eV=135.2d0
         X0_gcm2=26.70d0; b_rad=3.00d-6
@@ -306,7 +310,21 @@ program ucmuon_transport_bb
     xs_var  = sum((g_xs(1:nmuon_total) - xs_mean)**2) / dble(nmuon_total)
     ys_var  = sum((g_ys(1:nmuon_total) - ys_mean)**2) / dble(nmuon_total)
     zs_var  = sum((g_zs(1:nmuon_total) - zs_mean)**2) / dble(nmuon_total)
-    if (ys_var <= xs_var .and. ys_var <= zs_var) then
+    if (max(xs_var, ys_var, zs_var) < 1.0d-2) then
+      ! Point-like source (a pencil beam): the position spread cannot tell
+      ! the plane (the tie went to Y); use the dominant momentum component,
+      ! as UCMuon-MC does.
+      if (sum(abs(g_pz(1:nmuon_total))) >= max(sum(abs(g_px(1:nmuon_total))), &
+          sum(abs(g_py(1:nmuon_total))))) then
+        depth_axis = 2
+      else if (sum(abs(g_py(1:nmuon_total))) >= sum(abs(g_px(1:nmuon_total)))) then
+        depth_axis = 1
+      else
+        depth_axis = 0
+      end if
+      write(*,'(A,I2,A)') '  WARNING: point-like source (no position spread): depth axis', &
+        depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
+    else if (ys_var <= xs_var .and. ys_var <= zs_var) then
       depth_axis = 1
       write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
     else if (xs_var <= ys_var .and. xs_var <= zs_var) then
@@ -564,7 +582,7 @@ contains
     real(8) :: slant_gcm2, ds_gcm2, ds_cm
     real(8) :: gamma_mu, beta2, p_GeV, bg, Tmax, I_GeV
     real(8) :: log_arg, x_dens, delta, dEdX
-    real(8) :: t_X0, theta0
+    real(8) :: t_X0, theta0, ms_S, ms_t, F_old, F_new
     real(8) :: e1x, e1y, e1z, e2x, e2y, e2z, norm
     real(8) :: theta_s, phi_s, ct, st, cp, sp
     real(4) :: rr(4)
@@ -575,6 +593,8 @@ contains
     nsteps     = max(20, int(slant_gcm2 / STEP_) + 1)
     ds_gcm2    = slant_gcm2 / dble(nsteps)
     ds_cm      = ds_gcm2 / rho
+    ms_S       = 0.d0    ! sum of dt/(beta*p)^2 along the path [GeV^-2]
+    ms_t       = 0.d0    ! path so far                          [X0]
 
     do istep = 1, nsteps
       if (E <= EMIN_) return
@@ -613,8 +633,17 @@ contains
         if (t_X0 > 1.d-14) then
           p_GeV  = sqrt(max(0.d0, E*E - MMUON_*MMUON_))
           beta2  = max(1.d-12, 1.d0 - (MMUON_/E)**2)
-          theta0 = 13.6d-3/(sqrt(beta2)*p_GeV) * sqrt(t_X0) * &
-                   (1.d0 + 0.038d0*log(t_X0))
+          ! Highland accumulated along the path (step-size independent; as
+          ! the OpenMP engine and UCMuon-MC): theta_0^2(path) =
+          ! (13.6 MeV)^2 F(t)^2 sum dt/(beta*p)^2, F = 1 + 0.038 ln(min(t,1));
+          ! up to 1.3.2 Highland was applied per step in quadrature.
+          F_old = 0.d0
+          if (ms_t > 0.d0) F_old = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t, 1.d0)))
+          F_new = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t + t_X0, 1.d0)))
+          theta0 = 13.6d-3 * sqrt(max(0.d0, &
+                   (ms_S + t_X0/(beta2*p_GeV*p_GeV))*F_new**2 - ms_S*F_old**2))
+          ms_S = ms_S + t_X0/(beta2*p_GeV*p_GeV)
+          ms_t = ms_t + t_X0
           if (theta0 <= 0.d0) cycle
 
           ! Rayleigh(theta0) polar deflection: Highland theta0 is the RMS

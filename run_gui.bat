@@ -15,7 +15,30 @@ set OMP_NUM_THREADS=%NUMBER_OF_PROCESSORS%
 if "%OMP_NUM_THREADS%"=="" set OMP_NUM_THREADS=4
 echo OMP_NUM_THREADS=%OMP_NUM_THREADS%
 
-python -m streamlit run gui\ucmuon_gui.py
+REM The first Python that has streamlit, searched as install.ps1 searches:
+REM python on PATH, then C:\Python31x (install.ps1 also uses those when python
+REM is not on PATH), then the py launcher.
+set "PY="
+python -c "import streamlit" >nul 2>&1 && set "PY=python"
+for %%P in (C:\Python312\python.exe C:\Python311\python.exe C:\Python310\python.exe) do (
+    if not defined PY if exist %%P (
+        %%P -c "import streamlit" >nul 2>&1 && set "PY=%%P"
+    )
+)
+if not defined PY (
+    py -3 -c "import streamlit" >nul 2>&1 && set "PY=py -3"
+)
+if not defined PY (
+    echo.
+    echo ERROR: no Python with streamlit found.
+    echo Run install_windows.bat first, or:  pip install streamlit
+    echo.
+    pause
+    exit /b 1
+)
+echo Python: %PY%
+
+%PY% -m streamlit run gui\ucmuon_gui.py
 if errorlevel 1 (
     echo.
     echo ERROR: Could not start the GUI.

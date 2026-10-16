@@ -31,6 +31,7 @@ import os
 import time
 import subprocess
 import importlib.util
+import shutil
 import tempfile
 import numpy as np
 import ui_state as _UIS
@@ -61,6 +62,7 @@ try:
     from gui_csg_transport import (
         transport_muons_through_csg,
         transport_muons_multi_detector,
+        transport_muons_csg_engine,
         render_detector_cell_selector,
         plot_csg_transport_results,
         write_phits_dump_file,
@@ -70,6 +72,7 @@ except ImportError:
     _CSG_TRANSPORT_OK = False
     transport_muons_through_csg   = None
     transport_muons_multi_detector = None
+    transport_muons_csg_engine    = None
     render_detector_cell_selector = None
     plot_csg_transport_results    = None
     write_phits_dump_file         = None
@@ -205,7 +208,11 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
     spec.loader.exec_module(drv)
 
     rng    = np.random.default_rng(42)
-    mat    = drv._MAT_DB[1]   # Standard Rock — TODO: expose material choice
+    mat    = dict(drv._MAT_DB[1])   # Standard Rock — TODO: expose material choice
+    # transport() takes X0 in cm: the database value is for 2.65 g/cm3, so at
+    # another density the radiation length in g/cm2 (26.54, a property of the
+    # composition) came out wrong and the scattering scaled as sqrt(2.65/rho).
+    mat["X0_cm"] = 26.54 / rho
 
     az_idx, ze_idx = assign_direction_bins(surface_df, n_az, n_ze, ze_max_deg)
 
@@ -251,11 +258,16 @@ def transport_stochastic_terrain(surface_df, overburden_map, az_c, ze_c,
                 n_done += n_bin
                 continue
 
-            # Vertical-equivalent depth from slant overburden
+            # Vertical-equivalent depth from the slant overburden: the engines
+            # put depth/cos θ of rock in front of each muon, so the bin centre
+            # gets its slant path. Up to 1.3.2 this divided by cos θ instead
+            # of multiplying: 1/cos²θ too much rock (4x at 60°, 41x at 81°;
+            # 961 of 3000 muons at 60° crossed a 20 m slab, 2287 should), and
+            # the 0.5 m floor added rock to thin near-horizontal paths.
             ze_mid_rad = np.radians(ze_c[iz])
             cos_ze     = max(np.cos(ze_mid_rad), 0.02)
-            depth_m    = ob_gcm2 / (rho * 100.0 * cos_ze)
-            depth_m    = max(depth_m, 0.5)
+            depth_m    = ob_gcm2 * cos_ze / (rho * 100.0)
+            depth_m    = max(depth_m, 0.01)
 
             # Build per-muon dict matching transport() API.
             # Surface column E is TOTAL energy; transport() expects kinetic.
@@ -397,97 +409,20 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
                 n_done += n_bin
                 continue
 
+            # vertical-equivalent depth, see transport_stochastic_terrain
             ze_mid_rad = np.radians(ze_c[iz])
             cos_ze     = max(np.cos(ze_mid_rad), 0.02)
-            depth_m    = ob_gcm2 / (rho * 100.0 * cos_ze)
-            depth_m    = max(depth_m, 0.5)
+            depth_m    = ob_gcm2 * cos_ze / (rho * 100.0)
+            depth_m    = max(depth_m, 0.01)
 
-            # Write temp input file
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".dat",
-                                             delete=False, dir=str(project_dir)) as tf:
-                tmp_in = tf.name
-            with tempfile.NamedTemporaryFile(mode="w", suffix=".dat",
-                                             delete=False, dir=str(project_dir)) as tf:
-                tmp_out = tf.name
-
-            # Write in correct column format
-            _write_surface_bin(bin_df, tmp_in, ncols)
-
-            # Build engine stdin
-            cfg_bin = {**engine_cfg,
-                       "infile": tmp_in, "outfile": tmp_out,
-                       "depth_m": depth_m, "transport_all": True, "ncols": ncols}
-
-            run_cwd = project_dir
-            if engine == "MUSIC":
-                stdin_str = build_music_input_fn(cfg_bin)
-                if (bin_dir / "ucmuon_transport_music_omp").exists():
-                    cmd = [str(bin_dir / "ucmuon_transport_music_omp")]
-                else:
-                    cmd = [str(bin_dir / "ucmuon_transport_music")]
-                env_run = {**os.environ, "OMP_NUM_THREADS": "1"}
-                run_cwd = bin_dir   # MUSIC table files are opened relative to CWD
-
-            elif engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":
-                stdin_str = build_phitsxs_input_fn(cfg_bin)
-                _bb_py  = script_dir / "ucmuon_bb_driver.py"
-                _bb_bin = bin_dir / "ucmuon_transport_bb_omp"
-                if _bb_py.exists():
-                    cmd     = [sys.executable, str(_bb_py)]
-                    env_run = {**os.environ}
-                else:
-                    cmd     = [str(_bb_bin)]
-                    env_run = {**os.environ, "OMP_NUM_THREADS": "1"}
-
-            elif engine == "PROPOSAL":
-                stdin_str = build_proposal_input_fn(cfg_bin)
-                cmd       = [sys.executable, str(script_dir / "proposal_driver.py")]
-                env_run   = {**os.environ, "PROPOSAL_LOG_LEVEL": "err",
-                             "SPDLOG_LEVEL": "err"}
-
+            _df_bin, _msg = _run_engine_bin(
+                bin_df, depth_m, engine, engine_cfg, script_dir, project_dir,
+                build_music_input_fn, build_phitsxs_input_fn, build_proposal_input_fn)
+            if _df_bin is not None:
+                out_dfs.append(_df_bin)
             else:
-                # UCMuon-MC — should not reach here (handled separately)
-                Path(tmp_in).unlink(missing_ok=True)
-                Path(tmp_out).unlink(missing_ok=True)
-                continue
-
-            # Run subprocess
-            proc_res = None
-            try:
-                proc_res = subprocess.run(
-                    cmd, input=stdin_str, capture_output=True, text=True,
-                    cwd=str(run_cwd), env=env_run, timeout=300,
-                )
-            except Exception as _sub_exc:
-                last_fail_msg = f"{cmd[0]}: {_sub_exc}"
-
-            # Read output
-            _bin_ok = False
-            if Path(tmp_out).exists() and Path(tmp_out).stat().st_size > 0:
-                try:
-                    import pandas as _pd
-                    _df_bin = _pd.read_csv(tmp_out, sep=r"\s+", comment="#", header=None)
-                    if _df_bin.shape[1] == 18:
-                        _df_bin.columns = (
-                            "EventID,xs,ys,zs,Es,theta_s,phi_s,charge,alive,"
-                            "x,y,z,E,cx,cy,cz,theta,phi"
-                        ).split(",")
-                        out_dfs.append(_df_bin)
-                        _bin_ok = True
-                    else:
-                        last_fail_msg = (f"unexpected column count "
-                                         f"{_df_bin.shape[1]} in engine output")
-                except Exception as _read_exc:
-                    last_fail_msg = f"could not read engine output: {_read_exc}"
-            elif proc_res is not None:
-                _tail = ((proc_res.stderr or "") + (proc_res.stdout or ""))[-400:]
-                last_fail_msg = (f"engine wrote no output "
-                                 f"(exit {proc_res.returncode}): …{_tail}")
-            if not _bin_ok:
                 n_failed_bins += 1
-
-            Path(tmp_in).unlink(missing_ok=True)
-            Path(tmp_out).unlink(missing_ok=True)
+                last_fail_msg = _msg or last_fail_msg
 
             n_done += n_bin
             if progress_container:
@@ -513,6 +448,118 @@ def transport_batched_terrain(surface_df, overburden_map, az_c, ze_c,
         return pd.concat(out_dfs, ignore_index=True)
     import pandas as pd
     return pd.DataFrame()
+
+
+def _run_engine_bin(bin_df, depth_m, engine, engine_cfg, script_dir, project_dir,
+                    build_music_input_fn, build_phitsxs_input_fn, build_proposal_input_fn):
+    """
+    Transport the surface muons of bin_df through depth_m (vertical) of the
+    material in engine_cfg with a subprocess engine (MUSIC, Bethe-Bloch or
+    PROPOSAL). Returns (18-column DataFrame, None), or (None, error message).
+
+    The engines take the depth axis from the source plane, the coordinate
+    whose start positions do not spread. A file of one muon has no spread, so
+    they took the axis from its momentum, horizontal beyond 45°: a muon at
+    81° crossed 10 m of rock instead of 64 m (Python Bethe-Bloch and
+    UCMuon-MC drivers) or was sent away from the exit plane and lost (MUSIC,
+    Fortran Bethe-Bloch). Up to 1.3.2 that happened to every direction bin
+    holding a single muon; such a muon is now written twice, 1 cm apart,
+    and the copy's row dropped.
+    """
+    import pandas as pd
+
+    bin_dir = Path(project_dir) / "bin"
+    ncols   = engine_cfg.get("ncols", 13)
+    single  = len(bin_df) == 1
+    if single:
+        _twin = bin_df.copy()
+        _twin["x"] = _twin["x"] + 1.0
+        _twin["y"] = _twin["y"] + 1.0
+        bin_df = pd.concat([bin_df, _twin], ignore_index=True)
+
+    # Input and output in a directory of their own, removed at the end with
+    # whatever the engine writes beside its output (Bethe-Bloch and UCMuon-MC
+    # add _stopped and _timing files). Up to 1.3.2 they were created in the
+    # project root and those two files stayed there, two per direction bin
+    # per run.
+    tmp_dir = tempfile.mkdtemp(prefix="ucmuon_terrain_bin_")
+    tmp_in  = str(Path(tmp_dir) / "in.dat")
+    tmp_out = str(Path(tmp_dir) / "out.dat")
+
+    # Write in correct column format
+    _write_surface_bin(bin_df, tmp_in, ncols)
+
+    # Build engine stdin
+    cfg_bin = {**engine_cfg,
+               "infile": tmp_in, "outfile": tmp_out,
+               "depth_m": depth_m, "transport_all": True, "ncols": ncols}
+
+    run_cwd = project_dir
+    if engine == "MUSIC":
+        stdin_str = build_music_input_fn(cfg_bin)
+        if (bin_dir / "ucmuon_transport_music_omp").exists():
+            cmd = [str(bin_dir / "ucmuon_transport_music_omp")]
+        else:
+            cmd = [str(bin_dir / "ucmuon_transport_music")]
+        env_run = {**os.environ, "OMP_NUM_THREADS": "1"}
+        run_cwd = bin_dir   # MUSIC table files are opened relative to CWD
+
+    elif engine == "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":
+        stdin_str = build_phitsxs_input_fn(cfg_bin)
+        _bb_py  = Path(script_dir) / "ucmuon_bb_driver.py"
+        _bb_bin = bin_dir / "ucmuon_transport_bb_omp"
+        if _bb_py.exists():
+            cmd     = [sys.executable, str(_bb_py)]
+            env_run = {**os.environ}
+        else:
+            cmd     = [str(_bb_bin)]
+            env_run = {**os.environ, "OMP_NUM_THREADS": "1"}
+
+    elif engine == "PROPOSAL":
+        stdin_str = build_proposal_input_fn(cfg_bin)
+        cmd       = [sys.executable, str(Path(script_dir) / "proposal_driver.py")]
+        env_run   = {**os.environ, "PROPOSAL_LOG_LEVEL": "err",
+                     "SPDLOG_LEVEL": "err"}
+
+    else:
+        # UCMuon-MC runs in-process (transport_stochastic_terrain)
+        shutil.rmtree(tmp_dir, ignore_errors=True)
+        return None, f"{engine}: not a subprocess engine"
+
+    # Run subprocess
+    proc_res = None
+    msg = ""
+    try:
+        proc_res = subprocess.run(
+            cmd, input=stdin_str, capture_output=True, text=True,
+            cwd=str(run_cwd), env=env_run, timeout=300,
+        )
+    except Exception as _sub_exc:
+        msg = f"{cmd[0]}: {_sub_exc}"
+
+    # Read output
+    out = None
+    if Path(tmp_out).exists() and Path(tmp_out).stat().st_size > 0:
+        try:
+            _df_bin = pd.read_csv(tmp_out, sep=r"\s+", comment="#", header=None)
+            if _df_bin.shape[1] == 18:
+                _df_bin.columns = (
+                    "EventID,xs,ys,zs,Es,theta_s,phi_s,charge,alive,"
+                    "x,y,z,E,cx,cy,cz,theta,phi"
+                ).split(",")
+                out = _df_bin.drop_duplicates("EventID") if single else _df_bin
+            else:
+                msg = (f"unexpected column count "
+                       f"{_df_bin.shape[1]} in engine output")
+        except Exception as _read_exc:
+            msg = f"could not read engine output: {_read_exc}"
+    elif proc_res is not None:
+        _tail = ((proc_res.stderr or "") + (proc_res.stdout or ""))[-400:]
+        msg = (f"engine wrote no output "
+               f"(exit {proc_res.returncode}): …{_tail}")
+
+    shutil.rmtree(tmp_dir, ignore_errors=True)
+    return out, msg
 
 
 def _write_surface_bin(df, path, ncols):
@@ -2005,6 +2052,12 @@ def render_terrain_tab(script_dir, project_dir,
         )
         terrain_engine = _ENGINE_INTERNAL[terrain_engine_label]
         st.caption(_TERRAIN_ENGINE_DESC.get(terrain_engine_label, ""))
+        if _is_csg_mode:
+            st.info("ℹ️ CSG geometry: each muon's straight line decides which detector "
+                    "cells it reaches; the engine then transports it through the rock in "
+                    "front of the cell (Σρ·L of the cells crossed, as Standard Rock), with "
+                    "stochastic losses and multiple scattering at the cell. For a flux "
+                    "uniform around the cell, scattering moves as many muons in as out.")
 
         if _is_csg_mode and csg_geom is not None:
             # ── CSG mode: density is defined per-cell in the .inp file ─────────
@@ -2167,8 +2220,8 @@ def render_terrain_tab(script_dir, project_dir,
                                 az_c, ze_c, ob_map, sky_map = _ob_csg_geom.compute_overburden_map(
                                     det_pos_m  = _csg_det_p,
                                     n_az       = _ob_naz,    n_ze       = _ob_nze,
-                                    ze_max_deg = _ob_zemax,  step_m     = float(st.session_state.get("_csg_step", 0.5)),
-                                    max_dist_m = float(st.session_state.get("_csg_maxdist", 5000.0)),
+                                    ze_max_deg = _ob_zemax,  step_m     = float(st.session_state.get("_csg_step_cm", 50.0)) / 100.0,
+                                    max_dist_m = float(st.session_state.get("_csg_maxdist_cm", 500_000.0)) / 100.0,
                                 )
                             else:
                                 drv = _load_terrain_driver(script_dir)
@@ -2408,12 +2461,39 @@ def render_terrain_tab(script_dir, project_dir,
 
                         prog.progress(0.05, text="⏳  Per-muon CSG ray tracing (multi-detector)…")
 
-                        # ── Multi-detector transport (single pass) ────────────────
+                        # ── Multi-detector transport with the selected engine ─────
+                        # (up to 1.3.2 straight-line CSDA whatever the engine)
+                        _eng_name = {
+                            "Bethe-Bloch": "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS",
+                        }.get(terrain_engine, terrain_engine)
+                        _csg_cfg = {
+                            "rho": terrain_rho, "rad": 26.48,
+                            "idim": 1, "idim1": 1, "init": 1, "minv": -30,
+                            "mat_id": 1, "source_mode": 1,
+                            "plane_lx": 0.0, "plane_ly": 0.0, "ncols": 13,
+                            "proposal_medium_type": 1, "proposal_e_cut": 500.0,
+                            "proposal_v_cut": 0.001, "proposal_scatter": 2,
+                            "proposal_tables_dir": "",
+                            "phitsxs_mat_type": 1, "phitsxs_ms_enable": 1 if t_ms else 0,
+                        }
+
+                        def _csg_run_bin(_df, _depth_m):
+                            _out, _msg = _run_engine_bin(
+                                _df, _depth_m, _eng_name, _csg_cfg, Path(script_dir),
+                                Path(project_dir), build_music_input_fn,
+                                build_phitsxs_input_fn, build_proposal_input_fn)
+                            if _out is None:
+                                raise RuntimeError(f"{_eng_name}: {_msg}")
+                            return _out
+
                         _prog_container = st.empty()
-                        result_dfs = transport_muons_multi_detector(
+                        result_dfs = transport_muons_csg_engine(
                             surface_df        = df_surf,
                             geom              = csg_geom,
                             detector_cell_ids = _selected_det_cells,
+                            engine            = _eng_name,
+                            rho_ref           = terrain_rho,
+                            run_bin           = _csg_run_bin,
                             detector_names    = _det_name_map,
                             coord_offset_cm   = np.asarray(_csg_off, dtype=float),
                             step_cm           = _csg_step_r,
@@ -2422,7 +2502,8 @@ def render_terrain_tab(script_dir, project_dir,
                             ms_enable         = t_ms,
                             script_dir        = str(script_dir),
                             write_phits_dump  = True,
-                            dump_dir          = str(script_dir),
+                            # the output folder (up to 1.3.2 the dumps went to gui/)
+                            dump_dir          = str(Path(project_dir) / "output"),
                             progress_container = _prog_container,
                         )
 
@@ -2436,19 +2517,20 @@ def render_terrain_tab(script_dir, project_dir,
                         df_ug = result_dfs[_selected_det_cells[0]]
                         det_cell_id = _selected_det_cells[0]
 
-                        # Build placeholder overburden map
-                        n_az_r = n_az; n_ze_r = n_ze
-                        az_c  = np.linspace(0,360,n_az_r,endpoint=False)+180/n_az_r
-                        ze_c  = np.linspace(0,ze_max,n_ze_r,endpoint=False)+ze_max/(2*n_ze_r)
-                        ob_map  = np.zeros((n_az_r, n_ze_r))
-                        sky_map = np.ones((n_az_r, n_ze_r), dtype=bool)
-                        _surv = df_ug[df_ug["alive"] == 1]
-                        if len(_surv) > 0:
-                            _az_idx, _ze_idx = assign_direction_bins(
-                                _surv, n_az_r, n_ze_r, ze_max)
-                            for _ia, _iz in zip(_az_idx, _ze_idx):
-                                if 0 <= _ia < n_az_r and 0 <= _iz < n_ze_r:
-                                    sky_map[_ia, _iz] = False
+                        # Overburden map seen from inside the primary detector
+                        # cell, for the results views. Up to 1.3.2 this was a
+                        # placeholder: zero overburden everywhere and "open sky"
+                        # wherever no muon survived, i.e. in the shielded
+                        # directions.
+                        prog.progress(0.9, text="⏳  Overburden map from the detector cell…")
+                        _cell0 = next(c for c in csg_geom._cells if c.cell_id == det_cell_id)
+                        _p0 = csg_geom.cell_interior_point(_cell0)
+                        az_c, ze_c, ob_map, sky_map = csg_geom.compute_overburden_map(
+                            det_pos_m  = np.zeros(3) if _p0 is None else _p0,
+                            n_az       = n_az, n_ze = n_ze, ze_max_deg = ze_max,
+                            step_m     = _csg_step_r / 100.0,
+                            max_dist_m = _csg_maxd_r / 100.0,
+                        )
 
                         st.session_state["terrain_preview"]         = (az_c, ze_c, ob_map, sky_map)
                         st.session_state["terrain_result_det_cell"] = det_cell_id
@@ -2495,6 +2577,20 @@ def render_terrain_tab(script_dir, project_dir,
                                 df_surf["cz"] = -np.cos(df_surf["theta"])
 
                         prog.progress(0.15, text="⏳  Transporting muons through terrain…")
+                        # The direction bins end at the maximum zenith: steeper
+                        # muons are not transported or written (up to 1.3.2
+                        # without a word, so the output silently had fewer rows
+                        # than the surface file).
+                        _ze_mu = np.degrees(np.arccos(np.clip(
+                            -df_surf["cz"].to_numpy(float), -1.0, 1.0)))
+                        _n_beyond = int(np.sum(_ze_mu >= ze_max))
+                        if _n_beyond:
+                            st.warning(
+                                f"⚠️ {_n_beyond:,} of {len(df_surf):,} surface muons arrive "
+                                f"at {ze_max:.0f}° or more from the vertical, beyond the "
+                                f"direction bins (Max zenith, under Angular grid settings): they are "
+                                f"not transported and not written to the output. Raise Max "
+                                f"zenith, or lower the generator's θ_max.")
 
                         # DEM transport engines — UCMuon-MC / MUSIC / BB / PROPOSAL
                         if terrain_engine == "UCMuon Stochastic":

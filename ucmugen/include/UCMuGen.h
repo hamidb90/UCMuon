@@ -43,7 +43,7 @@
 #include <vector>
 
 #define UCMUGEN_VERSION_MAJOR 0
-#define UCMUGEN_VERSION_MINOR 2
+#define UCMUGEN_VERSION_MINOR 3
 #define UCMUGEN_VERSION_PATCH 0
 
 namespace ucmugen {
@@ -107,16 +107,19 @@ class Rng {
 /// The generator used by the UCMuon Fortran code, reproduced exactly.
 ///
 /// Despite its Fortran name (`par_ranlux`) this is not RANLUX: it is a 64-bit
-/// LCG with the MMIX constants, from which bits 40..63 are taken and scaled by
-/// 2^-24 in *single* precision. All three details matter for bit-exact
-/// agreement, so the arithmetic below is deliberately not "cleaned up":
+/// LCG with the MMIX constants, from which bits 11..63 are taken and scaled by
+/// 2^-53 in double precision. Both details matter for bit-exact agreement, so
+/// the arithmetic below is deliberately not "cleaned up":
 ///
 ///   - the state is unsigned, giving defined wraparound with the same bit
 ///     pattern as the Fortran signed integer(8) overflow;
-///   - the 24-bit draw is assembled as a float, not a double, because the
-///     Fortran buffer is real(4) and the narrowing is observable;
 ///   - a zero draw is forced to 1, which is what keeps the result inside the
 ///     open interval (0, 1).
+///
+/// Up to 1.3.2 both codes took only bits 40..63 as a float (2^-24 steps),
+/// which truncated and quantised the steeply mapped far momentum tail. The
+/// stream advances exactly as before; the old draw is the leading 24 bits of
+/// the new one.
 ///
 /// Bit-exactness is what lets the validation suite compare event streams
 /// directly rather than only their distributions.
@@ -140,23 +143,19 @@ class UCMuonLcg : public Rng {
   }
 
   /// One draw, matching par_ranlux() exactly.
-  float flat32() {
+  double flat() override {
     state_ = state_ * kMul + kInc;
-    std::uint64_t bits = (state_ >> 40) & 0xFFFFFFull;   // ibits(seed, 40, 24)
+    std::uint64_t bits = state_ >> 11;                   // ibits(seed, 11, 53)
     if (bits == 0ull) bits = 1ull;
-    return static_cast<float>(bits) * kInv24;
+    return static_cast<double>(bits) * kInv53;
   }
-
-  double flat() override { return static_cast<double>(flat32()); }
 
   std::uint64_t state() const { return state_; }
 
  private:
   static constexpr std::uint64_t kMul = 6364136223846793005ull;
   static constexpr std::uint64_t kInc = 1442695040888963407ull;
-  // The Fortran writes 5.96046448e-8 as a real(4) literal; 2^-24 exactly is
-  // 5.9604644775390625e-8, and the two round to the same float.
-  static constexpr float kInv24 = 5.96046448e-8f;
+  static constexpr double kInv53 = 1.0 / 9007199254740992.0;   // 2^-53
 
   std::uint64_t state_ = 0;
 };
@@ -476,7 +475,7 @@ class MomentumCdf {
       partial[j] = partial[j - 1] + 0.5 * (f[j] + f[j - 1]) * (p_[j] - p_[j - 1]);
 
     integrated_flux_ = partial[kGrid - 1];
-    if (integrated_flux_ <= 0.0)
+    if (!(integrated_flux_ > 0.0))          // also NaN
       throw std::runtime_error("ucmugen: spectrum integrates to zero");
     for (int j = 0; j < kGrid; ++j) cdf_[j] = partial[j] / integrated_flux_;
   }
@@ -869,6 +868,12 @@ class Surface {
   virtual double area() const = 0;              // cm^2
   virtual const char* name() const = 0;
 
+  /// Distance [cm] from `p` to the nearest point of the surface, or a
+  /// negative value when the shape cannot say (a user surface may leave it).
+  /// Directed sampling needs the largest cone the detector subtends over the
+  /// surface, which is at that nearest point.
+  virtual double distanceTo(const Vec3& /*p*/) const { return -1.0; }
+
   /// Rate per unit intensity for a muon travelling along `d` through a face
   /// whose outward normal is `n`. Zero for outgoing muons.
   static double projection(const Vec3& n, const Vec3& d) {
@@ -882,10 +887,16 @@ class Surface {
 /// a position-only transform.
 class Plane : public Surface {
  public:
+  /// half_x runs along the world x axis projected onto the plane (y when the
+  /// normal is close to x), half_y along normal x that. Up to UCMuGen 0.2 the
+  /// axes came from any_perpendicular(), which for the default +Z normal put
+  /// half_x along y: Plane(200, 20) over a bar along x gave a quarter of its
+  /// rate.
   Plane(double half_x_cm, double half_y_cm, Vec3 centre,
         Vec3 normal = Vec3{0.0, 0.0, 1.0})
       : hx_(half_x_cm), hy_(half_y_cm), centre_(centre), n_(normal.unit()) {
-    u_ = any_perpendicular(n_);
+    const Vec3 a = (std::fabs(n_.x) < 0.9) ? Vec3{1.0, 0.0, 0.0} : Vec3{0.0, 1.0, 0.0};
+    u_ = (a - n_ * n_.dot(a)).unit();
     v_ = n_.cross(u_).unit();
   }
 
@@ -896,6 +907,12 @@ class Plane : public Surface {
   }
   double area() const override { return 4.0 * hx_ * hy_; }
   const char* name() const override { return "Plane"; }
+  double distanceTo(const Vec3& p) const override {
+    const Vec3 w = p - centre_;
+    const double a = std::fmax(-hx_, std::fmin(hx_, w.dot(u_)));
+    const double b = std::fmax(-hy_, std::fmin(hy_, w.dot(v_)));
+    return (w - u_ * a - v_ * b).norm();
+  }
 
  private:
   double hx_, hy_;
@@ -918,6 +935,14 @@ class Disk : public Surface {
   }
   double area() const override { return kPi * r_ * r_; }
   const char* name() const override { return "Disk"; }
+  double distanceTo(const Vec3& p) const override {
+    const Vec3 w = p - centre_;
+    const double h = w.dot(n_);
+    const Vec3 inplane = w - n_ * h;
+    const double rho = inplane.norm();
+    const double out = rho > r_ ? rho - r_ : 0.0;
+    return std::sqrt(h * h + out * out);
+  }
 
  private:
   double r_;
@@ -938,6 +963,12 @@ class HSphere : public Surface {
   }
   double area() const override { return 2.0 * kPi * r_ * r_; }
   const char* name() const override { return "HSphere"; }
+  double distanceTo(const Vec3& p) const override {
+    const Vec3 w = p - centre_;
+    if (w.z >= 0.0) return std::fabs(w.norm() - r_);     // above the equator
+    const double rho = std::hypot(w.x, w.y);              // below: the rim
+    return std::hypot(rho - r_, w.z);
+  }
 
  private:
   double r_;
@@ -976,6 +1007,16 @@ class Cylinder : public Surface {
   }
   double area() const override { return area_; }
   const char* name() const override { return "Cylinder"; }
+  double distanceTo(const Vec3& p) const override {
+    const Vec3 w = p - centre_;
+    const double rho = std::hypot(w.x, w.y), z = std::fabs(w.z), hh = 0.5 * h_;
+    double d = std::hypot(rho - r_, z > hh ? z - hh : 0.0);          // lateral
+    if (caps_) {
+      const double out = rho > r_ ? rho - r_ : 0.0;
+      d = std::fmin(d, std::hypot(z - hh, out));                     // nearer cap
+    }
+    return d;
+  }
 
  private:
   double r_, h_;
@@ -1212,12 +1253,15 @@ class Generator {
 
   // --- configuration -------------------------------------------------------
   Generator& setSpectrum(Spectrum s) { spectrum_ = s; dirty_ = true; return *this; }
+  // Both mark the configuration dirty: the cone envelope depends on the
+  // surface (and, for a user surface, on the seed of its probe). Up to
+  // UCMuGen 0.2 a new surface kept the old envelope.
   Generator& setSurface(std::shared_ptr<Surface> s) {
-    surface_ = std::move(s); return *this;
+    surface_ = std::move(s); dirty_ = true; return *this;
   }
   Generator& setRng(std::unique_ptr<Rng> r) { rng_ = std::move(r); return *this; }
   Generator& setSeed(std::int32_t seed) {
-    rng_.reset(new UCMuonLcg(seed)); seed_ = seed; return *this;
+    rng_.reset(new UCMuonLcg(seed)); seed_ = seed; dirty_ = true; return *this;
   }
   /// Total-energy limits, GeV, matching the Fortran's convention.
   Generator& setEnergyRange(double e_min, double e_max) {
@@ -1325,9 +1369,14 @@ class Generator {
     out_error = norm * std::sqrt(var / npoints);
   }
 
-  /// Real time, in seconds, that `n` generated muons correspond to.
-  double liveTime(long long n) const {
-    const double r = rate();
+  /// Real time, in seconds, that `n` generated muons correspond to, from
+  /// rate(npoints). Its relative statistical error is that of the rate (see
+  /// rateAndError): small with directed sampling, large for a small detector
+  /// with directed sampling off, where npoints should be raised. Returns -1
+  /// without an absolute normalisation, or when the integral found no muon
+  /// reaching the detector.
+  double liveTime(long long n, int npoints = 200000) const {
+    const double r = rate(npoints);
     return r > 0.0 ? double(n) / r : -1.0;
   }
 
@@ -1483,6 +1532,16 @@ class Generator {
     if (!surface_)
       throw std::runtime_error("ucmugen::Generator: no surface set");
     const double m = particle_mass(spectrum_);
+    // Up to UCMuGen 0.2 an E_min at or below the mass gave p_min = 0, a NaN
+    // momentum table and a generate() that never returned; E_min > E_max
+    // silently became a beam at E_min.
+    if (!(e_min_ > m) || !(e_max_ >= e_min_)) {
+      char buf[200];
+      std::snprintf(buf, sizeof(buf), "ucmugen::Generator: energy range "
+                    "[%g, %g] GeV needs mass (%g GeV) < E_min <= E_max",
+                    e_min_, e_max_, m);
+      throw std::invalid_argument(buf);
+    }
     const double p_min = std::sqrt(std::max(e_min_ * e_min_ - m * m, 0.0));
     const double p_max = std::sqrt(std::max(e_max_ * e_max_ - m * m, 0.0));
     cdf_.build(p_min, p_max, spectrum_);
@@ -1517,6 +1576,21 @@ class Generator {
   void computeOmegaMax() const {
     omega_max_ = 1.0;
     if (!directedActive()) return;
+    // Exact for the built-in surfaces: the largest cone is at the point of
+    // the surface nearest to the bounding sphere's centre. Up to UCMuGen 0.2
+    // it was always sampled, which for a small detector close under a large
+    // surface missed it (a 1 cm sphere 2 cm under a 10 m disk: 0.05 sr
+    // instead of 0.84), so the events near the closest point were
+    // under-weighted: 6.5 % within 2 cm of the axis instead of 29 %.
+    const double dmin = surface_->distanceTo(detector_->boundCentre());
+    if (dmin >= 0.0) {
+      const double rad = detector_->boundRadius();
+      if (!(dmin > rad)) { omega_max_ = 4.0 * kPi; return; }
+      const double s = rad / dmin;
+      omega_max_ = std::min(2.0 * kPi * (1.0 - std::sqrt(std::max(1.0 - s * s, 0.0)))
+                            * (1.0 + 1e-9), 4.0 * kPi);
+      return;
+    }
     constexpr int kN = 20000;
     constexpr double kMargin = 1.15;
     UCMuonLcg probe(seed_ ^ 0x0c0ffee);
@@ -1535,7 +1609,7 @@ class Generator {
   /// finite; the acceptance test would silently truncate the distribution if
   /// the envelope were ever too small.
   void computeEnvelope(double p_min, double p_max) const {
-    constexpr int kNp = 128, kNc = 128;
+    constexpr int kNp = 128, kNc = 128, kNlog = 64;
     constexpr double kMargin = 1.15;
     const double c_lo = std::cos(theta_max_), c_hi = std::cos(theta_min_);
     double best = 0.0;
@@ -1547,6 +1621,14 @@ class Generator {
       for (int j = 0; j < kNc; ++j) {
         const double c = c_lo + double(j) / double(kNc - 1) * (c_hi - c_lo);
         const double w = weight(p, c);          // projection <= 1 separately
+        if (w > best) best = w;
+      }
+      // and log-spaced towards the horizon, where at high momentum the
+      // weight peaks inside the first linear step (Reyna at 1e5 GeV: 41 at
+      // cos = 0.0013 against a scanned 29)
+      for (int j = 0; j < kNlog; ++j) {
+        const double c = c_lo + (c_hi - c_lo) * std::pow(10.0, -5.0 + 5.0 * double(j) / double(kNlog - 1));
+        const double w = weight(p, c);
         if (w > best) best = w;
       }
       if (lr == 0.0) break;

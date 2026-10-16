@@ -131,24 +131,37 @@ fi
 if [ "$NO_PY" -eq 0 ] && [ "$NO_PROP" -eq 0 ]; then
     echo "[4/6] Setting up PROPOSAL venv (Engine 4)..."
 
+    # The venv is optional: a failure here (Debian/Ubuntu without python3-venv,
+    # say) must not stop the build below under set -e, and a half-made venv is
+    # removed, as run_gui.sh would activate it.
     if [ ! -f "$SYS_PY" ]; then
         echo "  --  $SYS_PY not found — cannot create PROPOSAL venv"
         echo "      Install Xcode command line tools: xcode-select --install"
+    elif ! { [ -d "$VENV" ] || "$SYS_PY" -m venv "$VENV"; }; then
+        rm -rf "$VENV"
+        echo "  WARN: could not create $VENV  (Engine 4 unavailable)"
+        echo "      Debian/Ubuntu: sudo apt install python3-venv, then re-run setup.sh"
+    elif [ ! -x "$VENV/bin/pip" ]; then
+        echo "  WARN: $VENV has no pip  (Engine 4 unavailable)"
+        echo "      Remove it (rm -rf $VENV) and re-run setup.sh"
     else
         echo "  Using system Python: $($SYS_PY --version 2>&1)"
-
-        # Create venv if it does not exist
-        if [ ! -d "$VENV" ]; then
-            "$SYS_PY" -m venv "$VENV"
-            echo "  OK  Created venv: $VENV"
-        else
-            echo "  OK  Venv exists:  $VENV"
-        fi
+        echo "  OK  Venv: $VENV"
 
         # Install requirements into venv
-        "$VENV/bin/pip" install -q --upgrade pip
+        "$VENV/bin/pip" install -q --upgrade pip || true
         "$VENV/bin/pip" install -q -r requirements.txt \
             && echo "  OK  Core packages installed in venv"
+
+        # The GUI runs in this venv (run_gui.sh), so Engine 6 needs rasterio
+        # here too when it was installed for $PYTHON above.
+        if "$PYTHON" -c "import rasterio" 2>/dev/null \
+           && ! "$VENV/bin/python3" -c "import rasterio" 2>/dev/null; then
+            "$VENV/bin/pip" install -q rasterio "numpy<2.3" \
+                && "$VENV/bin/python3" -c "import rasterio" 2>/dev/null \
+                && echo "  OK  rasterio installed in venv  (Engine 6 in the GUI)" \
+                || echo "  WARN: rasterio install in venv failed  (Engine 6 unavailable in the GUI)"
+        fi
 
         # Install PROPOSAL
         PROP_OK=0
@@ -227,8 +240,13 @@ elif [ -t 0 ]; then
             echo "      Downloading PUMAS..."
             mkdir -p external
             PUMAS_TMP="$(mktemp -t pumas_zip.XXXXXX)"
-            if curl -fsSL -o "$PUMAS_TMP" https://github.com/niess/pumas/archive/refs/heads/master.zip \
-               && unzip -q -o "$PUMAS_TMP" -d external; then
+            # Pinned to the commit UCMuon is tested with (tag v1.2, also the
+            # head of master since 2023-02-27); it unpacks to pumas-<commit>/.
+            PUMAS_COMMIT=529976ef51bd420f37ec63b1d3f615784d35b626
+            if curl -fsSL -o "$PUMAS_TMP" "https://github.com/niess/pumas/archive/${PUMAS_COMMIT}.zip" \
+               && unzip -q -o "$PUMAS_TMP" -d external \
+               && rm -rf external/pumas-master \
+               && mv "external/pumas-${PUMAS_COMMIT}" external/pumas-master; then
                 :
             fi
             rm -f "$PUMAS_TMP"
@@ -247,11 +265,32 @@ fi
 echo "[6/6] Building local (OMP-only) binaries..."
 echo ""
 make data-links
-[ "$MISS_GEN"   -eq 0 ] && make ucmuon_gen_omp              || echo "  SKIP  ucmuon_gen_omp"
-[ "$MISS_MUSIC" -eq 0 ] && make ucmuon_transport_music_omp  || echo "  SKIP  ucmuon_transport_music_omp"
-[ "$MISS_BB"    -eq 0 ] && make ucmuon_transport_bb_omp     || echo "  SKIP  ucmuon_transport_bb_omp"
-[ -f "$PUMAS_SRC" ] && { make pumas || echo "  WARN  pumas build failed"; } \
-                    || echo "  SKIP  ucmuon_transport_pumas  (PUMAS source not present)"
+# A compile error is reported as one, not as a skip: the binary in bin/ would
+# otherwise be one left from an earlier build, and the summary would count it.
+FAILED=""
+build() {
+    if ! make "$1"; then
+        echo "  FAIL  $1  (compile error above)"
+        FAILED="$FAILED $1"
+    fi
+}
+if [ "$MISS_GEN"   -eq 0 ]; then build ucmuon_gen_omp;             else echo "  SKIP  ucmuon_gen_omp  (sources missing)"; fi
+if [ "$MISS_MUSIC" -eq 0 ]; then build ucmuon_transport_music_omp; else echo "  SKIP  ucmuon_transport_music_omp  (MUSIC sources not present)"; fi
+if [ "$MISS_BB"    -eq 0 ]; then build ucmuon_transport_bb_omp;    else echo "  SKIP  ucmuon_transport_bb_omp  (sources missing)"; fi
+if [ -f "$PUMAS_SRC" ];     then build pumas;                      else echo "  SKIP  ucmuon_transport_pumas  (PUMAS source not present)"; fi
+
+# One summary line for a compiled engine: [x] built, [!] its build failed and
+# bin/ holds a binary from an earlier build, [ ] absent.
+binline() {   # binline <make target> <binary> <label> <why absent>
+    case " $FAILED " in
+        *" $1 "*) if [ -f "$2" ]; then
+                      echo "  [!] $3(build FAILED; $2 is from an earlier build)"
+                  else
+                      echo "  [ ] $3(build failed, see above)"
+                  fi ;;
+        *)        if [ -f "$2" ]; then echo "  [x] $3($2)"; else echo "  [ ] $3($4)"; fi ;;
+    esac
+}
 
 # ── Summary ───────────────────────────────────────────────────────────────────
 # Determine PROPOSAL status for summary (test in subprocess to catch segfault)
@@ -266,27 +305,29 @@ echo "======================================================="
 echo "  ENGINE AVAILABILITY"
 echo "======================================================="
 echo ""
+binline ucmuon_gen_omp bin/ucmuon_gen_omp \
+        "Generator ucmuon_gen_omp             " "build failed or gfortran missing; it creates the surface muons"
 [ -f "gui/ucmuon_stochastic_driver.py" ] \
     && echo "  [x] Engine 1  UCMuon-MC (flagship)       (Python)" \
     || echo "  [ ] Engine 1  UCMuon-MC (flagship)       (gui/ucmuon_stochastic_driver.py missing)"
-[ -f bin/ucmuon_transport_music_omp ] \
-    && echo "  [x] Engine 2  MUSIC stochastic MC        (bin/ucmuon_transport_music_omp)" \
-    || echo "  [ ] Engine 2  MUSIC                      (music.f not found — see docs/MUSIC_FILES.md)"
-[ -f bin/ucmuon_transport_bb_omp ] \
-    && echo "  [x] Engine 3  Bethe-Bloch CSDA + MS      (bin/ucmuon_transport_bb_omp)" \
-    || echo "  [ ] Engine 3  Bethe-Bloch CSDA           (build failed)"
+binline ucmuon_transport_music_omp bin/ucmuon_transport_music_omp \
+        "Engine 2  MUSIC stochastic MC        " "music.f not found — see docs/MUSIC_FILES.md"
+binline ucmuon_transport_bb_omp bin/ucmuon_transport_bb_omp \
+        "Engine 3  Bethe-Bloch CSDA + MS      " "build failed"
 [ "$PROP_SUMMARY" -eq 1 ] \
     && echo "  [x] Engine 4  PROPOSAL stochastic MC     (system Python venv)" \
     || echo "  [ ] Engine 4  PROPOSAL                   (venv at $VENV not ready)"
 [ -f "gui/ucmuon_backward_mc.py" ] \
     && echo "  [x] Engine 5  Backward MC                (Python)" \
     || echo "  [ ] Engine 5  Backward MC                (gui/ucmuon_backward_mc.py missing)"
-"${PYTHON}" -c "import rasterio" 2>/dev/null \
+# Engine 6 is checked in the interpreter the GUI runs in: run_gui.sh uses the
+# venv when it exists.
+GUI_PY="$PYTHON"; [ -x "$VENV/bin/python3" ] && GUI_PY="$VENV/bin/python3"
+"$GUI_PY" -c "import rasterio" 2>/dev/null \
     && echo "  [x] Engine 6  UCMuon Terrain             (Python + rasterio)" \
-    || echo "  [ ] Engine 6  UCMuon Terrain             (pip install rasterio)"
-[ -f bin/ucmuon_transport_pumas ] \
-    && echo "  [x] Engine 7  PUMAS backward MC          (bin/ucmuon_transport_pumas)" \
-    || echo "  [ ] Engine 7  PUMAS backward MC          (re-run setup.sh and accept the PUMAS download)"
+    || echo "  [ ] Engine 6  UCMuon Terrain             ($GUI_PY -m pip install rasterio)"
+binline pumas bin/ucmuon_transport_pumas \
+        "Engine 7  PUMAS backward MC          " "re-run setup.sh and accept the PUMAS download"
 echo ""
 echo "  Intermediate files (.o, .mod) are in build/"
 echo ""
@@ -310,4 +351,10 @@ if [ "$MISS_MUSIC" -eq 1 ]; then
     echo "  All other engines (1, 3–7) are fully functional."
     echo "  See docs/MUSIC_FILES.md to enable Engine 2."
     echo ""
+fi
+if [ -n "$FAILED" ]; then
+    echo "  BUILD FAILED:$FAILED"
+    echo "  Fix the compile error above and re-run setup.sh (or make local)."
+    echo ""
+    exit 1
 fi

@@ -2,7 +2,7 @@
 # UCMuon — UCLouvain Muography Group
 # Author : Hamid Basiri <hamid.basiri@uclouvain.be>
 # License: MIT
-__version__ = "1.3.2"          # app version — keep in sync with CITATION.cff
+__version__ = "1.4.0"          # app version — keep in sync with CITATION.cff
 import streamlit as st
 import sys
 from pathlib import Path as _PathSetup
@@ -1289,14 +1289,24 @@ def load_file(path, mtime=None):
         if df.shape[1] > 1 and df.iloc[:, 0].isna().all():
             df = df.iloc[:, 1:].reset_index(drop=True)
 
+        # Fortran D exponents ("1.3D+01": the generator's PHITS dump, the PHITS
+        # exports) come back as strings; read them as numbers.
+        for c in df.columns:
+            if df[c].dtype == object:
+                num = pd.to_numeric(df[c].astype(str).str.replace("D", "E", regex=False)
+                                    .str.replace("d", "e", regex=False), errors="coerce")
+                if num.notna().all():
+                    df[c] = num
+
         nc = df.shape[1]
         if   nc == 18: df.columns = cug
         elif nc == 14: df.columns = c14
         elif nc == 13: df.columns = c13
         elif nc == 10:
             df.columns = c10
-            df["charge"] = np.where(df["kf"] == 13, -1, 1)
-            df["E"]      = df["Ekin_MeV"] / 1000.0 + 0.105658
+            kf = df["kf"].round().astype(int)
+            df["charge"] = np.where(kf > 0, -1, 1)          # PDG: 13 mu-, 11 e-
+            df["E"]      = df["Ekin_MeV"] / 1000.0 + np.where(kf.abs() == 11, 0.000511, 0.105658)
             df["theta"]  = np.arccos(np.clip(-df["cz"], -1.0, 1.0))
             df["phi"]    = np.arctan2(df["cy"], df["cx"])
             st.info("ℹ️  PHITS s-type=17 dump loaded (10 col). "
@@ -1609,7 +1619,10 @@ def _auto_geant4_convert():
         st.warning(f"⚠️  Geant4 conversion skipped — source file not found.")
         return
     try:
-        df_g4 = load_file(src)
+        # With the file's mtime in the cache key: up to 1.3.2 the key was the
+        # path only, so a second run to the same file exported the first
+        # run's muons.
+        df_g4 = load_file(src, mtime=Path(src).stat().st_mtime)
         _el = _is_electron_file(src)
         n = write_geant4_ascii(df_g4, dst, electrons=_el) if fmt == "ascii" \
             else write_geant4_hepevt(df_g4, dst, electrons=_el)
@@ -1647,7 +1660,7 @@ def _auto_phits_convert():
             st.warning("⚠️  PHITS export skipped — source file not found.")
             return
         try:
-            df_p = load_file(src)
+            df_p = load_file(src, mtime=Path(src).stat().st_mtime)   # see _auto_geant4_convert
             n = write_phits_surface(df_p, phits_dst, electrons=_is_electron_file(src))
             st.success(f"✅  PHITS file written: `{phits_dst}`  ({n:,} muons)")
             st.session_state["gen_phits_done"] = True
@@ -2710,13 +2723,34 @@ def _session_detectors():
     return out
 
 
+def _transport_x0():
+    """Radiation length [g/cm²] of the Transport tab's material: its X₀ input
+    in Advanced, the material preset's in Basic (as the transport uses)."""
+    ss = st.session_state
+    if ss.get("ui_mode") == "Advanced" and ss.get("music_rad"):
+        return float(ss["music_rad"])
+    _mat = MUSIC_MATERIALS.get(ss.get("musicpreset", "Standard Rock"), {})
+    return float(_mat.get("rad") or ss.get("music_rad") or 26.54)
+
+
+def _transport_material():
+    """The Transport preset's range table for gui/mcs_margin.py: None (Standard
+    Rock, also for the rock-like presets and Custom), or its own PDG table."""
+    return {"Water": "water", "Ice": "ice", "Seawater": "seawater",
+            "Iron": "iron"}.get(st.session_state.get("musicpreset", "Standard Rock"))
+
+
 def _basic_detectors(e_min):
     """The detectors with Basic's margin: 2σ_r of multiple scattering at the
-    deepest point, for the Transport tab's density (basic_mode.margin_cm)."""
+    deepest point, for the Transport tab's density and radiation length
+    (basic_mode.margin_cm; up to 1.3.2 X₀ was standard rock's for every
+    material: margins 18 % too large in water, and in iron 11-13 % below the
+    scattering UCMuon-MC produces)."""
     rho = float(st.session_state.get("music_rho", 2.65) or 2.65)
     dets = _session_detectors()
     for d in dets:
-        d["margin"] = round(_BM.margin_cm(d, rho, e_min), 1)
+        d["margin"] = round(_BM.margin_cm(d, rho, e_min, _transport_x0(),
+                                          _transport_material()), 1)
     return dets
 
 
@@ -2766,14 +2800,16 @@ def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
     if depth_m <= 0.0:
         return
     rho = float(st.session_state.get("music_rho", 2.65) or 2.65)
-    rec = _mm.suggested_margin(depth_m, rho, float(e_min), 0.0)
+    x0, mat = _transport_x0(), _transport_material()
+    rec = _mm.suggested_margin(depth_m, rho, float(e_min), 0.0, x0, material=mat)
     sig = rec["sigma_r_cm"]
     if not sig:
         return
     m = float(det["margin"])
     if m < rec["margin_cm"]:
         keep = _mm.retained_fraction(m, sig)
-        rec_th = _mm.suggested_margin(depth_m, rho, float(e_min), float(theta_max_deg))
+        rec_th = _mm.suggested_margin(depth_m, rho, float(e_min), float(theta_max_deg), x0,
+                                      material=mat)
         th_txt = (f" At θ = {theta_max_deg:.0f}° it is {rec_th['sigma_r_cm']:.0f} cm."
                   if rec_th["sigma_r_cm"] else "")
         st.warning(
@@ -2788,15 +2824,16 @@ def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
 def _render_mcs_margin_helper(detectors=None):
     """Standalone Highland MCS displacement / safety-margin calculator."""
     try:
-        from gui_source_optimizer import _sr, _groom, _csda_range_gcm2
+        from gui_source_optimizer import _sr, _groom
     except ImportError:
         st.info("gui_source_optimizer module not available.")
         return
 
     st.caption(
         "Lateral displacement of a muon after multiple Coulomb scattering (Highland, "
-        "integrated with CSDA energy loss; X₀ = 26.54 g/cm², ρ from the Transport tab or "
-        "2.65 g/cm³). The detector filter keeps only muons whose straight line crosses the "
+        "integrated with CSDA energy loss; an upper envelope of the transport engines' "
+        "scattering; ρ and X₀ from the Transport tab). The detector filter keeps only "
+        "muons whose straight line crosses the "
         "detector inflated by the margin, so the margin must exceed this scatter or hits "
         "are lost. Use the **suggested margin** for the detector *Safety margin* field."
     )
@@ -2829,7 +2866,14 @@ def _render_mcs_margin_helper(detectors=None):
     _e_min   = float(st.session_state.get("emin", 1.0))
     _cos_ze  = max(math.cos(math.radians(_zen)), 0.01)
     _slant_m = _depth / _cos_ze
-    _E_thr   = _groom(_slant_m * 100.0 * 2.65)   # min KE to traverse the slant path
+    import mcs_margin as _mm
+    # The Transport tab's density, as the Generator's margin warning and Basic
+    # use (up to 1.3.2 the threshold took 2.65 whatever the density, so for
+    # 100 m of water the helper suggested 96 cm where the warning asks 376 cm).
+    _rho_h   = float(st.session_state.get("music_rho", 2.65) or 2.65)
+    _mat_h   = _transport_material()
+    _E_thr   = (_mm.threshold_kinetic_gev(_slant_m * 100.0 * _rho_h, _mat_h) if _mat_h
+                else _groom(_slant_m * 100.0 * _rho_h))   # min KE to traverse the slant path
     # slowest muon that actually arrives, TOTAL energy (e_min is total, the
     # Groom threshold kinetic)
     _E_eff   = max(_e_min, _E_thr + 0.10566)
@@ -2837,10 +2881,9 @@ def _render_mcs_margin_helper(detectors=None):
     # 1σ radial displacement [cm], Highland with CSDA energy loss along the
     # path (gui/mcs_margin.py); the constant-momentum _sr underestimates it
     # for muons that arrive with little energy left.
-    import mcs_margin as _mm
-    _rho_h = float(st.session_state.get("music_rho", 2.65) or 2.65)
-    _E_eff = max(_E_eff, _mm.arriving_energy_floor(_slant_m * 100.0, _rho_h))
-    _sig1 = _mm.sigma_r_cm(_E_eff, _slant_m * 100.0, _rho_h) or _sr(_E_eff, _zen, _depth * 100.0)
+    _E_eff = max(_E_eff, _mm.arriving_energy_floor(_slant_m * 100.0, _rho_h, material=_mat_h))
+    _sig1 = (_mm.sigma_r_cm(_E_eff, _slant_m * 100.0, _rho_h, _transport_x0(), material=_mat_h)
+             or _sr(_E_eff, _zen, _depth * 100.0))
     _hm1, _hm2, _hm3 = st.columns(3)
     _hm1.metric("1σ displacement",  f"{_sig1:.1f} cm",
                 help=f"σ_r at E = {_E_eff:.0f} GeV over the {_slant_m:.0f} m slant path.")
@@ -2848,14 +2891,15 @@ def _render_mcs_margin_helper(detectors=None):
                 help="2 × σ_r: a point-like detector keeps ≈98 % of its hits "
                      "(1.5σ_r keeps 89 %, 3σ_r 99.99 %).")
     _hm3.metric("3σ displacement",  f"{3.0 * _sig1:.1f} cm",
-                help="99.7 % coverage — compare with your detector size.")
+                help="A point-like detector keeps 99.99 % of its hits within 3σ_r "
+                     "(radial displacement); compare with your detector size.")
 
     if _e_min < _E_thr + 0.10566:
-        _stop_m = _csda_range_gcm2(max(_e_min - 0.10566, 1e-3)) / 2.65 / 100.0   # kinetic
+        _stop_m = float(_mm._range_fns(_mat_h)[0](max(_e_min - 0.10566, 1e-3))) / _rho_h / 100.0
         st.warning(
-            f"⚠️ E_min = {_e_min:.1f} GeV muons stop after ≈ {_stop_m:.1f} m of rock and never "
-            f"reach {_depth:.0f} m at θ = {_zen:.0f}° (needs ≥ {_E_thr:.0f} GeV). "
-            f"Displacement above is evaluated at {_E_thr:.0f} GeV — the slowest muon that arrives."
+            f"⚠️ E_min = {_e_min:.1f} GeV muons stop after ≈ {_stop_m:.1f} m at ρ = {_rho_h:.2f} "
+            f"g/cm³ and never reach {_depth:.0f} m at θ = {_zen:.0f}° (needs ≥ {_E_thr:.0f} GeV). "
+            f"Displacement above is evaluated at {_E_eff:.0f} GeV, the slowest muon that arrives."
         )
 
     _eff = (_r_det / max(_r_det + _sig1, 1e-9)) ** 2 * 100.0
@@ -5700,11 +5744,16 @@ with tab_music:
                     # table density shown here, whatever ρ said).
                     _pxs_mat_map = {
                         "Standard Rock  (Z=11, A=22)": 1,
-                        "Ice            (Z=7.42, A=14.99)": 2,
-                        "Water          (Z=7.42, A=14.99)": 3,
+                        "Ice            (H₂O, Z/A=0.555)": 2,
+                        "Water          (H₂O, Z/A=0.555)": 3,
                         "Concrete       (Z=11.11, A=22.08)": 4,
                         "Custom": 5,
                     }
+                    # Labels up to 1.3.2 (they showed a wrong A); keep the choice.
+                    _pxs_old = {"Ice            (Z=7.42, A=14.99)": "Ice            (H₂O, Z/A=0.555)",
+                                "Water          (Z=7.42, A=14.99)": "Water          (H₂O, Z/A=0.555)"}
+                    if st.session_state.get("phitsxs_mat_choice") in _pxs_old:
+                        st.session_state["phitsxs_mat_choice"] = _pxs_old[st.session_state["phitsxs_mat_choice"]]
                     if st.session_state.get("phitsxs_mat_choice") not in _pxs_mat_map:
                         st.session_state.pop("phitsxs_mat_choice", None)   # pre-v1.3 label
                     _pxs_choice = st.selectbox("Bethe-Bloch composition", list(_pxs_mat_map.keys()),
@@ -5715,8 +5764,9 @@ with tab_music:
                     phitsxs_ms_enable = st.checkbox(
                         "🔀  Multiple scattering (Highland)", value=True,
                         key="phitsxs_ms_enable",
-                        help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(t/X₀)]. "
-                             "Box-Muller sampling of projected angles. ~10% CPU overhead.")
+                        help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(t/X₀)], "
+                             "its variance accumulated along the path (Highland up to one X₀, "
+                             "linear in t beyond; independent of the step size). ~10% CPU overhead.")
                 with _px3:
                     st.caption("💡 Bethe-Bloch (PDG) + Groom radiative b·E.\nNo external table files needed.")
     
@@ -5732,7 +5782,8 @@ with tab_music:
     | $a$ = 1.96 MeV cm²/g | ionisation (Bethe-Bloch plateau) | ≈ constant at muography energies |
     | $b$ = 3.64×10⁻⁶ cm²/g | radiative total (brems + pair + photonuclear) | grows linearly with $E$ |
 
-    **Multiple scattering (Highland 1975):** applied per step.
+    **Multiple scattering (Highland 1975):** variance accumulated along the path
+    (Highland for the layer up to one $X_0$, linear in path length beyond; independent of the step size).
     $\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln(x/X_0)\right]$
 
     **Accuracy:** good for 50 GeV – 3 TeV in rock-like media.

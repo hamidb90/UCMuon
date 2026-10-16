@@ -14,7 +14,7 @@ see Table~\ref{tab:survival}).
 
 Column 5 (1-based) = surface energy [GeV]; column 9 = alive flag (0/1).
 The .dat files are git-ignored (too large to track); regenerate with
-compare_engines.py if absent.
+benchmark/analysis/run_mono_bench.sh if absent.
 
 Usage:  python make_survival_table.py  >  tab_survival_matrix.tex
 """

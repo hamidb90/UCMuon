@@ -529,9 +529,15 @@ def _load_dat_files(run_dir, prefix, n_override):
             alive["AngleScat_Deg"] = float("nan")
             alive["LatDisp_cm"]    = float("nan")
         else:
+            # atan2(|s x c|, s.c): arccos of the dot product loses small
+            # angles because the files carry 6 decimals (theta < ~1 mrad
+            # became 0 or 1.4 mrad, mean angle 4-6 % low at 1 m up to 1.3.2)
             dot = (cx_s * alive["cx"] + cy_s * alive["cy"]
-                   + cz_s * alive["cz"]).clip(-1.0, 1.0)
-            alive["AngleScat_Deg"] = np.degrees(np.arccos(dot))
+                   + cz_s * alive["cz"])
+            crs = np.sqrt((cy_s * alive["cz"] - cz_s * alive["cy"])**2
+                          + (cz_s * alive["cx"] - cx_s * alive["cz"])**2
+                          + (cx_s * alive["cy"] - cy_s * alive["cx"])**2)
+            alive["AngleScat_Deg"] = np.degrees(np.arctan2(crs, dot))
             path  = np.abs(alive["z"]) / np.abs(cz_s).clip(lower=1e-6)
             exp_x = alive["xs"] + cx_s * path
             exp_y = alive["ys"] + cy_s * path

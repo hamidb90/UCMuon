@@ -137,10 +137,11 @@ def main():
     if args.energies:
         files = []
         for e in args.energies:
-            if e >= 1000:
-                name = f"source_{int(e/1000)}TeV.dat"
+            # TeV only for whole TeV: int(1500/1000) named 1.5 TeV "1TeV"
+            if e >= 1000 and e % 1000 == 0:
+                name = f"source_{e / 1000:g}TeV.dat"
             else:
-                name = f"source_{int(e)}GeV.dat"
+                name = f"source_{e:g}GeV.dat"
             files.append(name)
     elif args.inputs:
         files = args.inputs

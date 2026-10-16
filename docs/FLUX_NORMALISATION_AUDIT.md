@@ -704,7 +704,9 @@ Found during the v1.2.0 pre-release checks, when the examples were regenerated:
   thick rock the flux is a lower bound: the cut removes about 0.6 % of the flux at 1000 m w.e., 6 % at 2000, 37 % at 3000 and 85 % at 3500 (θ = 0-60°, Guan; estimated by extending the table with dE/dX = a + bE fitted to its last points). It is exactly zero once every
   energy is beyond the table, where the true value is below 10⁻⁵ of the open
   sky. The table is not extended in this release; both integrators now raise
-  a `RangeTableWarning` instead of cutting silently.
+  a `RangeTableWarning` instead of cutting silently. (Extended after 1.3.2 to
+  10 TeV, 6889 m w.e., with the PDG 2024 standard rock stopping power: the
+  cut is now below 1 % up to 3500 m w.e., see `gui/ucmuon_backward_mc.py`.)
 - `make_tsim_library.py` now reads the bundled `vesuvius_dem.tif` instead of
   `misc/dem_site.tif`, which is not in the tree: the two give a bit-identical
   overburden map.

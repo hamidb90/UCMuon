@@ -16,6 +16,7 @@ on:
     paths:
       - 'ucmugen/**'
       - 'src/generator/**'
+      - 'src/parma/**'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -27,6 +28,7 @@ on:
     paths:
       - 'ucmugen/**'
       - 'src/generator/**'
+      - 'src/parma/**'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -176,3 +178,6 @@ jobs:
 
       - name: GUI live time agrees with UCMuGen
         run: python3 tests/flux/test_live_time.py --quick
+
+      - name: Generator fixes after 1.3.2 (PARMA date, MPI parity)
+        run: python3 tests/flux/test_generator_fixes.py

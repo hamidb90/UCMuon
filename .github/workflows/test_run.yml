@@ -12,6 +12,10 @@ on:
       - 'test_run/**'
       - 'gui/ucmuon_stochastic_driver.py'
       - 'src/generator/**'
+      - 'src/transport/**'
+      - 'tests/transport/**'
+      - 'src/converters/**'
+      - 'tests/converters/**'
       - 'tools/check_consistency.py'
       - 'Makefile'
       - '.github/workflows/test_run.yml'
@@ -20,6 +24,10 @@ on:
       - 'test_run/**'
       - 'gui/ucmuon_stochastic_driver.py'
       - 'src/generator/**'
+      - 'src/transport/**'
+      - 'tests/transport/**'
+      - 'src/converters/**'
+      - 'tests/converters/**'
       - 'tools/check_consistency.py'
       - 'Makefile'
       - '.github/workflows/test_run.yml'
@@ -74,3 +82,11 @@ jobs:
           bash test_run/run_test.sh | tee out.txt
           grep -q "RESULT: PASS" out.txt
           grep -q "wrote test_run/output/muons_surface.dat" out.txt
+      - name: Transport engine fixes after 1.3.2 (Bethe-Bloch water, pencil beams)
+        run: |
+          make ucmuon_transport_bb_omp
+          python3 tests/transport/test_transport_fixes.py
+      - name: Command-line converters (cosmic electrons, muons unchanged)
+        run: |
+          make ucmuon_to_phits
+          python3 tests/converters/test_converters.py

@@ -633,7 +633,7 @@ def transport_muons_through_csg(
 
         if _stochastic_drv is not None and ray.path_through_cm > 0:
             # Build single-muon dict
-            mat    = _stochastic_drv._MAT_DB.get(1)   # Standard Rock approximation
+            mat    = dict(_stochastic_drv._MAT_DB.get(1))   # Standard Rock approximation
             mu_dict = dict(
                 EventID  = np.array([eid]),
                 x        = np.array([det_x]),
@@ -649,6 +649,10 @@ def transport_muons_through_csg(
                 cz       = np.array([direction[2]]),
             )
             det_rho_gcm3 = _get_detector_density(geom, detector_cell_id)
+            # X0 in cm for this cell's density (rock's 26.54 g/cm2, as the energy
+            # loss): the 2.65 g/cm3 database value made air cells scatter ~80x
+            # too much.
+            mat["X0_cm"] = 26.54 / max(det_rho_gcm3, 1e-6)
             depth_m = ray.path_through_cm / 100.0   # cm → m
             result  = _stochastic_drv.transport(
                 mu_dict, depth_m, det_rho_gcm3, mat,
@@ -927,6 +931,225 @@ def transport_muons_multi_detector(
     return result
 
 
+def transport_muons_csg_engine(
+        surface_df,
+        geom,
+        detector_cell_ids : List[int],
+        engine            : str,
+        rho_ref           : float = 2.65,
+        run_bin           = None,
+        detector_names    : Optional[Dict[int, str]] = None,
+        coord_offset_cm   : np.ndarray = None,
+        step_cm           : float = 50.0,
+        max_dist_cm       : float = 1_000_000.0,
+        v_cut             : float = 0.05,
+        ms_enable         : bool  = True,
+        script_dir        : str   = ".",
+        write_phits_dump  : bool  = True,
+        dump_dir          : str   = ".",
+        progress_container = None,
+        bin_width         : float = 0.02,
+) -> Dict[int, "pd.DataFrame"]:
+    """
+    Transport the Tab-1 surface muons to the CSG detector cells with the
+    selected engine (stochastic energy loss, multiple scattering).
+
+    Per detector cell and per muon:
+      1. trace the muon's straight line to the cell (trace_ray_to_cell): the
+         cell is hit or missed, and a hit gives the entry point, the rock in
+         front of it (opacity X = Σ ρ·L of every cell crossed) and the path
+         length L;
+      2. transport the hits through X of Standard Rock with the engine: it
+         decides survival and gives the energy, the direction and the
+         lateral displacement at the cell (the displacement is scaled from
+         the engine's path X/ρ_ref to the true path L);
+      3. a muon with less than 1 g/cm² in front of the cell arrives
+         unchanged; a miss is written as stopped at its start.
+    Whether a muon hits a cell is decided by its straight line: for a flux
+    uniform over a few σ_r around the cell, scattering moves as many muons
+    into the cell as out of it.
+
+    engine  : "UCMuon Stochastic" (in-process, exact path per muon), or
+              "MUSIC" / "Bethe-Bloch (PDG) + Groom radiative losses + Highland
+              MS" / "PROPOSAL" through run_bin(df, depth_m) -> 18-column
+              DataFrame (gui_terrain_engine._run_engine_bin), with the muons
+              grouped in vertical-equivalent depth bins of relative width
+              bin_width (the opacity of each muon within ±bin_width/2).
+    rho_ref : density of the equivalent rock [g/cm³]; energy loss and
+              scattering depend on X in g/cm², ρ_ref only scales the
+              engine's path.
+
+    Up to 1.3.2 the GUI's CSG run (transport_muons_multi_detector) applied
+    straight-line CSDA energy loss whatever engine was selected.
+
+    Returns Dict[cell_id, 18-column DataFrame] as transport_muons_multi_detector.
+    """
+    import pandas as pd
+    import os
+
+    if coord_offset_cm is None:
+        coord_offset_cm = np.zeros(3)
+    coord_offset_cm = np.asarray(coord_offset_cm, dtype=float)
+    if detector_names is None:
+        detector_names = {cid: f"cell{cid}" for cid in detector_cell_ids}
+    if engine != "UCMuon Stochastic" and run_bin is None:
+        raise ValueError(f"{engine}: run_bin is needed for a subprocess engine")
+
+    drv = None
+    if engine == "UCMuon Stochastic":
+        spec = importlib.util.spec_from_file_location(
+            "ucmuon_stochastic_driver", str(Path(script_dir) / "ucmuon_stochastic_driver.py"))
+        drv = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(drv)
+    rng = np.random.default_rng(42)
+
+    sdf = surface_df.reset_index(drop=True)
+    n_total = len(sdf)
+    eid  = sdf["EventID"].to_numpy(int)
+    pos  = sdf[["x", "y", "z"]].to_numpy(float)
+    E_s  = sdf["E"].to_numpy(float)
+    th_s = sdf["theta"].to_numpy(float)
+    ph_s = sdf["phi"].to_numpy(float)
+    chg  = sdf["charge"].to_numpy(int)
+    dirs = sdf[["cx", "cy", "cz"]].to_numpy(float)
+    dirs = dirs / np.maximum(np.linalg.norm(dirs, axis=1), 1e-12)[:, None]
+
+    result = {}
+    t0 = time.time()
+    for k_det, cid in enumerate(detector_cell_ids):
+        # ── 1. straight lines to the cell ─────────────────────────────────
+        hit   = np.zeros(n_total, bool)
+        X     = np.zeros(n_total)
+        L     = np.zeros(n_total)
+        entry = pos + coord_offset_cm
+        path_det = np.zeros(n_total)
+        for i in range(n_total):
+            origin = pos[i] + coord_offset_cm
+            ray = trace_ray_to_cell(geom, origin, dirs[i], cid,
+                                    step_cm=step_cm, max_dist_cm=max_dist_cm)
+            if ray.hit:
+                hit[i] = True
+                X[i] = ray.total_ob_gcm2
+                entry[i] = ray.entry_pos_cm
+                L[i] = float(np.linalg.norm(ray.entry_pos_cm - origin))
+                path_det[i] = ray.path_through_cm
+            if progress_container and (i + 1) % max(1, n_total // 50) == 0:
+                try:
+                    progress_container.write(
+                        f"⏳ cell {cid}: {i+1:,}/{n_total:,} muons traced  "
+                        f"({hit[:i+1].sum():,} reach it)")
+                except Exception:
+                    pass
+
+        # ── 2. engine transport of the hits through X ─────────────────────
+        alive = hit.copy()
+        E_f   = np.where(hit, E_s, 0.0)                  # total energy [GeV]
+        d_f   = dirs.copy()
+        delta = np.zeros((n_total, 3))                   # lateral displacement [cm]
+        todo  = np.where(hit & (X >= 1.0))[0]
+        if len(todo):
+            slant = X[todo] / rho_ref                    # engine path [cm]
+            scale = L[todo] / slant
+            if drv is not None:
+                d_cm = float(slant.max())
+                Ek = np.maximum(E_s[todo] - drv.M_MU_GEV, 0.0)
+                mu = dict(
+                    EventID=eid[todo], x=np.zeros(len(todo)), y=np.zeros(len(todo)),
+                    z=np.zeros(len(todo)), theta=th_s[todo], phi=ph_s[todo],
+                    E_tot_GeV=E_s[todo], Ekin_GeV=Ek, Ekin_MeV=Ek * 1000.0,
+                    charge=chg[todo], cx=dirs[todo, 0], cy=dirs[todo, 1], cz=dirs[todo, 2],
+                    # each muon's own path: slant = d / depth_cos; and the
+                    # true end point in all three coordinates (no exit plane)
+                    depth_cos=d_cm / slant, depth_axis=3)
+                mat = dict(drv._MAT_DB[1])
+                mat["X0_cm"] = 26.54 / rho_ref
+                r = drv.transport(mu, d_cm / 100.0, rho_ref, mat, n_steps=0,
+                                  v_cut=v_cut, ms_enable=ms_enable, rng=rng)
+                ok = r["alive"] == 1
+                end = np.stack([r["x_f"], r["y_f"], r["z_f"]], axis=1)
+                straight = dirs[todo] * slant[:, None]
+                alive[todo] = ok
+                E_f[todo] = np.where(ok, r["E_kin_f_MeV"] / 1000.0 + drv.M_MU_GEV, 0.0)
+                d_f[todo] = np.stack([r["cx_f"], r["cy_f"], r["cz_f"]], axis=1)
+                delta[todo] = (end - straight) * scale[:, None]
+            else:
+                cz = np.maximum(np.abs(dirs[todo, 2]), 1e-6)
+                D = slant * cz / 100.0                   # vertical-equivalent depth [m]
+                kbin = np.floor(np.log(D) / np.log1p(bin_width)).astype(int)
+                for kb in np.unique(kbin):
+                    sel = todo[kbin == kb]
+                    depth_m = float(np.exp((kb + 0.5) * np.log1p(bin_width)))
+                    n = len(sel)
+                    E = E_s[sel]
+                    p = np.sqrt(np.maximum(E * E - M_MU_MEV ** 2 / 1e6, 0.0))
+                    # start positions spread in x and y on z = 0: an XY source
+                    # plane, so the engine's depth axis is z for every muon.
+                    # The bin's muons are numbered 1..n for the engine and
+                    # matched back by that number: a source file's EventIDs
+                    # need not be unique (merged MPI rank files repeated them).
+                    sub = pd.DataFrame(dict(
+                        EventID=np.arange(1, n + 1), x=np.arange(n) * 1.0, y=np.arange(n) * 0.7,
+                        z=0.0, p=p, theta=th_s[sel], phi=ph_s[sel], E=E,
+                        charge=chg[sel], cx=dirs[sel, 0], cy=dirs[sel, 1],
+                        cz=dirs[sel, 2]))
+                    out = run_bin(sub, depth_m)
+                    if out is None or len(out) == 0:
+                        raise RuntimeError(f"{engine}: no transport output for "
+                                           f"{n} muons at {depth_m:.1f} m")
+                    out = out.set_index("EventID").reindex(np.arange(1, n + 1))
+                    ok = (out["alive"] == 1).to_numpy()
+                    czs = np.maximum(np.abs(dirs[sel, 2]), 0.02)
+                    path_eng = depth_m * 100.0 / czs
+                    x_str = sub["x"].to_numpy() + path_eng * dirs[sel, 0]
+                    y_str = sub["y"].to_numpy() + path_eng * dirs[sel, 1]
+                    sc = L[sel] / path_eng
+                    alive[sel] = ok
+                    E_f[sel] = np.where(ok, out["E"].to_numpy(float), 0.0)
+                    d_f[sel] = np.where(ok[:, None], out[["cx", "cy", "cz"]].to_numpy(float),
+                                        dirs[sel])
+                    delta[sel, 0] = np.where(ok, (out["x"].to_numpy(float) - x_str) * sc, 0.0)
+                    delta[sel, 1] = np.where(ok, (out["y"].to_numpy(float) - y_str) * sc, 0.0)
+
+        # ── 3. rows ───────────────────────────────────────────────────────
+        x_f = np.where(alive[:, None], entry + delta, entry)
+        x_f[~hit] = pos[~hit]
+        d_f = d_f / np.maximum(np.linalg.norm(d_f, axis=1), 1e-12)[:, None]
+        df = pd.DataFrame({
+            "EventID": eid, "xs": pos[:, 0], "ys": pos[:, 1], "zs": pos[:, 2],
+            "Es": E_s, "theta_s": th_s, "phi_s": ph_s, "charge": chg,
+            "alive": alive.astype(int),
+            "x": x_f[:, 0], "y": x_f[:, 1], "z": x_f[:, 2],
+            "E": np.where(alive, E_f, 0.0),
+            "cx": d_f[:, 0], "cy": d_f[:, 1], "cz": d_f[:, 2],
+            "theta": np.arccos(np.clip(-d_f[:, 2], -1.0, 1.0)),
+            "phi": np.arctan2(d_f[:, 1], d_f[:, 0]),
+        })
+        result[cid] = df
+
+        name = detector_names.get(cid, f"cell{cid}")
+        if write_phits_dump:
+            os.makedirs(dump_dir, exist_ok=True)
+            with open(os.path.join(dump_dir, f"{name}_hits.dat"), "w") as fh:
+                fh.write(
+                    "# PHITS T-Cross equivalent dump  "
+                    f"detector=cell{cid} ({name})  engine={engine}\n"
+                    "# col: 1=x[cm] 2=y[cm] 3=z[cm] 4=cx 5=cy 6=cz "
+                    "7=E[MeV] 8=weight 9=charge 10=EventID "
+                    "17=theta[rad] 18=phi[rad] 19=OB[g/cm2] 20=path_det[cm]\n")
+                for i in np.where(alive)[0]:
+                    fh.write(
+                        f"{x_f[i, 0]:14.6e} {x_f[i, 1]:14.6e} {x_f[i, 2]:14.6e} "
+                        f"{d_f[i, 0]:10.6f} {d_f[i, 1]:10.6f} {d_f[i, 2]:10.6f} "
+                        f"{(E_f[i] * 1000.0 - M_MU_MEV):14.6e} "
+                        f"1.0 {chg[i]:3d} {eid[i]:10d} "
+                        f"{df['theta'][i]:10.6f} {df['phi'][i]:10.6f} "
+                        f"{X[i]:14.4f} {path_det[i]:12.4f}\n")
+        print(f"  {name} (cell {cid}, {engine}): hit={int(hit.sum()):,} "
+              f"survive={int(alive.sum()):,} of {n_total:,}  "
+              f"({time.time() - t0:.0f} s)", flush=True)
+    return result
+
+
 def write_phits_dump_file(df: "pd.DataFrame", path: str,
                           detector_cell_id: int, geometry_name: str = ""):
     """
@@ -1068,12 +1291,22 @@ def render_detector_cell_selector(geom) -> Optional[int]:
 
     if not selected_labels:
         st.warning("Select at least one detector cell.", icon="⚠️")
+        st.session_state.pop("_csg_det_pos", None)
         return None
 
     selected_ids = [cell_ids[options.index(lbl)] for lbl in selected_labels]
 
     # Store for 3D plot highlighting
     st.session_state["_csg_selected_det_cells"] = selected_ids
+    # Where the overburden preview, the single-ray check and the 3D marker
+    # put the detector: inside the first detector cell (up to 1.3.2 nothing
+    # set this key, so they all traced from the geometry's origin).
+    _first = next(c for c in candidate_cells if c.cell_id == selected_ids[0])
+    _pos = geom.cell_interior_point(_first)
+    if _pos is not None:
+        st.session_state["_csg_det_pos"] = np.asarray(_pos, dtype=float)
+    else:
+        st.session_state.pop("_csg_det_pos", None)
     # Primary detector (used by single-detector run button)
     det_cell_id = selected_ids[0]
 

@@ -209,12 +209,15 @@ PRIVATE_MARKERS = (
 
 
 def tracked_files(tree: Path) -> list[str] | None:
+    """Tracked files plus the untracked ones .gitignore lets through: a new
+    file is published by the next `git add -A`, so it is checked before."""
     try:
-        out = subprocess.run(["git", "-C", str(tree), "ls-files"],
+        out = subprocess.run(["git", "-C", str(tree), "ls-files", "--cached", "--others",
+                              "--exclude-standard"],
                              capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):
         return None
-    return out.splitlines()
+    return sorted(set(out.splitlines()))
 
 
 def check_public_clean(public: Path | None) -> None:
@@ -233,7 +236,8 @@ def check_public_clean(public: Path | None) -> None:
     if hits:
         record(FAIL, "nothing private is published", "; ".join(hits))
     else:
-        record(OK, "nothing private is published", f"{len(files)} tracked files checked")
+        record(OK, "nothing private is published",
+               f"{len(files)} files checked (tracked or about to be)")
 
 
 def check_tree_parity(root: Path, public: Path | None) -> None:

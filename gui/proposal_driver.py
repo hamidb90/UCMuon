@@ -265,7 +265,16 @@ def detect_source_plane(muons):
     ys = np.array([m["ys"] for m in muons])
     zs = np.array([m["zs"] for m in muons])
     stds = [xs.std(), ys.std(), zs.std()]
-    axis = int(np.argmin(stds))
+    if max(stds) < 0.1:
+        # Point-like source (a pencil beam): the spread cannot tell the plane
+        # (argmin of three zeros gave X); use the dominant mean momentum
+        # component, as UCMuon-MC does.
+        pm = np.array([[abs(m["px"]), abs(m["py"]), abs(m["pz"])] for m in muons])
+        axis = int(np.argmax(pm.mean(axis=0)))
+        print("  WARNING: point-like source (no position spread): depth axis taken "
+              "from the dominant momentum component", flush=True)
+    else:
+        axis = int(np.argmin(stds))
     names = {0: "YZ (depth=X)", 1: "XZ (depth=Y)", 2: "XY (depth=Z)"}
     print(f"  Source plane: {names[axis]}  σ(x,y,z)={stds[0]:.1f} {stds[1]:.1f} {stds[2]:.1f} cm",
           flush=True)
@@ -440,7 +449,16 @@ def main():
                     Ef  = e_fin / 1e3          # total energy GeV from PROPOSAL
                     fx  = pf.x
                     fy  = pf.y
-                    fz  = -depth_m * 100.0     # exact plane depth
+                    fz  = pf.z
+                    # Exact scoring plane, depth_m below the start along the
+                    # depth axis (up to 1.3.2 z = -depth for every axis and
+                    # every source position)
+                    if depth_axis == 1:
+                        fy = mu["ys"] - depth_m * 100.0
+                    elif depth_axis == 0:
+                        fx = mu["xs"] - depth_m * 100.0
+                    else:
+                        fz = mu["zs"] - depth_m * 100.0
                     fcx, fcy, fcz = df.x, df.y, df.z
                     fth = math.acos(max(-1.0, min(1.0, -fcz)))
                     fph = math.atan2(fcy, fcx)

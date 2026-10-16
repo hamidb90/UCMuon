@@ -27,8 +27,8 @@ ucmuon_underground_bb         # output_prefix
 
 1                             # mat_type
 #   1 = Standard Rock  (Z=11,   A=22,    rho=2.65 g/cm3, I=136.4 eV, X0=26.54 g/cm2)
-#   2 = Ice            (Z=7.42,  A=14.99, rho=0.917 g/cm3, I=79.7 eV,  X0=36.08 g/cm2)
-#   3 = Water          (Z=7.42,  A=14.99, rho=1.000 g/cm3, I=79.7 eV,  X0=36.08 g/cm2)
+#   2 = Ice            (H2O, Z/A=0.555, rho=0.917 g/cm3, I=79.7 eV, X0=36.08 g/cm2)
+#   3 = Water          (H2O, Z/A=0.555, rho=1.000 g/cm3, I=79.7 eV, X0=36.08 g/cm2)
 #   4 = Concrete       (Z=11.11, A=22.08, rho=2.300 g/cm3, I=135.2 eV, X0=26.70 g/cm2)
 #   5 = Custom         (supply Z, A, rho, I on next 4 lines)
 #

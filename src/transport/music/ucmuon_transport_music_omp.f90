@@ -387,7 +387,21 @@ program ucmuon_transport_music_omp
   ys_var  = sum((in_ys(1:nmuon) - ys_mean)**2) / dble(nmuon)
   zs_var  = sum((in_zs(1:nmuon) - zs_mean)**2) / dble(nmuon)
 
-  if (ys_var <= xs_var .and. ys_var <= zs_var) then
+  if (max(xs_var, ys_var, zs_var) < 1.0d-2) then
+    ! Point-like source (a pencil beam): the position spread cannot tell
+    ! the plane (the tie went to Y); use the dominant momentum component,
+    ! as UCMuon-MC does.
+    if (sum(abs(in_pz(1:nmuon))) >= max(sum(abs(in_px(1:nmuon))), &
+        sum(abs(in_py(1:nmuon))))) then
+      depth_axis = 2
+    else if (sum(abs(in_py(1:nmuon))) >= sum(abs(in_px(1:nmuon)))) then
+      depth_axis = 1
+    else
+      depth_axis = 0
+    end if
+    write(*,'(A,I2,A)') '  WARNING: point-like source (no position spread): depth axis', &
+      depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
+  else if (ys_var <= xs_var .and. ys_var <= zs_var) then
     depth_axis = 1
     write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
   else if (xs_var <= ys_var .and. xs_var <= zs_var) then

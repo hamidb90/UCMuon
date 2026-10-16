@@ -24,6 +24,8 @@
 !
 !   Multiple scattering (Highland formula, PDG 34.3):
 !     theta_0 = (13.6 MeV / (beta*p)) * |z| * sqrt(t/X0) * [1 + 0.038 ln(t/X0)]
+!     accumulated along the path (exact up to t = X0, variance linear in t
+!     beyond, independent of the step size; see transport_bb).
 !     Applied as 3-D rotation about a random azimuth in the plane perp. to d.
 !
 !   Integration: CSDA, fixed 10 g/cm^2 steps along slant path.
@@ -169,8 +171,8 @@ program ucmuon_transport_bb_omp
 
   write(*,*) ' Material type:'
   write(*,*) '   1 = Standard Rock  (Z=11, A=22, rho=2.65 g/cm3, I=136.4 eV)'
-  write(*,*) '   2 = Ice            (Z=7.42, A=14.99, rho=0.917 g/cm3, I=79.7 eV)'
-  write(*,*) '   3 = Water          (Z=7.42, A=14.99, rho=1.000 g/cm3, I=79.7 eV)'
+  write(*,*) '   2 = Ice            (H2O, Z/A=0.555, rho=0.917 g/cm3, I=79.7 eV)'
+  write(*,*) '   3 = Water          (H2O, Z/A=0.555, rho=1.000 g/cm3, I=79.7 eV)'
   write(*,*) '   4 = Concrete       (Z=11.11, A=22.08, rho=2.300 g/cm3, I=135.2 eV)'
   write(*,*) '   5 = Custom'
   write(*,*) '   (an optional density [g/cm3] after the type, e.g. "1 2.71",'
@@ -188,11 +190,14 @@ program ucmuon_transport_bb_omp
       Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
       X0_gcm2=26.54d0; b_rad=3.02d-6
     case(2)  ! Ice
-      Z_eff=7.42d0; A_eff=14.99d0; rho_mat=0.917d0; I_eV=79.7d0
-      X0_gcm2=36.08d0; b_rad=3.40d-6
+      ! H2O: <Z/A> = 10/18.015 = 0.5551 and the PDG 2024 water b at 100 GeV.
+      ! Up to 1.3.2: Z=7.42, A=14.99 (Z/A 0.495) and b = 3.40e-6, 10 % too
+      ! little ionisation in water and ice.
+      Z_eff=10.0d0; A_eff=18.015d0; rho_mat=0.917d0; I_eV=79.7d0
+      X0_gcm2=36.08d0; b_rad=2.28d-6
     case(3)  ! Water
-      Z_eff=7.42d0; A_eff=14.99d0; rho_mat=1.000d0; I_eV=79.7d0
-      X0_gcm2=36.08d0; b_rad=3.40d-6
+      Z_eff=10.0d0; A_eff=18.015d0; rho_mat=1.000d0; I_eV=79.7d0
+      X0_gcm2=36.08d0; b_rad=2.28d-6
     case(4)  ! Concrete
       Z_eff=11.11d0; A_eff=22.08d0; rho_mat=2.300d0; I_eV=135.2d0
       X0_gcm2=26.70d0; b_rad=3.00d-6
@@ -359,7 +364,21 @@ program ucmuon_transport_bb_omp
   ys_var  = sum((in_ys(1:nmuon) - ys_mean)**2) / dble(nmuon)
   zs_var  = sum((in_zs(1:nmuon) - zs_mean)**2) / dble(nmuon)
 
-  if (ys_var <= xs_var .and. ys_var <= zs_var) then
+  if (max(xs_var, ys_var, zs_var) < 1.0d-2) then
+    ! Point-like source (a pencil beam): the position spread cannot tell
+    ! the plane (the tie went to Y); use the dominant momentum component,
+    ! as UCMuon-MC does.
+    if (sum(abs(in_pz(1:nmuon))) >= max(sum(abs(in_px(1:nmuon))), &
+        sum(abs(in_py(1:nmuon))))) then
+      depth_axis = 2
+    else if (sum(abs(in_py(1:nmuon))) >= sum(abs(in_px(1:nmuon)))) then
+      depth_axis = 1
+    else
+      depth_axis = 0
+    end if
+    write(*,'(A,I2,A)') '  WARNING: point-like source (no position spread): depth axis', &
+      depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
+  else if (ys_var <= xs_var .and. ys_var <= zs_var) then
     depth_axis = 1    ! XZ source plane, depth in Y
     write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
   else if (xs_var <= ys_var .and. xs_var <= zs_var) then
@@ -603,7 +622,7 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
   real(8) :: slant_gcm2, ds_gcm2, ds_cm
   real(8) :: gamma_mu, beta2, p_GeV, bg, Tmax, I_GeV
   real(8) :: log_arg, x_dens, delta, dEdX
-  real(8) :: t_X0, theta0
+  real(8) :: t_X0, theta0, ms_S, ms_t, F_old, F_new
   real(8) :: e1x, e1y, e1z, e2x, e2y, e2z, norm
   real(8) :: theta_scat, phi_scat, ct, st, cos_phi, sin_phi
   real(4) :: rr(4)
@@ -616,6 +635,8 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
   nsteps     = max(20, int(slant_gcm2 / STEP_G) + 1)
   ds_gcm2    = slant_gcm2 / dble(nsteps)
   ds_cm      = ds_gcm2 / rho
+  ms_S       = 0.d0      ! sum of dt/(beta*p)^2 along the path [GeV^-2]
+  ms_t       = 0.d0      ! path so far                          [X0]
 
   do istep = 1, nsteps
 
@@ -672,8 +693,14 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
     z = z + cz * ds_cm
 
     !-------------------------------------------------------------------------
-    ! Highland multiple scattering  (PDG 2022, eq. 34.15)
-    ! theta_0 = (13.6 MeV / (beta*p)) * sqrt(t/X0) * (1 + 0.038 ln(t/X0))
+    ! Highland multiple scattering  (PDG 2022, eq. 34.15), accumulated along
+    ! the path: theta_0^2(path) = (13.6 MeV)^2 F(t)^2 sum dt/(beta*p)^2 with
+    ! F = 1 + 0.038 ln(min(t, 1)), t the path in X0; each step adds the
+    ! increase of theta_0^2(path).  Highland applied once up to one X0,
+    ! variance linear in the path beyond, independent of the step size.
+    ! (Up to 1.3.2 Highland was applied per 10 g/cm2 step in quadrature,
+    ! which depends on the step and is systematically too small.)  Same
+    ! model as UCMuon-MC and the Python driver (_ms_theta0).
     !-------------------------------------------------------------------------
     if (ms_enable == 1 .and. X0_gcm2 > 0.d0) then
 
@@ -684,8 +711,13 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
         p_GeV = sqrt(max(0.d0, E*E - MMUON*MMUON))
         beta2 = max(1.d-12, 1.d0 - (MMUON/E)**2)
 
-        theta0 = 13.6d-3 / (sqrt(beta2) * p_GeV) * sqrt(t_X0) * &
-                 (1.d0 + 0.038d0 * log(t_X0))
+        F_old = 0.d0
+        if (ms_t > 0.d0) F_old = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t, 1.d0)))
+        F_new = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t + t_X0, 1.d0)))
+        theta0 = 13.6d-3 * sqrt(max(0.d0, &
+                 (ms_S + t_X0/(beta2*p_GeV*p_GeV))*F_new**2 - ms_S*F_old**2))
+        ms_S = ms_S + t_X0/(beta2*p_GeV*p_GeV)
+        ms_t = ms_t + t_X0
 
         if (theta0 > 0.d0) then
           ! Polar deflection is Rayleigh(theta0): Highland theta0 is the RMS

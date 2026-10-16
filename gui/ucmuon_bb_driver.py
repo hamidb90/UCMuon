@@ -16,7 +16,8 @@ Physics
 -------
   Continuous energy loss from PDG 2024 CSDA range table (direct dE/dx column,
   56 entries).  Optional Groom 2001 table for comparison.
-  No stochastic fluctuations (pure CSDA).  Optional Highland (1975) MCS.
+  No stochastic fluctuations (pure CSDA).  Optional Highland (1975) MCS,
+  accumulated along the path (as UCMuon-MC, _ms_theta0).
 
 Stdin (drop-in for ucmuon_transport_bb_omp — same parameter order)
 -------------------------------------------------------------------
@@ -49,7 +50,8 @@ if str(_HERE) not in sys.path:
 from ucmuon_stochastic_driver import (
     _T_FINE, _DEDX_STD, _R_FINE,                    # Groom 2001 fine grid
     _PDG24_T_FINE, _PDG24_DEDX_FINE, _PDG24_R_FINE, # PDG 2024 fine grid
-    _read_input, _write_output,
+    _PROC_T, _PROC_TABLES,                          # PDG 2024 per-process tables
+    _read_input, _write_output, _ms_theta0,
     M_MU, M_MU_GEV, REPORT_EVERY,
 )
 
@@ -62,13 +64,45 @@ from ucmuon_stochastic_driver import (
 _BB_MAT = {
     1: {"name": "Standard Rock", "Z": 11.0,  "A": 22.0,  "rho": 2.65,
         "I_eV": 136.4, "X0_gcm2": 26.54, "a_scale": 1.000},
-    2: {"name": "Ice",           "Z": 7.42,  "A": 14.99, "rho": 0.917,
-        "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.046},   # as water (PDG); 33.10 up to 1.3.2
-    3: {"name": "Water",         "Z": 7.42,  "A": 14.99, "rho": 1.000,
-        "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.046},
+    # Ice and water use their own PDG 2024 tables ("proc"). Up to 1.3.2 they
+    # rescaled the rock table by 1.046 (Z/A 0.523; water's is 0.555, and its
+    # radiative loss is 25 % below rock's), so they lost 5 % too little energy.
+    2: {"name": "Ice",           "Z": 10.0,  "A": 18.015, "rho": 0.917,
+        "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.110, "proc": "ice"},
+    3: {"name": "Water",         "Z": 10.0,  "A": 18.015, "rho": 1.000,
+        "I_eV":  79.7, "X0_gcm2": 36.08, "a_scale": 1.110, "proc": "water"},
     4: {"name": "Concrete",      "Z": 11.11, "A": 22.08, "rho": 2.300,
-        "I_eV": 135.2, "X0_gcm2": 26.70, "a_scale": 1.001},
+        "I_eV": 135.2, "X0_gcm2": 26.70, "a_scale": 1.001,
+        "b_scale": (11.11**2 / 22.08) / (121.0 / 22.0)},
 }
+
+
+def _material_tables(mat, range_table='pdg2024'):
+    """(T [MeV], dE/dx [MeV cm2/g], CSDA range [g/cm2]) on a 1000-point grid.
+
+    Standard Rock: the PDG 2024 (or Groom 2001) table itself. Ice and water:
+    their PDG 2024 per-process tables. Other materials: the rock per-process
+    table with ionisation scaled by a_scale = (Z/A)/0.5 and the radiative
+    losses by b_scale ~ (Z^2/A)/(Z^2/A)_rock, as the Fortran engine and
+    UCMuon-MC do; the range is integrated from that stopping power, so it
+    shortens as the stopping power grows (up to 1.3.2 the analytical path and
+    the range cut multiplied the rock range by a_scale instead).
+    """
+    proc = mat.get("proc")
+    s_ion = 1.0 if proc else mat.get("a_scale", 1.0)
+    s_rad = 1.0 if proc else mat.get("b_scale", 1.0)
+    if proc is None and s_ion == 1.0 and s_rad == 1.0:
+        if range_table == 'pdg2024':
+            return _PDG24_T_FINE, _PDG24_DEDX_FINE, _PDG24_R_FINE
+        return _T_FINE, _DEDX_STD, _R_FINE
+    tab = _PROC_TABLES[proc or "rock"]
+    dedx = tab["ION"] * s_ion + (tab["BREMS"] + tab["PAIR"] + tab["NUCL"]) * s_rad
+    t_f = np.logspace(np.log10(_PROC_T[0]), np.log10(_PROC_T[-1]), 1000)
+    dedx_f = np.exp(np.interp(np.log(t_f), np.log(_PROC_T), np.log(dedx)))
+    inv = 1.0 / dedx_f
+    r_f = tab["R10"] / s_ion + np.concatenate(
+        ([0.0], np.cumsum(0.5 * (inv[1:] + inv[:-1]) * np.diff(t_f))))
+    return t_f, dedx_f, r_f
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -98,12 +132,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     if rng is None:
         rng = np.random.default_rng()
 
-    if range_table == 'pdg2024':
-        t_tab, dedx_tab, r_tab = _PDG24_T_FINE, _PDG24_DEDX_FINE, _PDG24_R_FINE
-    else:
-        t_tab, dedx_tab, r_tab = _T_FINE, _DEDX_STD, _R_FINE
+    t_tab, dedx_tab, r_tab = _material_tables(mat, range_table)
 
-    a_scale  = mat["a_scale"]
     rho      = mat["rho"]
     X0_gcm2  = mat["X0_gcm2"]
 
@@ -127,11 +157,11 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     # ── Analytical CSDA (MS = OFF) ────────────────────────────────────────────
     # Exact: no Euler error, no step-size tuning, zero loops.
     if not ms_enable:
-        R0         = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab) * a_scale
+        R0         = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab)
         alive_bool = R0 > slant_gcm2
 
         R_exit = np.where(alive_bool, R0 - slant_gcm2, 0.0)
-        R_std  = np.clip(R_exit / a_scale, r_tab[0], r_tab[-1])
+        R_std  = np.clip(R_exit, r_tab[0], r_tab[-1])
         E_cur  = np.where(alive_bool, np.interp(R_std, r_tab, t_tab), 0.0)
 
         # Straight-line position: full slant for alive; fractional for stopped.
@@ -155,7 +185,7 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
         # CSDA range cut: instantly kill muons with insufficient range.
         # Range-cut muons never enter the stepping loop — assign their CSDA
         # stopping displacement so z_stop reports a physical depth, not 0.
-        R0 = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab) * a_scale
+        R0 = np.interp(np.clip(E_cur, t_tab[0], t_tab[-1]), t_tab, r_tab)
         range_cut = R0 < slant_gcm2
         alive[range_cut] = False
         x_acc[range_cut] = cx_c[range_cut] * (R0[range_cut] / rho)
@@ -169,6 +199,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
 
         dx            = slant_gcm2 / n_steps   # per-muon step [g/cm²]
         prev_reported = 0
+        ms_S = np.zeros(N)                     # Σ Δt/(βp)² per muon [GeV⁻²]
+        ms_t = np.zeros(N)                     # path per muon       [X0]
 
         for step in range(n_steps):
             if not alive.any():
@@ -187,12 +219,13 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
 
             # CSDA energy loss (vectorized interp on alive muons only)
             dEdX   = np.interp(np.clip(E_i, t_tab[0], t_tab[-1]),
-                               t_tab, dedx_tab) * a_scale
+                               t_tab, dedx_tab)
             E_new  = E_i - dEdX * dx_i
             E_cur[idx]               = np.maximum(E_new, 0.0)
             alive[idx[E_new < E_stop]] = False
 
-            # Highland MCS
+            # Highland MCS, accumulated along the path (step-size
+            # independent; per-step Highland up to 1.3.2, see _ms_theta0)
             la = alive[idx]
             if la.any():
                 oi     = idx[la]
@@ -200,10 +233,8 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
                 # E_ms is the KINETIC energy [MeV]: p^2 = T^2 + 2 T m.
                 p_GeV  = np.sqrt(E_ms**2 + 2.0 * E_ms * M_MU) / 1000.0
                 beta   = p_GeV / np.sqrt(p_GeV**2 + M_MU_GEV**2)
-                t_X0   = dx[oi] / X0_gcm2
-                theta0 = (13.6e-3 / (beta * p_GeV)
-                          * np.sqrt(t_X0)
-                          * (1.0 + 0.038 * np.log(np.maximum(t_X0, 1e-12))))
+                theta0, ms_S[oi], ms_t[oi] = _ms_theta0(
+                    ms_S[oi], ms_t[oi], dx[oi] / X0_gcm2, beta * p_GeV)
 
                 phi_az  = rng.uniform(0.0, 2.0 * np.pi, size=la.sum())
                 # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS
@@ -252,7 +283,9 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
     # ── Exit-state dict ───────────────────────────────────────────────────────
     x_f = muons["x"] + x_acc
     y_f = muons["y"] + y_acc
-    z_f = (muons["z"] + z_acc) if depth_axis != 2 else np.full(N, -d_cm)
+    # XY source: the exit plane is the depth below each muon's start (as the
+    # Fortran engines, MUSIC and PUMAS write it), not z = -depth.
+    z_f = (muons["z"] + z_acc) if depth_axis != 2 else muons["z"] - d_cm
     z_stop  = np.where(alive == 0, muons["z"] + z_acc, z_f)
     x_stop  = np.where(alive == 0, muons["x"] + x_acc, x_f)
     y_stop  = np.where(alive == 0, muons["y"] + y_acc, y_f)
@@ -303,7 +336,8 @@ def main():
                    (Z_eff * (Z_eff + 1.0) * np.log(287.0 / np.sqrt(Z_eff))))
         mat  = {"name": "Custom", "Z": Z_eff, "A": A_eff, "rho": rho_cst,
                 "I_eV": I_eV, "X0_gcm2": X0_gcm2,
-                "a_scale": (Z_eff / A_eff) / 0.5}
+                "a_scale": (Z_eff / A_eff) / 0.5,
+                "b_scale": (Z_eff**2 / A_eff) / (121.0 / 22.0)}
         base = 10
     else:
         mat  = dict(_BB_MAT.get(mat_type, _BB_MAT[1]))

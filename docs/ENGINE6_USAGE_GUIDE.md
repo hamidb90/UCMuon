@@ -207,8 +207,11 @@ Grid settings
   Zenith bins  (n_ze):  18 (5° steps up to 90°; ze_max/18 in general). Use 36 for publication quality.
   Max zenith (°):       75° is recommended. Beyond 80° the flat-Earth approximation
                         degrades and computation slows significantly.
-  Ray-trace step (m):   50 m gives good accuracy. Use 100 m for fast preview,
-                        20 m for high-precision near-horizontal directions.
+  Ray-trace step (m):   the largest sampling step. The tracer refines it to a
+                        quarter of the DEM pixel (finer next to the detector)
+                        and locates every rock boundary by bisection, so the
+                        map does not depend on it (up to 1.3.2 it counted whole
+                        steps, which biased short and underground paths low).
 
 Approximate runtimes of the command-line driver (laptop, 2026):
   Preview  (n_az=36, n_ze=9,  step=100m): ~1 s
@@ -377,9 +380,13 @@ KNOWN LIMITATIONS AND FUTURE IMPROVEMENTS
    density stratification (e.g. ice over rock, sediments over basement),
    a future multi-layer extension would improve accuracy.
 
-3. DEM resolution vs. ray-trace step
-   The ray-trace step should be ≥ 2× the DEM pixel size (typically 30m for
-   SRTM GL1). Using step_m < 15m with a 30m DEM gains nothing and is slow.
+3. DEM resolution
+   The DEM is interpolated bilinearly between pixel centres (a continuous
+   surface) and each ray is sampled at a quarter of the pixel, so features
+   smaller than the DEM pixel (typically 30 m for SRTM GL1) are not resolved.
+   A DEM in a projected CRS (UTM, Lambert) must be a GeoTIFF that records its
+   CRS, or an .asc with its .prj; it is reprojected to longitude/latitude on
+   loading. XYZ files must be in longitude/latitude.
 
 4. No scattering through terrain
    The engine uses the backward CSDA flux formula which ignores Molière

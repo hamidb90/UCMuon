@@ -45,7 +45,7 @@ UCMuon/                              <- project root; always run sbatch from her
 |   |-- music-double-diff-water.dat
 |   `-- EXPACS/parma/input/          <- standalone PARMA v4.10 data files
 |
-|-- logs/                            <- SLURM .out/.err files (auto-created)
+|-- logs/                            <- SLURM .out/.err files (create once, step 4)
 |
 |-- output_<JOBID>/                  <- one folder per job (auto-created)
 |   |-- ucmuon_selected.dat          <- generator: detector-aimed muons
@@ -95,6 +95,16 @@ make ucmuon_to_phits        # no MPI needed; fast build
 Place `music-double-diff-rock.dat` in `data/` (from the MUSIC distribution).
 The energy-loss tables (`music-eloss-rock.dat`, `music-cross-sections-rock.dat`)
 are generated automatically on the first run with `init_tables=0`.
+
+### 4. Log directory
+
+```bash
+mkdir -p logs
+```
+
+SLURM opens the `--output`/`--error` files in `logs/` before the job script
+starts, so the scripts' own `mkdir -p logs` comes too late for the first job of
+a fresh clone: without the directory that job fails with no log at all.
 
 ---
 
@@ -227,7 +237,8 @@ Both engines produce identical 18-column format. Compare survival rates directly
 ### Automatic (runs after every job)
 
 Both SLURM scripts automatically call `ucmuon_to_phits` after merging.
-No manual step needed.
+No manual step needed. For a spectrum-8 run (cosmic e±) the generator script
+passes the converter's `electrons` option itself.
 
 ### Why post-processing is better than in-loop PHITS writing
 
@@ -257,7 +268,14 @@ Always use the compiled Fortran converter for production files.
 # Transport output -> PHITS (alive muons only):
 ./bin/ucmuon_to_phits transport < output_6307xxx/ucmuon_underground.dat \
                             > output_6307xxx/ucmuon_underground_phits.dat
+
+# Spectrum-8 generator output (cosmic e+-): kf +-11 and the electron mass
+./bin/ucmuon_to_phits gen electrons < output_6307xxx/ucmuon_surface.dat \
+                                    > output_6307xxx/ucmuon_surface_phits.dat
 ```
+
+A generator file has no particle column: without `electrons` the converter
+writes muons, and it stops (exit 2) when a row's own E and p say otherwise.
 
 Progress is printed to stderr:
 ```

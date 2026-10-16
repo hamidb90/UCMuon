@@ -37,13 +37,13 @@ file does not matter.
 ## What the run prints
 
 ```
-[UCMuGen] rate into the detector : 325.517 Hz
-[UCMuGen] 1e6 muons correspond to: 3072.03 s of live time
+[UCMuGen] rate into the detector : 325.372 Hz
+[UCMuGen] 1e6 muons correspond to: 3073.41 s of live time
 ---------------- UCMuGen example ----------------
   generated muons        : 100000
   muons entering the plate: 99913  (99.913 %)
-  rate into the detector : 325.517 Hz
-  live time of this run  : 307.203 s
+  rate into the detector : 325.372 Hz
+  live time of this run  : 307.341 s
   measured hit rate      : 325.234 Hz
 -------------------------------------------------
 ```

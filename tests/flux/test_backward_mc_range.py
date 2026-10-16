@@ -2,16 +2,17 @@
 """The backward MC says when its range table cuts a flux, instead of a silent zero.
 
 gui/ucmuon_backward_mc.py maps a detector energy back to the surface through a
-CSDA range table that ends at 2 TeV (3616 m w.e. of standard rock). Muons whose
-surface energy would be beyond it are left out, so under thick rock the flux is
-a lower bound, and zero once every detector energy is beyond the table. Up to
-v1.1.2 that was silent. This checks, for Guan (spectrum 3), θ = 60°:
+CSDA range table that ends at 10 TeV (6889 m w.e. of standard rock; 2 TeV and
+3616 m w.e. up to 1.3.2). Muons whose surface energy would be beyond it are
+left out, so under thick rock the flux is a lower bound, and zero once every
+detector energy is beyond the table. Up to v1.1.2 that was silent. This
+checks, for Guan (spectrum 3), θ = 60°:
 
-  - no RangeTableWarning where the cut is below 1 % (500 and 1000 m w.e.);
-  - a warning with the estimated fraction at 2000 and 3000 m w.e., which
-    matches the fraction measured by continuing the table (7 % and 37 %,
-    ±5 points), and a flux that is unchanged by the warning;
-  - a warning that says "0" where the flux is exactly zero (4000 m w.e.);
+  - no RangeTableWarning where the cut is below 1 % (1000 and 3000 m w.e.;
+    with the 2 TeV table 3000 m w.e. lost 37 %);
+  - a warning with the estimated fraction at 5000 and 6000 m w.e. (7 % and
+    30 %, ±5 points), and a flux that is unchanged by the warning;
+  - a warning that says "0" where the flux is exactly zero (7000 m w.e.);
   - backward_mc_flux (the cone integral of the backward-MC tab) carries the
     note in info["range_note"] and warns; a shallow run carries none;
   - collect_range_warnings() gathers them without printing, passes other
@@ -56,11 +57,11 @@ def flux_and_warnings(X, theta_deg=60.0, E_max=2500.0):
 
 def main() -> int:
     print("directional_flux (Guan, θ = 60°, 1-2500 GeV)")
-    for X in (5e4, 1e5):
+    for X in (1e5, 3e5):
         f, w = flux_and_warnings(X)
         check(f > 0 and not w, f"{X/100:.0f} m w.e.: flux {f:.3e}, no warning")
 
-    for X, expect in ((2e5, 0.07), (3e5, 0.37)):
+    for X, expect in ((5e5, 0.07), (6e5, 0.30)):
         f, w = flux_and_warnings(X)
         frac = w[0].message.fraction if w else float("nan")
         check(len(w) == 1 and abs(frac - expect) < 0.05 and "lower bound" in str(w[0].message),
@@ -71,9 +72,9 @@ def main() -> int:
                                       E_max_GeV=2500.0, n_E=60, mode=1)
         check(f == f2, f"{X/100:.0f} m w.e.: the flux returned does not depend on the warning filter")
 
-    f, w = flux_and_warnings(4e5)
+    f, w = flux_and_warnings(7e5)
     check(f == 0.0 and len(w) == 1 and w[0].message.zero and "is 0" in str(w[0].message),
-          "4000 m w.e.: flux 0 and a warning that says so")
+          "7000 m w.e.: flux 0 and a warning that says so")
 
     print("\nbackward_mc_flux")
     for depth, want in ((100.0, False), (1600.0, True)):
@@ -92,7 +93,7 @@ def main() -> int:
     with warnings.catch_warnings(record=True) as outer:
         warnings.simplefilter("always")
         with bmc.collect_range_warnings() as got:
-            for X in (5e4, 3e5, 4e5):
+            for X in (5e4, 6e5, 7e5):
                 bmc.directional_flux(X, math.radians(60.0), 3, E_min_GeV=1.0,
                                      E_max_GeV=2500.0, n_E=60, mode=1)
             warnings.warn("an unrelated warning", UserWarning)
@@ -106,7 +107,7 @@ def main() -> int:
 
     print("\nterrain engine: compute_flux_map")
     ze = np.array([10.0, 30.0, 60.0])
-    ob = np.array([[0.0, 1e5, 4e5]])               # open sky, 1000 m w.e., 4000 m w.e.
+    ob = np.array([[0.0, 1e5, 7e5]])               # open sky, 1000 m w.e., 7000 m w.e.
     sky = np.array([[True, False, False]])
     out = io.StringIO()
     with contextlib.redirect_stdout(out), warnings.catch_warnings(record=True):

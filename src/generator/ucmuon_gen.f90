@@ -27,6 +27,10 @@
 !       ucmuon_phits_RRRRR.dat
 !   • The SLURM script (run_ucmuon_gen.sh) concatenates these after the job.
 !   • The column header is written ONLY by rank 0 (so concatenation is clean).
+!   • EventIDs are unique across ranks: the selected file is numbered 1..N
+!     over the ranks in rank order (as the OpenMP generator numbers it), the
+!     surface file interleaves the ranks' try numbers, (try-1)*nranks+rank+1.
+!     Up to 1.3.2 every rank started at 1, so merged files repeated IDs.
 !
 ! Compatibility note
 ! ──────────────────
@@ -173,6 +177,7 @@ program ucmuon_gen
   integer  :: j, id, kk
   integer(8)  :: ntry           ! per-rank attempts
   integer(8)  :: i              ! per-rank accepted count
+  integer(8)  :: id_offset      ! accepted muons of the lower ranks (EventIDs)
   integer     :: iranlux
   integer     :: use_defaults
   ! Blank-initialised on every rank, so that a short broadcast can only ever
@@ -195,7 +200,7 @@ program ucmuon_gen
   real(8) :: parma_env = 1.0d0              ! PARMA mode-6 acceptance envelope
   real(8) :: surf_rate = -1.0d0             ! R [s^-1] through the source surface
   integer :: ibin, k                ! k = inner energy loop index (init only)
-  real(4) :: rnd4
+  real(8) :: rnd4
 
   !---------------------------------------------------------------------------
   ! OMP-specific
@@ -268,7 +273,6 @@ program ucmuon_gen
       write(*,*) ' --- [1/7] Energy Range ---'
       write(*,*) ' Min muon energy [GeV]  (e.g. 100):'
       read(*,*) e_min
-      if (e_min < 1.0d0) e_min = 1.0d0
       write(*,*) ' Max muon energy [GeV]  (e.g. 2500):'
       read(*,*) e_max
       write(*,*)
@@ -279,8 +283,11 @@ program ucmuon_gen
       write(*,*) '   3 = PARMA / EXPACS  (location & date-aware)'
       write(*,*) '   4 = Guan et al. (2015)  Modified Gaisser, arXiv:1509.06176'
       write(*,*) '   5 = Frosin et al. (2025)  J.Phys.G 52, 035002'
+      write(*,*) '   6 = Gaisser (1990), Guan Eq. 3 with a = 0, b = 1'
+      write(*,*) '   7 = Reyna (2006)  cos^3(theta) I_V(p cos(theta))'
+      write(*,*) '   8 = Cosmic electrons  dN/dE ~ E^-3.0 (no absolute normalisation)'
       read(*,*) spectrum_mode_in
-      if (spectrum_mode_in < 1 .or. spectrum_mode_in > 7) spectrum_mode_in = 1
+      if (spectrum_mode_in < 1 .or. spectrum_mode_in > 8) spectrum_mode_in = 1
       write(*,*)
 
       if (spectrum_mode_in == 3) then
@@ -504,7 +511,7 @@ program ucmuon_gen
       ! latest earlier day that has neutron-monitor data instead, and say so.
       if (parma_year >= 1951 .and. (parma_ic == 2 .or. parma_ic == 4)) then
         wy = parma_year; wm = parma_month; wd = parma_day
-        do k_back = 1, 3700
+        do k_back = 1, 40000   ! ~110 years: reaches the table from any GUI date (<= 2050)
           wd = wd - 1
           if (wd < 1) then
             wd = 31; wm = wm - 1
@@ -755,12 +762,18 @@ program ucmuon_gen
   write_surface = 1
   if (use_detector == 1 .and. save_all == 0) write_surface = 0
 
-  if (e_min <= MUON_MASS) then
-    if (my_rank == 0) write(*,*) ' ERROR: E_min must be > 0.106 GeV. Stopping.'
-    call MPI_Abort(MPI_COMM_WORLD, 1, ierr)
+  if (spectrum_mode_in == 8) then
+    if (e_min <= ELECTRON_MASS) e_min = ELECTRON_MASS * 1.01d0
+    p_min = sqrt(max(e_min**2 - ELECTRON_MASS**2, 0.0d0))
+    p_max = sqrt(max(e_max**2 - ELECTRON_MASS**2, 0.0d0))
+  else
+    if (e_min <= MUON_MASS) then
+      if (my_rank == 0) write(*,*) ' ERROR: E_min must be > 0.106 GeV. Stopping.'
+      call MPI_Abort(MPI_COMM_WORLD, 1, ierr)
+    end if
+    p_min       = sqrt(e_min**2 - MUON_MASS**2)
+    p_max       = sqrt(e_max**2 - MUON_MASS**2)
   end if
-  p_min       = sqrt(e_min**2 - MUON_MASS**2)
-  p_max       = sqrt(e_max**2 - MUON_MASS**2)
   ! --- Derived quantities per source mode ---
   src_w_cm       = src_w_m * 100.0d0
   hemi_radius_cm = hemi_radius_m * 100.0d0
@@ -809,6 +822,10 @@ program ucmuon_gen
   local_nmuons = int(nmuons, 8) / int(nranks, 8)
   ! Rank 0 absorbs the remainder so that sum(local_nmuons) == nmuons exactly.
   if (my_rank == 0) local_nmuons = local_nmuons + mod(int(nmuons, 8), int(nranks, 8))
+  ! Rank r > 0 follows rank 0 (floor + remainder) and r-1 ranks of floor each.
+  id_offset = 0_8
+  if (my_rank > 0) id_offset = int(my_rank, 8) * (int(nmuons, 8) / int(nranks, 8)) &
+                               + mod(int(nmuons, 8), int(nranks, 8))
 
   !===========================================================================
   ! CONFIGURATION SUMMARY  (rank 0 only)
@@ -866,12 +883,18 @@ program ucmuon_gen
       write(*,'(A,F9.2,A)') '  Hemi centre Z:  ', hemi_cz_m,     ' m'
     end if
     ! Altitude correction — Cecchini & Spurio (2012) §3
+    ! I(H) = I(0) exp(+H/L(p)), L(p) = 4900 + 750 p [m]. The paper prints
+    ! exp(-H/L(p)); the flux rises with altitude, so + is right. Do not "fix" it.
     if (source_mode == 3) then
       alt_z_m = hemi_cz_m
     else
       alt_z_m = src_w_m
     end if
-    alt_p_avg = sqrt(max(e_min, 0.106d0)**2 - 0.10566d0**2)
+    if (spectrum_mode_in == 8) then
+      alt_p_avg = p_min
+    else
+      alt_p_avg = sqrt(max(e_min, 0.106d0)**2 - 0.10566d0**2)
+    end if
     alt_L_p   = 4900.0d0 + 750.0d0 * alt_p_avg
     if (alt_z_m > 0.0d0 .and. alt_z_m < 1000.0d0) then
       alt_corr = exp(alt_z_m / alt_L_p)
@@ -1203,7 +1226,11 @@ program ucmuon_gen
     !==========================================================================
     ! DERIVED KINEMATICS
     !==========================================================================
-    momentum = sqrt(emu**2 - MUON_MASS**2)
+    if (is_electron_mode()) then
+      momentum = sqrt(max(emu**2 - ELECTRON_MASS**2, 0.0d0))
+    else
+      momentum = sqrt(emu**2 - MUON_MASS**2)
+    end if
     px = momentum * cx
     py = momentum * cy
     pz = momentum * cz
@@ -1242,15 +1269,30 @@ program ucmuon_gen
     my_ntry = ntry
     !$OMP END ATOMIC
 
+    ! No straight ray from the source reaching any detector makes this loop
+    ! run forever without a word: say so at 1e7, 1e8 and 1e9 tries.
+    if (use_detector == 1 .and. i == 0_8) then
+      if (my_ntry == 10000000_8 .or. my_ntry == 100000000_8 .or. &
+          my_ntry == 1000000000_8) then
+        write(*,'(A,I0,A)') '  WARNING: ', my_ntry, &
+          ' muons tried and none has hit a detector yet. Check the detector'
+        write(*,'(A)') '           position and size, the source size and theta_max.'
+        flush(6)
+      end if
+    end if
+
     !==========================================================================
-    ! WRITE SURFACE FILE
+    ! WRITE SURFACE FILE: here only with the detector filter on (all tries);
+    ! without it the row is written inside c_acc, gated by i < local_nmuons,
+    ! so the file holds exactly this rank's share (as the OpenMP generator).
     !==========================================================================
-    if (write_surface == 1) then
+    if (write_surface == 1 .and. use_detector == 1) then
       !$OMP CRITICAL(c_surf)
       write(20,'(I10,1X,F13.4,1X,F13.4,1X,F13.4,1X,'// &
                 'F13.6,1X,F13.6,1X,F13.6,1X,F13.6,1X,'// &
                 'F13.9,1X,F13.9,1X,F13.6,1X,I4,1X,I2,1X,I8)') &
-            my_ntry, x, y, z, momentum, px, py, pz, &
+            (my_ntry - 1_8) * int(nranks, 8) + int(my_rank, 8) + 1_8, &
+            x, y, z, momentum, px, py, pz, &
             theta, phi, emu, muon_charge, hit_flag, det_mask
       !$OMP END CRITICAL(c_surf)
     end if
@@ -1264,14 +1306,28 @@ program ucmuon_gen
     !$OMP CRITICAL(c_acc)
     if (i < local_nmuons) then
       i  = i + 1_8
-      kf = merge(-13, 13, muon_charge == 1)
-      ekin_MeV = (emu - MUON_MASS) * 1000.0d0
+      if (is_electron_mode()) then
+        kf       = merge(-11, 11, muon_charge == 1)
+        ekin_MeV = (emu - ELECTRON_MASS) * 1000.0d0
+      else
+        kf       = merge(-13, 13, muon_charge == 1)
+        ekin_MeV = (emu - MUON_MASS) * 1000.0d0
+      end if
+
+      if (write_surface == 1 .and. use_detector == 0) then
+        write(20,'(I10,1X,F13.4,1X,F13.4,1X,F13.4,1X,'// &
+                  'F13.6,1X,F13.6,1X,F13.6,1X,F13.6,1X,'// &
+                  'F13.9,1X,F13.9,1X,F13.6,1X,I4,1X,I2,1X,I8)') &
+              (my_ntry - 1_8) * int(nranks, 8) + int(my_rank, 8) + 1_8, &
+              x, y, z, momentum, px, py, pz, &
+              theta, phi, emu, muon_charge, hit_flag, det_mask
+      end if
 
       if (use_detector == 1) then
         write(21,'(I10,1X,F13.4,1X,F13.4,1X,F13.4,1X,'// &
                   'F13.6,1X,F13.6,1X,F13.6,1X,F13.6,1X,'// &
                   'F13.9,1X,F13.9,1X,F13.6,1X,I4,1X,I8)') &
-              i, x, y, z, momentum, px, py, pz, &
+              id_offset + i, x, y, z, momentum, px, py, pz, &
               theta, phi, emu, muon_charge, det_mask
       end if
 
@@ -1303,6 +1359,10 @@ program ucmuon_gen
   !===========================================================================
   ! GLOBAL STATISTICS — MPI_Reduce to rank 0
   !===========================================================================
+  ! Without the filter every try is kept; threads passing the non-atomic
+  ! exit check together can count a few extra tries (as in the OpenMP one).
+  if (use_detector == 0) ntry = i
+
   call MPI_Barrier(MPI_COMM_WORLD, ierr)
   call MPI_Reduce(i,    i_global,    1, MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
   call MPI_Reduce(ntry, ntry_global, 1, MPI_INTEGER8, MPI_SUM, 0, MPI_COMM_WORLD, ierr)
@@ -1342,7 +1402,7 @@ contains
     real(8), intent(in)  :: r_cm, lx_cm, ly_cm, sz_cm
     real(8), intent(out) :: xo, yo, zo
     real(8) :: r1, r2, r3, rr, ang, pol, lu, lv
-    real(4) :: s1, s2, s3
+    real(8) :: s1, s2, s3
     call par_ranlux(s1);  r1 = dble(s1)
     call par_ranlux(s2);  r2 = dble(s2)
     if (smode == 1) then
@@ -1496,7 +1556,7 @@ contains
   subroutine parma_generate_joint(xo, yo, zo, eo, dxo, dyo, dzo, qo)
     real(8), intent(out) :: xo, yo, zo, eo, dxo, dyo, dzo
     integer, intent(out) :: qo
-    real(4) :: r4
+    real(8) :: r4
     real(8) :: r, e_mev, c, s, ph, nx, ny, nz, proj, w, cmin
     cmin = cos(theta_max)
     do

@@ -9,6 +9,12 @@
 ! -----
 !   ./ucmuon_to_phits gen       < ucmuon_selected.dat   > output_phits.dat
 !   ./ucmuon_to_phits transport < ucmuon_underground.dat > output_phits.dat
+!   ./ucmuon_to_phits gen electrons < ucmuon_surface.dat > output_phits.dat
+!
+!   "electrons": the input is a spectrum-8 (cosmic e+-) generator file, written
+!   with kf +-11 and the electron mass. A generator file has no particle column,
+!   so this has to be said; a row whose own E and p contradict the particle
+!   being written stops the run (exit code 2).
 !
 ! Or via the SLURM scripts (called automatically after each job).
 !
@@ -22,7 +28,7 @@
 !   10 columns per muon, D-exponent notation (Fortran 1pd24.15):
 !     kf  x[cm]  y[cm]  z[cm]  u  v  w  Ekin[MeV]  wt  time[ns]
 !
-!   kf codes (PDG): mu- = 13,  mu+ = -13
+!   kf codes (PDG): mu- = 13,  mu+ = -13   (electrons: e- = 11,  e+ = -11)
 !
 !   Use in PHITS input:
 !     [Source]
@@ -40,9 +46,12 @@ program ucmuon_to_phits
   implicit none
 
   real(8), parameter :: MMUON_GEV = 0.105658370d0
+  real(8), parameter :: MELEC_GEV = 0.51099895d-3
   real(8), parameter :: GEV_TO_MEV = 1000.0d0
 
-  character(16)  :: mode_arg
+  character(16)  :: mode_arg, species_arg
+  logical        :: electrons
+  real(8)        :: mass_gev, m_row
   character(512) :: linebuf
   integer :: ios, ncols, nwritten, nskipped
 
@@ -63,7 +72,7 @@ program ucmuon_to_phits
 
   !--- Read mode argument -------------------------------------------------------
   if (command_argument_count() < 1) then
-    write(0,*) 'Usage: ucmuon_to_phits gen|transport < input.dat > output.dat'
+    write(0,*) 'Usage: ucmuon_to_phits gen|transport [electrons] < input.dat > output.dat'
     stop 1
   end if
   call get_command_argument(1, mode_arg)
@@ -73,6 +82,21 @@ program ucmuon_to_phits
     write(0,*) 'ERROR: mode must be "gen" or "transport", got: ', trim(mode_arg)
     stop 1
   end if
+
+  electrons = .false.
+  if (command_argument_count() >= 2) then
+    call get_command_argument(2, species_arg)
+    if (trim(adjustl(species_arg)) /= 'electrons') then
+      write(0,*) 'ERROR: the second argument can only be "electrons", got: ', trim(species_arg)
+      stop 1
+    end if
+    if (trim(mode_arg) == 'transport') then
+      write(0,*) 'ERROR: transport output holds muons only; "electrons" is for generator files'
+      stop 1
+    end if
+    electrons = .true.
+  end if
+  mass_gev = merge(MELEC_GEV, MMUON_GEV, electrons)
 
   nwritten = 0
   nskipped = 0
@@ -135,11 +159,32 @@ program ucmuon_to_phits
         u = u/norm;  v = v/norm;  w = w/norm
       end if
 
-      ! PDG kf: mu+ = -13, mu- = +13
-      kf = merge(-13, 13, charge_g == 1)
+      ! The row's own E and p must say it is the particle written. Below 20 GeV
+      ! the file's six decimals give the mass to better than 1 %, and a muon
+      ! (0.106 GeV) and an electron (0.0005 GeV) are far apart.
+      if (e_g < 20.0d0) then
+        m_row = sqrt(max(e_g*e_g - p_g*p_g, 0.0d0))
+        if (electrons .neqv. (m_row < 0.05d0)) then
+          if (electrons) then
+            write(0,'(A,I0,A,F8.4,A)') ' ERROR: event ', id_g, ': E and p give a mass of ', &
+              m_row, ' GeV, a muon, not an electron. Drop the "electrons" argument.'
+          else
+            write(0,'(A,I0,A,F8.4,A)') ' ERROR: event ', id_g, ': E and p give a mass of ', &
+              m_row, ' GeV, not a muon: a spectrum-8 (cosmic e+-) file? Add "electrons".'
+          end if
+          stop 2
+        end if
+      end if
+
+      ! PDG kf: mu+ = -13, mu- = +13 (e+ = -11, e- = +11)
+      if (electrons) then
+        kf = merge(-11, 11, charge_g == 1)
+      else
+        kf = merge(-13, 13, charge_g == 1)
+      end if
 
       ! Kinetic energy in MeV
-      ekin_mev = max(0.0d0, (e_g - MMUON_GEV) * GEV_TO_MEV)
+      ekin_mev = max(0.0d0, (e_g - mass_gev) * GEV_TO_MEV)
 
       ! Write PHITS record
       write(*, '(10(1pd24.15))') dble(kf), x_g, y_g, z_g, &

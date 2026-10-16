@@ -10,6 +10,7 @@ output (ucmuon_underground.dat).
 Usage
 -----
   python3 ucmuon_to_phits.py <input.dat> [output.dat] [--mode gen|transport|auto]
+                             [--electrons]
 
   mode=auto       (default) picks gen or transport from the column count
   mode=gen        reads ucmuon_selected.dat / ucmuon_surface.dat
@@ -19,12 +20,17 @@ Usage
   mode=transport  reads ucmuon_underground.dat (18-col transport output)
                   → uses underground position and direction, alive==1 only
 
+  --electrons     the input is a spectrum-8 (cosmic e±) generator file:
+                  kf ±11 and the electron mass. A generator file has no
+                  particle column, so this has to be said; a row whose own E
+                  and p contradict the particle being written stops the run.
+
 Output format
 -------------
   PHITS s-type=17 ASCII dump, 10 columns per muon:
     kf   x[cm]  y[cm]  z[cm]  u  v  w  Ekin[MeV]  wt  time[ns]
 
-  kf codes (PDG): mu- = 13,  mu+ = -13
+  kf codes (PDG): mu- = 13,  mu+ = -13   (--electrons: e- = 11,  e+ = -11)
 
   Use in PHITS input:
     [Source]
@@ -49,6 +55,27 @@ import argparse
 
 MUON_MASS_GEV = 0.105658370   # GeV/c²
 MUON_MASS_MEV = 105.658370    # MeV/c²
+ELECTRON_MASS_GEV = 0.00051099895   # GeV/c²
+
+
+class SpeciesError(ValueError):
+    """A row's own E and p say it is not the particle being written."""
+
+
+def check_species(p_gev, e_gev, electrons, event_id):
+    """Below 20 GeV the file's six decimals give sqrt(E^2 - p^2) to better than
+    1 %, and a muon (0.106 GeV) and an electron (0.0005 GeV) are far apart; above
+    it the check is skipped."""
+    if e_gev >= 20.0:
+        return
+    m = math.sqrt(max(e_gev * e_gev - p_gev * p_gev, 0.0))
+    if electrons and m > 0.05:
+        raise SpeciesError(f"event {event_id}: E = {e_gev} GeV, p = {p_gev} GeV/c give a mass "
+                           f"of {m:.4f} GeV, a muon, not an electron. Drop --electrons.")
+    if not electrons and m < 0.05:
+        raise SpeciesError(f"event {event_id}: E = {e_gev} GeV, p = {p_gev} GeV/c give a mass "
+                           f"of {m:.4f} GeV, not a muon: a spectrum-8 (cosmic e±) file? "
+                           f"Use --electrons.")
 
 
 def detect_format(line):
@@ -78,10 +105,12 @@ def direction_from_angles(theta, phi):
     return st * math.cos(phi), st * math.sin(phi), -math.cos(theta)
 
 
-def energy_to_kf(charge, e_gev):
-    """Return (kf, ekin_MeV). charge: +1=mu+, -1=mu-."""
-    kf = -13 if charge == 1 else 13          # PDG: mu+=−13, mu−=+13
-    ekin_mev = max(0.0, (e_gev - MUON_MASS_GEV) * 1000.0)
+def energy_to_kf(charge, e_gev, electrons=False):
+    """Return (kf, ekin_MeV). charge: +1=mu+ (e+), -1=mu- (e-)."""
+    base = 11 if electrons else 13
+    kf = -base if charge == 1 else base      # PDG: mu+=−13, mu−=+13; e+=−11, e−=+11
+    mass = ELECTRON_MASS_GEV if electrons else MUON_MASS_GEV
+    ekin_mev = max(0.0, (e_gev - mass) * 1000.0)
     return kf, ekin_mev
 
 
@@ -92,7 +121,7 @@ def fmt(v):
     return s
 
 
-def convert(infile, outfile, mode):
+def convert(infile, outfile, mode, electrons=False):
     n_written = 0
     n_skipped = 0
 
@@ -130,8 +159,9 @@ def convert(infile, outfile, mode):
                     n_skipped += 1
                     continue
 
+                check_species(p, e_gev, electrons, parts[0])
                 u, v, w = direction_from_momentum(px, py, pz, p)
-                kf, ekin = energy_to_kf(charge, e_gev)
+                kf, ekin = energy_to_kf(charge, e_gev, electrons)
 
             # ----------------------------------------------------------------
             # Transport format (18 columns) — only alive muons
@@ -139,6 +169,9 @@ def convert(infile, outfile, mode):
             elif mode == 'transport':
                 if ncols != 18:
                     continue
+                if electrons:
+                    raise SpeciesError("an 18-column transport file holds muons only; "
+                                       "--electrons applies to generator files")
                 try:
                     charge = int(parts[7])
                     alive  = int(parts[8])
@@ -191,6 +224,8 @@ def main():
     parser.add_argument('--mode', choices=['gen', 'transport', 'auto'],
                         default='auto',
                         help='Input format: gen=generator, transport=18-col, auto=detect')
+    parser.add_argument('--electrons', action='store_true',
+                        help='spectrum-8 (cosmic e±) generator file: kf ±11, electron mass')
     args = parser.parse_args()
 
     if not os.path.isfile(args.input):
@@ -205,9 +240,14 @@ def main():
     print(f"  Input  : {args.input}  (mode={args.mode})")
     print(f"  Output : {args.output}")
 
-    n_written, n_skipped = convert(args.input, args.output, args.mode)
+    try:
+        n_written, n_skipped = convert(args.input, args.output, args.mode, args.electrons)
+    except SpeciesError as exc:
+        os.remove(args.output)
+        print(f"ERROR: {exc}", file=sys.stderr)
+        sys.exit(2)
 
-    print(f"  Written: {n_written:,} muons")
+    print(f"  Written: {n_written:,} {'electrons' if args.electrons else 'muons'}")
     if n_skipped:
         print(f"  Skipped: {n_skipped:,} (stopped muons or bad lines)")
     print()

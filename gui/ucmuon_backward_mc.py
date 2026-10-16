@@ -96,45 +96,79 @@ _GROOM_R = np.array([
     2.453e+05, 2.990e+05, 3.616e+05,
 ])
 
-# Pre-compute dE/dx fine grid once at import
+# Above 2 TeV the table is continued to 10 TeV with the PDG 2024 standard rock
+# stopping power (gui/ucmuon_stochastic_driver.py, the table UCMuon-MC uses; its
+# range agrees with Groom's to 0.03 % up to 2 TeV), integrated from Groom's
+# last point so the range is continuous. Up to 1.3.2 the table ended at 2 TeV
+# (3616 m w.e.): under thick rock that cut the flux (at Vesuvius, 106 of the
+# 462 density-sensitive directions lost more than 1 %, up to 33 %).
+def _pdg_rock_continuation(T_max=1.0e7):
+    gui_dir = str(Path(__file__).resolve().parent)
+    if gui_dir not in sys.path:
+        sys.path.insert(0, gui_dir)
+    import ucmuon_stochastic_driver as _usd
+    t, T = _usd._PROC_TABLES["rock"], _usd._PROC_T
+    dedx = t["ION"] + t["BREMS"] + t["PAIR"] + t["NUCL"]          # MeV cm2/g
+    sel = (T >= _GROOM_T[-1]) & (T <= T_max * 1.000001)
+    Ts, inv = T[sel], 1.0 / dedx[sel]
+    R = _GROOM_R[-1] + np.concatenate(([0.0], np.cumsum(0.5 * (inv[1:] + inv[:-1]) * np.diff(Ts))))
+    return Ts[1:], R[1:]
+
+
+_EXT_T, _EXT_R = _pdg_rock_continuation()
+_TAB_T = np.concatenate([_GROOM_T, _EXT_T])       # 10 MeV - 10 TeV
+_TAB_R = np.concatenate([_GROOM_R, _EXT_R])
+
+# Pre-compute dE/dx fine grid once at import: the 1000 points up to 2 TeV as
+# before, continued above it with the same logarithmic step.
 _N_FINE   = 1000
 _T_FINE   = np.logspace(np.log10(_GROOM_T[0]), np.log10(_GROOM_T[-1]), _N_FINE)
-_R_FINE   = np.exp(np.interp(np.log(_T_FINE), np.log(_GROOM_T), np.log(_GROOM_R)))
+_LSTEP    = np.log10(_T_FINE[1] / _T_FINE[0])
+_T_FINE   = np.concatenate([_T_FINE, 10.0 ** np.linspace(
+    np.log10(_GROOM_T[-1]), np.log10(_TAB_T[-1]),
+    int(np.ceil(np.log10(_TAB_T[-1] / _GROOM_T[-1]) / _LSTEP)) + 1)[1:]])
+_R_FINE   = np.exp(np.interp(np.log(_T_FINE), np.log(_TAB_T), np.log(_TAB_R)))
 _DRDT     = np.gradient(_R_FINE, _T_FINE)
 _DEDX_STD = 1.0 / np.maximum(_DRDT, 1e-12)        # [MeV cm2/g] Standard Rock
 
 
-def _dedx(E_MeV, a_scale=1.0):
-    E = np.clip(np.asarray(E_MeV, float), _T_FINE[0], _T_FINE[-1])
-    return np.interp(E, _T_FINE, _DEDX_STD) * a_scale
+def _dedx(E_MeV, tab=None):
+    """Stopping power [MeV cm2/g] of material table `tab` (None = Standard
+    Rock, Groom 2001)."""
+    T, dedx = (_T_FINE, _DEDX_STD) if tab is None else (tab["T"], tab["dedx"])
+    E = np.clip(np.asarray(E_MeV, float), T[0], T[-1])
+    return np.interp(E, T, dedx)
 
 
-def _range(E_MeV, a_scale=1.0):
-    E = np.clip(np.asarray(E_MeV, float), _T_FINE[0], _T_FINE[-1])
-    return np.interp(E, _T_FINE, _R_FINE) * a_scale
+def _range(E_MeV, tab=None):
+    """CSDA range [g/cm2] in material table `tab` (None = Standard Rock)."""
+    T, R = (_T_FINE, _R_FINE) if tab is None else (tab["T"], tab["R"])
+    E = np.clip(np.asarray(E_MeV, float), T[0], T[-1])
+    return np.interp(E, T, R)
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # End of the range table
 #
-# The table stops at 2 TeV, a range of 3616 m w.e. in standard rock. A detector
-# energy whose surface energy would lie beyond it cannot be mapped back and is
-# left out of the integral, so under thick rock the flux is a lower bound, and
-# exactly zero once every detector energy is beyond the table. Up to v1.1.2
-# this was silent. Both integrators now estimate what is left out, by
-# continuing the table with dE/dX = a + bE fitted to its last four points, and
-# raise a RangeTableWarning when that is more than 1 % of the flux or the flux
-# is zero. The estimate only sizes the warning; the flux returned is unchanged.
-# (It puts the cut at ~0.6 % at 1000 m w.e., 6 % at 2000, 37 % at 3000 and 85 %
-# at 3500, θ = 0-60°, Guan.) Detector energies above 2 TeV are outside the
-# table altogether and are left out under any rock; in the open sky they carry
-# 1e-6 of the flux at the vertical and 3e-4 at 85°.
+# The table stops at 10 TeV, a range of 6889 m w.e. in standard rock (2 TeV and
+# 3616 m w.e. up to 1.3.2). A detector energy whose surface energy would lie
+# beyond it cannot be mapped back and is left out of the integral, so under
+# thick rock the flux is a lower bound, and exactly zero once every detector
+# energy is beyond the table. Up to v1.1.2 this was silent. Both integrators now
+# estimate what is left out, by continuing the table with dE/dX = a + bE fitted
+# to its last four points, and raise a RangeTableWarning when that is more than
+# 1 % of the flux or the flux is zero. The estimate only sizes the warning; the
+# flux returned is unchanged. (Guan, 1-2500 GeV at the detector, θ = 0-60°: the
+# cut is below 1 % up to 3500 m w.e., 1.3 % at 4000, 7 % at 5000, 30 % at 6000
+# and 59 % at 6500; with the 2 TeV table it was 0.6 % at 1000 m w.e., 6 % at
+# 2000 and 37 % at 3000.) Detector energies above 10 TeV are outside the table
+# altogether and are left out under any rock.
 # ─────────────────────────────────────────────────────────────────────────────
-RANGE_TABLE_E_MAX_GEV  = float(_GROOM_T[-1]) / 1000.0     # 2000 GeV
-RANGE_TABLE_R_MAX_GCM2 = float(_GROOM_R[-1])              # 361 600 g/cm2
+RANGE_TABLE_E_MAX_GEV  = float(_TAB_T[-1]) / 1000.0       # 10 000 GeV
+RANGE_TABLE_R_MAX_GCM2 = float(_TAB_R[-1])                # 688 900 g/cm2
 RANGE_WARN_FRACTION    = 0.01
 
-_EXT_B, _EXT_A = np.polyfit(_GROOM_T[-4:], 1.0 / np.gradient(_GROOM_R, _GROOM_T)[-4:], 1)
+_EXT_B, _EXT_A = np.polyfit(_TAB_T[-4:], 1.0 / np.gradient(_TAB_R, _TAB_T)[-4:], 1)
 
 
 class RangeTableWarning(UserWarning):
@@ -146,15 +180,18 @@ class RangeTableWarning(UserWarning):
 
 
 def _beyond_table_contribution(E_det_MeV, X_gcm2, theta_rad, spectrum_mode,
-                               a_scale, b_total, v_cut, mode):
+                               tab, b_total, v_cut, mode):
     """φ_det [m⁻² s⁻¹ sr⁻¹ GeV⁻¹] of a detector energy whose surface energy is
     beyond the table, with the table continued as dE/dX = a + bE. For the
     warning only."""
-    R_det = float(_range(E_det_MeV, a_scale))
+    R_det = float(_range(E_det_MeV, tab))
     R_surf = R_det + X_gcm2
-    a, b, T0, R0 = _EXT_A, _EXT_B, float(_T_FINE[-1]), float(_R_FINE[-1])
-    E_s = ((a + b * T0) * np.exp(b * (R_surf / a_scale - R0)) - a) / b
-    J = (a + b * E_s) * a_scale / max(float(_dedx(E_det_MeV, a_scale)), 1e-12)
+    if tab is None:
+        a, b, T0, R0 = _EXT_A, _EXT_B, float(_T_FINE[-1]), float(_R_FINE[-1])
+    else:
+        a, b, T0, R0 = tab["ext_a"], tab["ext_b"], float(tab["T"][-1]), float(tab["R"][-1])
+    E_s = ((a + b * T0) * np.exp(b * (R_surf - R0)) - a) / b
+    J = (a + b * E_s) / max(float(_dedx(E_det_MeV, tab)), 1e-12)
     Ps = 1.0
     if mode == 1:
         v_stop = float(np.clip(1.0 - R_det / R_surf, v_cut, 1.0 - 1e-6))
@@ -250,38 +287,79 @@ def spectrum_range_warning(spectrum_mode, E_min_GeV):
     return None
 
 
-def _backward_energy(E_det_MeV, X_gcm2, a_scale=1.0):
+def _backward_energy(E_det_MeV, X_gcm2, tab=None):
     """
     Backward CSDA mapping: given E_det_MeV at detector, find surface energy E_s
-    and Jacobian |dE_s/dE_det| = dE/dx(E_s) / dE/dx(E_det).
+    and Jacobian |dE_s/dE_det| = dE/dx(E_s) / dE/dx(E_det), in material table
+    `tab` (None = Standard Rock).
     Returns (E_s_MeV, jacobian).  E_s = inf if unreachable (off-table).
     """
-    R_det  = _range(E_det_MeV, a_scale)
+    T, R = (_T_FINE, _R_FINE) if tab is None else (tab["T"], tab["R"])
+    R_det  = _range(E_det_MeV, tab)
     R_surf = R_det + X_gcm2
     if np.ndim(R_surf) == 0:
-        if R_surf > _R_FINE[-1] * a_scale:
+        if R_surf > R[-1]:
             return np.inf, 1.0
-        E_s = float(np.interp(R_surf / a_scale, _R_FINE, _T_FINE))
-        J   = float(_dedx(E_s, a_scale) / max(_dedx(E_det_MeV, a_scale), 1e-12))
+        E_s = float(np.interp(R_surf, R, T))
+        J   = float(_dedx(E_s, tab) / max(_dedx(E_det_MeV, tab), 1e-12))
         return E_s, J
     # Vectorised
     E_s  = np.full_like(np.asarray(E_det_MeV, float), np.inf)
     J    = np.ones_like(E_s)
-    ok   = R_surf <= _R_FINE[-1] * a_scale
-    E_s[ok]  = np.interp(R_surf[ok] / a_scale, _R_FINE, _T_FINE)
-    J[ok]    = _dedx(E_s[ok], a_scale) / np.maximum(_dedx(E_det_MeV[ok], a_scale), 1e-12)
+    ok   = R_surf <= R[-1]
+    E_s[ok]  = np.interp(R_surf[ok], R, T)
+    J[ok]    = _dedx(E_s[ok], tab) / np.maximum(_dedx(E_det_MeV[ok], tab), 1e-12)
     return E_s, J
 
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Material database
 # ─────────────────────────────────────────────────────────────────────────────
+# Standard Rock uses the Groom (2001) table above. The other materials use
+# their PDG 2024 tables (gui/ucmuon_stochastic_driver.py, as UCMuon-MC and the
+# Python Bethe-Bloch do); seawater is water with the same composition
+# rescaling as UCMuon-MC. Up to 1.3.2 they rescaled the rock table by one
+# factor a (water 1.046, iron 0.930) and multiplied the RANGE by it where it
+# should divide, so a material acted like X/a of rock instead of a*X: water
+# gave rates 11, 29 and 42 % too high at 10, 50 and 200 m, iron 13 to 27 %
+# too low. Their b for P_surv (water 3.20e-6, iron 4.06e-6) is now the rock
+# value scaled by the tables' radiative ratio at 1 TeV (0.75 and 1.87).
 _MAT_DB = {
-    1: {"name": "Standard Rock", "b_rad": 3.475e-6, "a_scale": 1.000, "X0_cm": 26.48},
-    2: {"name": "Water/Ice",     "b_rad": 3.20e-6,  "a_scale": 1.046, "X0_cm": 36.08},
-    3: {"name": "Seawater",      "b_rad": 3.22e-6,  "a_scale": 1.028, "X0_cm": 35.75},
-    4: {"name": "Iron",          "b_rad": 4.06e-6,  "a_scale": 0.930, "X0_cm": 1.757},
+    1: {"name": "Standard Rock", "b_rad": 3.475e-6, "X0_cm": 26.48},
+    2: {"name": "Water/Ice",     "proc": "water", "X0_cm": 36.08},
+    3: {"name": "Seawater",      "proc": "water", "X0_cm": 35.75,
+        "s_ion": 0.55250 / 0.55509, "s_rad": 3.22e-6 / 3.20e-6},
+    4: {"name": "Iron",          "proc": "iron",  "X0_cm": 1.757},
 }
+_TABLES = {}
+
+
+def _material(mat_id):
+    """(material dict, range/stopping-power table or None for Standard Rock,
+    b for P_surv) of a material id."""
+    mat = _MAT_DB.get(mat_id, _MAT_DB[1])
+    key = mat.get("proc")
+    if key is None:
+        return mat, None, mat["b_rad"]
+    if mat_id not in _TABLES:
+        import ucmuon_stochastic_driver as _usd
+        t, T = _usd._PROC_TABLES, _usd._PROC_T
+        s_ion, s_rad = mat.get("s_ion", 1.0), mat.get("s_rad", 1.0)
+        rad = lambda k: t[k]["BREMS"] + t[k]["PAIR"] + t[k]["NUCL"]
+        dedx = t[key]["ION"] * s_ion + rad(key) * s_rad
+        d = np.exp(np.interp(np.log(_T_FINE), np.log(T), np.log(dedx)))
+        inv = 1.0 / d
+        R = t[key]["R10"] / s_ion + np.concatenate(
+            ([0.0], np.cumsum(0.5 * (inv[1:] + inv[:-1]) * np.diff(_T_FINE))))
+        top = (T >= 2.0e6) & (T <= _T_FINE[-1] * 1.000001)   # 2 - 10 TeV
+        ext_b, ext_a = np.polyfit(T[top], dedx[top], 1)
+        lt = np.log(1.0e6)                                    # 1 TeV
+        b_ratio = (np.interp(lt, np.log(T), rad(key)) * s_rad
+                   / np.interp(lt, np.log(T), rad("rock")))
+        _TABLES[mat_id] = (dict(T=_T_FINE, R=R, dedx=d, ext_a=ext_a, ext_b=ext_b),
+                           _MAT_DB[1]["b_rad"] * b_ratio)
+    tab, b = _TABLES[mat_id]
+    return mat, tab, b
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -330,7 +408,7 @@ def _flux_surface(E_GeV, theta_rad, mode):
 # Stochastic survival probability (Poisson analytical approximation)
 # ─────────────────────────────────────────────────────────────────────────────
 
-def _P_surv_stochastic(E_s_MeV, E_det_MeV, X_gcm2, b_total, v_cut, a_scale=1.0):
+def _P_surv_stochastic(E_s_MeV, E_det_MeV, X_gcm2, b_total, v_cut, tab=None):
     """
     Survival probability correction for catastrophic radiative events.
 
@@ -342,8 +420,8 @@ def _P_surv_stochastic(E_s_MeV, E_det_MeV, X_gcm2, b_total, v_cut, a_scale=1.0):
     Reduces to 1 in CSDA limit (v_stop → 0) and to 0 when every catastrophic
     event above v_cut would stop the muon.
     """
-    R_det  = float(_range(E_det_MeV, a_scale))
-    R_surf = float(_range(E_s_MeV,   a_scale))
+    R_det  = float(_range(E_det_MeV, tab))
+    R_surf = float(_range(E_s_MeV,   tab))
     if R_surf <= 0:
         return 0.0
     v_stop = 1.0 - R_det / R_surf
@@ -376,9 +454,8 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
         X_vert_gcm2  : vertical opacity [g/cm²]
         info         : metadata dict
     """
-    mat      = _MAT_DB.get(mat_id, _MAT_DB[1])
-    b_total  = b_rad_override if b_rad_override > 0 else mat["b_rad"]
-    a_scale  = mat["a_scale"]
+    mat, tab, b_mat = _material(mat_id)
+    b_total  = b_rad_override if b_rad_override > 0 else b_mat
 
     X_vert   = depth_m * 100.0 * rho           # vertical opacity [g/cm²]
 
@@ -421,11 +498,11 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
         for ith, (th, dO, cos_t, X_sl) in enumerate(zip(th_mid, dOmega, cos_mid, X_slant)):
 
             # Backward CSDA: what surface energy E_s is required?
-            E_s, Jacob = _backward_energy(E_det, X_sl, a_scale)
+            E_s, Jacob = _backward_energy(E_det, X_sl, tab)
             if E_s == np.inf or np.isnan(E_s):
                 if E_det <= _T_FINE[-1]:       # surface energy beyond the table
                     missing_rate += _beyond_table_contribution(
-                        E_det, X_sl, th, spectrum_mode, a_scale, b_total, v_cut,
+                        E_det, X_sl, th, spectrum_mode, tab, b_total, v_cut,
                         mode) * dO * cos_t * dE_GeV
                 continue
             E_s_GeV = E_s / 1000.0
@@ -439,7 +516,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
 
             # Survival probability
             if mode == 1:
-                Ps = _P_surv_stochastic(E_s, E_det, X_sl, b_total, v_cut, a_scale)
+                Ps = _P_surv_stochastic(E_s, E_det, X_sl, b_total, v_cut, tab)
             else:
                 Ps = 1.0
 
@@ -510,9 +587,8 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
     numerator and denominator of a transmission map T = Φ(X)/Φ(0) use
     identical integration by construction.
     """
-    mat     = _MAT_DB.get(mat_id, _MAT_DB[1])
-    b_total = b_rad_override if b_rad_override > 0 else mat["b_rad"]
-    a_scale = mat["a_scale"]
+    mat, tab, b_mat = _material(mat_id)
+    b_total = b_rad_override if b_rad_override > 0 else b_mat
 
     E_det_MeV = np.logspace(np.log10(E_min_GeV * 1000.0),
                              np.log10(E_max_GeV * 1000.0), n_E)
@@ -524,15 +600,15 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
         w_trap = 0.5 if iE in (0, n_E - 1) else 1.0
         dE_GeV = (E_det / 1000.0) * dlnE * w_trap
         if X_slant_gcm2 > 0.0:
-            E_s, Jacob = _backward_energy(E_det, X_slant_gcm2, a_scale)
+            E_s, Jacob = _backward_energy(E_det, X_slant_gcm2, tab)
             if not np.isfinite(E_s):
                 if E_det <= _T_FINE[-1]:   # surface energy beyond the table
                     missing += _beyond_table_contribution(
-                        E_det, X_slant_gcm2, theta_rad, spectrum_mode, a_scale,
+                        E_det, X_slant_gcm2, theta_rad, spectrum_mode, tab,
                         b_total, v_cut, mode) * dE_GeV
                 continue
             Ps = (_P_surv_stochastic(E_s, E_det, X_slant_gcm2,
-                                     b_total, v_cut, a_scale)
+                                     b_total, v_cut, tab)
                   if mode == 1 else 1.0)
         else:
             E_s, Jacob, Ps = E_det, 1.0, 1.0
