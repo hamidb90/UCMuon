@@ -6,7 +6,7 @@
 !
 ! Replaces the PHITS-dependent cosmoaleph_phitsxs_omp.f90 (which required
 ! MODULE NGSDATAMOD, levdat, etc.) with zero external module dependencies.
-! Only ranlux_omp.o is needed (built by "make omp" in step 5 of setup.sh).
+! Only ucmuon_rng.o (RANLUX, src/common/ucmuon_rng.f90) is needed.
 !
 ! Physics implemented:
 !   dE/dX = dE/dX_ion  +  b_rad * b_rad_shape(E) * E
@@ -55,9 +55,9 @@
 ! Output: 18-column ASCII, byte-for-byte identical format to
 !         cosmoaleph_music_driver_omp output.
 !
-! Build (after "make omp" has been run):
+! Build: make ucmuon_transport_bb_omp, or by hand
 !   gfortran -O2 -fopenmp -o ucmuon_transport_bb_omp \
-!     ucmuon_transport_bb_omp.f90 ranlux_omp.o -lm
+!     ucmuon_transport_bb_omp.f90 ucmuon_rng.o -lm
 !=============================================================================
 module bb_constants
   implicit none
@@ -136,7 +136,7 @@ program ucmuon_transport_bb_omp
   real(8), external :: csda_range
   integer :: alive
 
-  external :: rluxgo   ! from ranlux_omp.o
+  external :: rluxgo   ! from ucmuon_rng.o
 
   !===========================================================================
   ! HEADER
@@ -627,7 +627,7 @@ subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
   real(8) :: theta_scat, phi_scat, ct, st, cos_phi, sin_phi
   real(4) :: rr(4)
 
-  external :: ranlux   ! from ranlux_omp.o  (THREADPRIVATE state)
+  external :: ranlux   ! from ucmuon_rng.o  (THREADPRIVATE state)
   real(8), external :: b_rad_shape
 
   I_GeV      = I_eV * 1.d-9

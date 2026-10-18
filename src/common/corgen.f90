@@ -2,7 +2,7 @@
 ! corgen.f90
 ! CORSET / CORGEN - correlated Gaussian random vector generator
 ! Called by MUSIC's MULTIPLE subroutine (N=2 always in MUSIC).
-! Calls RNORML (rnorml.f) which calls RANMAR (ranmar.f).
+! Calls RNORML, which calls RANMAR (both in ucmuon_rng.f90).
 !=======================================================================
 
 subroutine corset(v, c, n)

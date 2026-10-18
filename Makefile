@@ -45,6 +45,19 @@ FFLAGS_PARMA = -O2 -fopenmp -ffree-line-length-none -Wno-implicit-interface \
 FFLAGS_F77   = -O2 -std=legacy
 
 # ---------------------------------------------------------------------------
+#  PARMA (spectrum mode 3, optional): JAEA's code is not shipped with UCMuon.
+#  tools/install_parma.py downloads it and writes parma_subroutines.f90; until
+#  then the generator links parma_stub.f90, whose mode 3 stops with a message.
+# ---------------------------------------------------------------------------
+PARMA_SRC   := src/parma/parma_subroutines.f90
+PARMA_AVAIL := $(shell test -f $(PARMA_SRC) && echo yes || echo no)
+ifeq ($(PARMA_AVAIL),yes)
+  PARMA_OBJ = $(BUILD)/parma_subroutines.o
+else
+  PARMA_OBJ = $(BUILD)/parma_stub.o
+endif
+
+# ---------------------------------------------------------------------------
 #  MUSIC availability check
 # ---------------------------------------------------------------------------
 MUSIC_SRC := $(wildcard src/transport/music/music.f)
@@ -73,24 +86,21 @@ COMMON_OBJS = \
     $(BUILD)/rng_parallel.o         \
     $(BUILD)/ucmuon_source_module.o \
     $(BUILD)/parma_path_module.o    \
-    $(BUILD)/parma_subroutines.o    \
-    $(BUILD)/ranlux.o
+    $(PARMA_OBJ)
 
 MUSIC_SUPPORT_OBJS = \
     $(BUILD)/music.o                \
     $(BUILD)/music-crosssections.o  \
-    $(BUILD)/ranmar_omp.o           \
-    $(BUILD)/rnorml.o               \
-    $(BUILD)/corgen.o               \
-    $(BUILD)/ranlux_omp.o
+    $(BUILD)/ucmuon_rng.o           \
+    $(BUILD)/corgen.o
 
 GEN_OMP_OBJS   = $(COMMON_OBJS) $(BUILD)/ucmuon_gen_omp.o
 MUSIC_OMP_OBJS = $(BUILD)/ucmuon_transport_music_omp.o $(MUSIC_SUPPORT_OBJS)
-BB_OMP_OBJS    = $(BUILD)/ucmuon_transport_bb_omp.o $(BUILD)/ranlux_omp.o
+BB_OMP_OBJS    = $(BUILD)/ucmuon_transport_bb_omp.o $(BUILD)/ucmuon_rng.o
 
 UCMUON_GEN_OBJS = $(COMMON_OBJS) $(BUILD)/ucmuon_gen.o
 UCMUON_MUS_OBJS = $(BUILD)/ucmuon_transport_music.o $(MUSIC_SUPPORT_OBJS)
-UCMUON_BB_OBJS  = $(BUILD)/ucmuon_transport_bb.o $(BUILD)/ranlux_omp.o
+UCMUON_BB_OBJS  = $(BUILD)/ucmuon_transport_bb.o $(BUILD)/ucmuon_rng.o
 
 # ---------------------------------------------------------------------------
 #  Top-level targets
@@ -137,6 +147,12 @@ ifeq ($(MUSIC_AVAIL),no)
 	@echo "  NOTE: Engine 2 (MUSIC) was not built — music.f not found."
 	@echo "        Engines 1 and 3-7 are fully functional."
 	@echo "        See docs/MUSIC_FILES.md to enable Engine 2."
+	@echo ""
+endif
+ifeq ($(PARMA_AVAIL),no)
+	@echo "  NOTE: generator built without PARMA (spectrum mode 3)."
+	@echo "        python3 tools/install_parma.py downloads it from JAEA;"
+	@echo "        then run make again."
 	@echo ""
 endif
 ifeq ($(PUMAS_AVAIL),no)
@@ -233,6 +249,9 @@ $(BUILD)/parma_path_module.o: parma_path_module.f90
 $(BUILD)/parma_subroutines.o: parma_subroutines.f90 $(BUILD)/parma_path_module.o
 	$(FC) $(FFLAGS_PARMA) -c $< -o $@
 
+$(BUILD)/parma_stub.o: parma_stub.f90
+	$(FC) $(FFLAGS_PARMA) -c $< -o $@
+
 $(BUILD)/ucmuon_gen_omp.o: ucmuon_gen_omp.f90 \
     $(BUILD)/geom_module_omp.o $(BUILD)/phits_module_omp.o \
     $(BUILD)/rng_parallel.o    $(BUILD)/ucmuon_source_module.o \
@@ -254,20 +273,10 @@ $(BUILD)/ucmuon_transport_bb.o: ucmuon_transport_bb.f90
 $(BUILD)/ucmuon_to_phits.o: ucmuon_to_phits.f90
 	$(FC) -O2 -c $< -o $@
 
-$(BUILD)/ranlux.o: ranlux.f
-	$(FC) $(FFLAGS_F77) -c $< -o $@
-
-$(BUILD)/ranlux_omp.o: ranlux_omp.f
-	$(FC) $(FFLAGS_F77) -fopenmp -J$(BUILD) -c $< -o $@
-
-$(BUILD)/ranmar_omp.o: ranmar_omp.f
-	$(FC) $(FFLAGS_F77) -fopenmp -J$(BUILD) -c $< -o $@
-
-$(BUILD)/rnorml.o: rnorml.f
-	$(FC) $(FFLAGS_F77) -c $< -o $@
-
-$(BUILD)/corset.o: corset.f
-	$(FC) $(FFLAGS_F77) -c $< -o $@
+# RANLUX, RANMAR, RNORML: UCMuon's own implementation (one state per OpenMP
+# thread); up to 1.4.1 these were CERNLIB routines (GPL).
+$(BUILD)/ucmuon_rng.o: ucmuon_rng.f90
+	$(FC) $(FFLAGS_OMP) -c $< -o $@
 
 $(BUILD)/corgen.o: corgen.f90
 	$(FC) $(FFLAGS_F77) -c $< -o $@
@@ -299,6 +308,7 @@ help:
 	@echo "    make clean         remove build/"
 	@echo "    make veryclean     clean + remove bin/ contents"
 	@echo "  MUSIC engine status: $(MUSIC_AVAIL)"
+	@echo "  PARMA (spectrum 3):  $(PARMA_AVAIL)"
 	@echo ""
 
 clean:

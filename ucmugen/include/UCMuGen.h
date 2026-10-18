@@ -26,8 +26,10 @@
 //
 //  MIT licensed. PARMA (spectrum 3) is not in this file: it is JAEA's and is
 //  non-commercial-only, so it lives in UCMuGen_PARMA.h, which installs itself
-//  through flux::parma_provider(). Including that header is what takes on the
-//  non-commercial restriction; this file alone never does.
+//  through flux::parma_provider(). That header is not shipped with UCMuon:
+//  tools/install_parma.py generates it from JAEA's own parma_cpp.zip.
+//  Including it is what takes on the non-commercial restriction; this file
+//  alone never does.
 // =============================================================================
 #ifndef UCMUGEN_H
 #define UCMUGEN_H

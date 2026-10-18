@@ -3295,6 +3295,13 @@ with tab_gen:
 
         # ── PARMA (only when mode 3, Standard workflow) ───────────────────────
         if spectrum_mode == 3 and not use_dasrem:
+            # PARMA is JAEA's and not shipped; tools/install_parma.py fetches it.
+            if not ((_PROJECT_DIR / "src" / "parma" / "parma_subroutines.f90").exists()
+                    and (_PROJECT_DIR / "data" / "EXPACS" / "parma" / "input").is_dir()):
+                st.error("**PARMA is not installed.** It is downloaded from JAEA (free for "
+                         "non-commercial use): run `python3 tools/install_parma.py`, then "
+                         "`make local`; or re-run `setup.sh` (Windows: `install_windows.bat`), "
+                         "which does both. Until then this spectrum cannot be generated.")
             with st.expander("🌍  PARMA location & date", expanded=True):
                 st.caption("Accounts for geomagnetic cutoff, atmospheric depth, solar modulation, and μ⁺/μ⁻ ratio.")
                 _pc1, _pc2, _pc3 = st.columns(3)

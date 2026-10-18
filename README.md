@@ -47,11 +47,13 @@ in this repository for licensing reasons. UCMuon ships only the wrapper; to use
 the MUSIC engine, obtain the source from the author — see
 [docs/MUSIC_FILES.md](docs/MUSIC_FILES.md). All other engines run without it.
 
-**Licensing:** UCMuon's own code is MIT (see [LICENSE](LICENSE)). It bundles
-third-party components with their own terms — notably **PARMA/EXPACS**
-(`src/parma/`, `data/EXPACS/`), which is **non-commercial use only** (JAEA;
-cite Sato 2015/2016), and **PUMAS** (LGPL-3.0). See
-[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) before any commercial use.
+**Licensing:** everything in this repository is MIT (see [LICENSE](LICENSE)),
+apart from a public-domain elevation model. Two optional components are
+downloaded by the installers rather than shipped, and keep their own terms:
+**PARMA/EXPACS** for spectrum mode 3 (JAEA; **non-commercial use only**, cite
+Sato 2015/2016) and **PUMAS** for Engine 7 (LGPL-3.0). Up to 1.4.1 PARMA and
+some CERN Program Library routines (GPL) were bundled. See
+[THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
 
@@ -75,7 +77,7 @@ bash setup.sh          # installs Python packages, builds Fortran binaries, chec
 bash run_gui.sh        # opens http://localhost:8501
 ```
 
-`setup.sh` auto-detects available source files and only builds what is present. The surface generator needs gfortran (Basic mode cannot generate without it). The Python engines need no compiler: ① UCMuon-MC, ③ Bethe-Bloch's Python driver, ④ PROPOSAL, ⑤ Backward MC and ⑥ UCMuon Terrain, and so does Advanced mode's guaranteed-hit generator.
+`setup.sh` auto-detects available source files and only builds what is present. It also offers to download PUMAS (Engine 7) and PARMA (spectrum mode 3; JAEA, non-commercial use only; `--no-parma` skips it, and `python3 tools/install_parma.py` adds it later). The surface generator needs gfortran (Basic mode cannot generate without it). The Python engines need no compiler: ① UCMuon-MC, ③ Bethe-Bloch's Python driver, ④ PROPOSAL, ⑤ Backward MC and ⑥ UCMuon Terrain, and so does Advanced mode's guaranteed-hit generator.
 
 ---
 
@@ -240,10 +242,11 @@ UCMuon/
 ├── tools/
 │   ├── compare_engines.py        multi-engine diagnostic: survival, energy, plots
 │   ├── check_consistency.py      release checks: versions, paper paths, shared files, test run
-│   └── bump_version.py           moves the version number everywhere at once
+│   ├── bump_version.py           moves the version number everywhere at once
+│   └── install_parma.py          downloads PARMA from JAEA (spectrum mode 3; run by the installers)
 │
 ├── src/
-│   ├── common/                   shared Fortran: RANLUX, RNORML, CORGEN
+│   ├── common/                   shared Fortran: RANLUX, RANMAR, RNORML (own code), CORSET/CORGEN
 │   ├── generator/                surface muon generation (8 spectra)
 │   │   ├── ucmuon_source_module.f90   spectrum sampling (CosmoALEPH → Frosin)
 │   │   ├── ucmuon_gen_omp.f90         OMP-only binary — GUI
@@ -255,7 +258,7 @@ UCMuon/
 │   │   │   └── music-crosssections.f  Kudryavtsev (not redistributed)
 │   │   └── bethe_bloch/               Bethe-Bloch+MS engine (Engine 3)
 │   │       └── ucmuon_transport_bb_omp.f90
-│   ├── parma/                    PARMA/EXPACS model (Sato 2015)
+│   ├── parma/                    PARMA interface (JAEA's code is installed by tools/install_parma.py)
 │   └── converters/               PHITS/Geant4 source file converters
 │
 ├── gui/
@@ -273,7 +276,7 @@ UCMuon/
 ├── ucmugen/                      single-file C++17 generator for Geant4 (UCMuGen.h, examples, validation)
 ├── test_run/                     comprehensive test run: inputs, reference output, run_test.sh
 ├── bin/                          compiled binaries (built by make; git-ignored)
-├── data/                         physics tables (PARMA/EXPACS; the MUSIC tables, not redistributed, go here)
+├── data/                         physics tables (PARMA/EXPACS and MUSIC tables go here; neither is shipped)
 ├── docs/                         MUSIC_FILES.md, ENGINE6_USAGE_GUIDE.md, FLUX_NORMALISATION_AUDIT.md, MAINTENANCE.md
 ├── hpc/                          SLURM scripts + annotated input templates
 ├── output/                       simulation outputs (regenerable; git-ignored)

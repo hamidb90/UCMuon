@@ -9,8 +9,9 @@ src/generator/ucmuon_source_module.f90 (see ucmuon_flux_models.py).
 Mode 3 (PARMA/EXPACS) is evaluated by compiling and running the small
 Fortran helper parma_vertical_spec.f90 against the PARMA subroutines in
 src/parma/ and the data directory data/EXPACS/parma (sea level, zero
-solar modulation, geomagnetic reference site).  If gfortran or the PARMA
-data directory is unavailable the PARMA curve is skipped with a warning.
+solar modulation, geomagnetic reference site), both installed from JAEA's
+release by tools/install_parma.py.  If gfortran or PARMA is unavailable the
+PARMA curve is skipped with a warning.
 
 Usage:  python3 manuscript/scripts/make_fig02_flux_spectra.py
 """
@@ -46,8 +47,8 @@ PDG_VERT_FLUX = 7.0e-3  # cm^-2 s^-1 sr^-1, integrated > 1 GeV (PDG 2022)
 def parma_curve(t_min: float, t_max: float, npts: int = 120):
     """Compile (if needed) and run the PARMA helper; returns (T, I) or None."""
     exe = SCRIPT_DIR / "_parma_spec"
-    if not PARMA_DATA.is_dir():
-        print(f"  [SKIP] PARMA data not found at {PARMA_DATA}")
+    if not (PARMA_DATA.is_dir() and (REPO_ROOT / "src/parma/parma_subroutines.f90").exists()):
+        print(f"  [SKIP] PARMA not installed (python3 tools/install_parma.py)")
         return None
     if not exe.exists():
         gfortran = shutil.which("gfortran")

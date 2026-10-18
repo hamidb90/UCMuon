@@ -15,14 +15,19 @@
 #    bash setup.sh --no-python        skip all Python steps
 #    bash setup.sh --no-proposal      skip PROPOSAL venv setup
 #    bash setup.sh --python=python3   use a specific interpreter for core pkgs
+#    bash setup.sh --no-parma         do not download PARMA (spectrum mode 3)
+#    bash setup.sh --parma-zip-dir=D  install PARMA from parma.zip and
+#                                     parma_cpp.zip already downloaded into D
 # =============================================================================
 set -e
 cd "$(dirname "${BASH_SOURCE[0]}")"
 
-NO_PY=0; NO_PROP=0; PYTHON="python3"
+NO_PY=0; NO_PROP=0; NO_PARMA=0; PARMA_ZIP_DIR=""; PYTHON="python3"
 for a in "$@"; do case $a in
   --no-python)   NO_PY=1 ;;
   --no-proposal) NO_PROP=1 ;;
+  --no-parma)    NO_PARMA=1 ;;
+  --parma-zip-dir=*) PARMA_ZIP_DIR="${a#*=}" ;;
   --python=*)    PYTHON="${a#*=}" ;;
 esac; done
 
@@ -199,12 +204,12 @@ for f in geom_module.f90 phits_module.f90 rng_parallel.f90 \
         && echo "  OK  src/generator/$f" \
         || { echo "  --  src/generator/$f  (MISSING)"; MISS_GEN=1; }
 done
-for f in parma_path_module.f90 parma_subroutines.f90; do
+for f in parma_path_module.f90 parma_stub.f90; do
     [ -f "src/parma/$f" ] \
         && echo "  OK  src/parma/$f" \
         || { echo "  --  src/parma/$f  (MISSING)"; MISS_GEN=1; }
 done
-for f in ranlux.f ranlux_omp.f ranmar_omp.f rnorml.f corgen.f90 corset.f; do
+for f in ucmuon_rng.f90 corgen.f90; do
     [ -f "src/common/$f" ] \
         && echo "  OK  src/common/$f" \
         || { echo "  --  src/common/$f  (MISSING)"; MISS_GEN=1; }
@@ -261,6 +266,27 @@ elif [ -t 0 ]; then
     esac
 fi
 
+# Optional: PARMA for spectrum mode 3 (JAEA, non-commercial terms: downloaded
+# from JAEA, not bundled). tools/install_parma.py shows the terms and asks;
+# without a terminal it installs, as the default answer is yes.
+PARMA_OK=0
+if [ "$NO_PARMA" -eq 1 ]; then
+    echo "  --  PARMA skipped (--no-parma; spectrum mode 3 disabled)"
+elif ! command -v "$PYTHON" &>/dev/null; then
+    echo "  WARN: '$PYTHON' not found, PARMA not installed (spectrum mode 3 disabled)"
+elif "$PYTHON" tools/install_parma.py --status >/dev/null 2>&1; then
+    echo "  OK  PARMA installed  (spectrum mode 3)"
+    PARMA_OK=1
+else
+    if [ -n "$PARMA_ZIP_DIR" ]; then
+        "$PYTHON" tools/install_parma.py --yes --zip-dir "$PARMA_ZIP_DIR" || true
+    else
+        "$PYTHON" tools/install_parma.py || true
+    fi
+    "$PYTHON" tools/install_parma.py --status >/dev/null 2>&1 && PARMA_OK=1 \
+        || echo "  --  PARMA not installed  (spectrum mode 3 disabled; re-run setup.sh to add it)"
+fi
+
 # ── 6. Build ──────────────────────────────────────────────────────────────────
 echo "[6/6] Building local (OMP-only) binaries..."
 echo ""
@@ -307,6 +333,9 @@ echo "======================================================="
 echo ""
 binline ucmuon_gen_omp bin/ucmuon_gen_omp \
         "Generator ucmuon_gen_omp             " "build failed or gfortran missing; it creates the surface muons"
+[ "$PARMA_OK" -eq 1 ] \
+    && echo "  [x] Spectrum 3  PARMA (JAEA)             (downloaded from JAEA, non-commercial use)" \
+    || echo "  [ ] Spectrum 3  PARMA (JAEA)             (re-run setup.sh and accept the PARMA download)"
 [ -f "gui/ucmuon_stochastic_driver.py" ] \
     && echo "  [x] Engine 1  UCMuon-MC (flagship)       (Python)" \
     || echo "  [ ] Engine 1  UCMuon-MC (flagship)       (gui/ucmuon_stochastic_driver.py missing)"

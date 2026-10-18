@@ -6,7 +6,8 @@
 ! in cm^-2 s^-1 sr^-1 GeV^-1 on a log-spaced kinetic-energy grid.
 ! Mirrors the call sequence of src/generator/ucmuon_gen_omp.f90 (mode 3).
 !
-! Build (from repo root):
+! Build (from repo root, after python3 tools/install_parma.py has installed
+! PARMA from JAEA's release):
 !   gfortran -O2 -o manuscript/scripts/_parma_spec \
 !     src/parma/parma_path_module.f90 src/parma/parma_subroutines.f90 \
 !     manuscript/scripts/parma_vertical_spec.f90

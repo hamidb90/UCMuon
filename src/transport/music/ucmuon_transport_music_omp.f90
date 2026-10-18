@@ -29,8 +29,7 @@
 !   with a warning.  For non-rock materials this gives wrong Z/A.
 !
 ! THREAD SAFETY
-!   RANLUX: COMMON/RLUXSTATE/ + THREADPRIVATE  (ranlux_omp.f)
-!   RANMAR: COMMON/RANMA1/    + THREADPRIVATE  (ranmar_omp.f)
+!   RANLUX, RANMAR: THREADPRIVATE module state  (src/common/ucmuon_rng.f90)
 !   MUSIC COMMONs: read-only after initialize_music -- no locks needed.
 !=============================================================================
 program ucmuon_transport_music_omp

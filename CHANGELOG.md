@@ -1,5 +1,49 @@
 # Changelog
 
+## [Unreleased]
+
+Licensing: the archive is now MIT throughout (apart from a public-domain
+elevation model). No simulated result changes.
+
+### Changed
+- **PARMA is no longer shipped.** JAEA's terms (non-commercial use only,
+  citations required) cannot be carried by an MIT archive, so
+  `data/EXPACS/`, `src/parma/parma_subroutines.f90` and
+  `ucmugen/include/UCMuGen_PARMA.h` left the repository.
+  `tools/install_parma.py` downloads JAEA's `parma.zip` and `parma_cpp.zip`,
+  checks the two code files against the tested PARMA 4.10
+  (`tools/parma_v4.10.sha256`), and writes the three again, git-ignored: the
+  same data, the same Fortran (UCMuon's edits applied by the script) and a
+  byte-identical C++ header. `setup.sh` and `install.ps1` run it, default
+  yes (`--no-parma`/`-NoParma` skip it; `--parma-zip-dir`/`-ParmaZipDir`
+  use zips downloaded elsewhere, for clusters without internet). Without
+  PARMA the generator links `src/parma/parma_stub.f90`, whose mode 3 stops
+  with a message saying how to install it, and the GUI says so too. Mode 1
+  and mode 3 output is byte-identical to 1.4.1's.
+- **The CERN Program Library routines are replaced.** `src/common/ranlux.f`,
+  `ranlux_omp.f`, `ranmar_omp.f`, `rnorml.f` and `corset.f` (CERNLIB, GPL)
+  are gone; `src/common/ucmuon_rng.f90` is UCMuon's own implementation of
+  RANLUX, RANMAR and Leva's normal generator, written from the published
+  descriptions, with one state per OpenMP thread. It reproduces the old
+  streams bit for bit (`tests/rng/`, 16 276 numbers over every luxury level,
+  seeds, skips, vector lengths and four threads, against vectors saved from
+  the old routines; also 5.5x10^8 RANLUX, 1.3x10^9 RANMAR and 1.1x10^9
+  RNORML numbers compared during development). Bethe-Bloch and MUSIC output,
+  single-thread and MPI, is byte-identical to 1.4.1's, including the 600 000
+  muon MUSIC benchmark file at 100 m. MUSIC takes 32 % less time (35.1 s
+  against 51.4 s for that file, single thread, Apple M4).
+- The generator no longer links `ranlux.o`, which it had not called since
+  its own thread-local generator replaced RANLUX.
+- `THIRD_PARTY_LICENSES.md` rewritten: what is downloaded, what comes from
+  authors, and a notice for releases 0.9.0 to 1.4.1, which bundled PARMA and
+  the CERNLIB routines (the latter undeclared) and, inside JAEA's package, an
+  LGPL Mersenne Twister.
+
+### Fixed
+- The thread-private copy of RANLUX returned only zeros when called before
+  RLUXGO (its "not yet initialised" flag started false). No engine reached
+  that path, as all seed every thread first; the new code seeds itself.
+
 ## [1.4.1] — 2026-10-16
 
 The benchmark data and records that go with the paper, regenerated with 1.4.0.

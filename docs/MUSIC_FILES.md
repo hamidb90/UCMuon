@@ -39,11 +39,11 @@ Notes:
   wrapper files that are already there).
 - The `music-double-diff-*.dat` tables go in `data/`. The build links
   them into `bin/` automatically.
-- The author may also send standard CERN random-number routines
-  (`ranlux`, `ranmar`, `corset`, `corgen`, `rnorml`). UCMuon already
-  bundles equivalent CERN routines in `src/common/`, so you normally do
-  **not** need to add these. Only add them if a build error reports one
-  as missing.
+- The author may also send the CERN random-number routines MUSIC calls
+  (`ranlux`, `ranmar`, `corset`, `corgen`, `rnorml`). Do **not** add
+  them: UCMuon has its own implementations, `src/common/ucmuon_rng.f90`
+  (RANLUX, RANMAR, RNORML, giving the same numbers as the CERN ones) and
+  `src/common/corgen.f90` (CORSET, CORGEN).
 
 ## Step 3: Build
 

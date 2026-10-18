@@ -562,7 +562,7 @@ contains
   !=============================================================================
   ! transport_bb — CSDA Bethe-Bloch + Highland MS
   ! Coordinates: z>0 = underground (MUSIC convention on entry and exit).
-  ! Thread-safe: all state on stack + THREADPRIVATE ranlux from ranlux_omp.f.
+  ! Thread-safe: all state on stack + THREADPRIVATE RANLUX from ucmuon_rng.f90.
   !=============================================================================
   subroutine transport_bb(x, y, z, cx, cy, cz, E, slant_cm, &
                            rho, I_eV_in, Zat, Aat, X0, b, C_d, ms)

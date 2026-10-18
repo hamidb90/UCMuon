@@ -11,7 +11,7 @@ underlying sea-level measurements. Complements the transport benchmark in
 | File | Purpose |
 |------|---------|
 | `ucmuon_spectra.py` | Python ports of the Fortran spectrum modes (1, 2, 4–7), the PARMA Mode 3 loader, the CosmoALEPH charge-ratio table, and the Bugaev 1998 reference fit |
-| `make_parma_spectrum.py` | Compiles + runs the real PARMA Fortran (`src/parma/`) to cache the Mode 3 vertical spectrum and angular factors (needs `gfortran`; run once, commit the CSVs) |
+| `make_parma_spectrum.py` | Compiles + runs the real PARMA Fortran (`src/parma/`, installed from JAEA by `tools/install_parma.py`) to cache the Mode 3 vertical spectrum and angular factors (needs `gfortran`; run once, commit the CSVs) |
 | `parma_angular_spec.f90` | Small Fortran helper: PARMA muon angular factor `getSpecAngFinal` vs zenith angle, used by `make_parma_spectrum.py` |
 | `extract_reyna_fig3.py` | Digitizes Fig. 3 of Reyna 2006 from the **vector** PDF (`references/source/Reyna-B.pdf`) — marker centres are exact path coordinates, not pixel estimates |
 | `plot_source_spectra.py` | Produces the comparison figures below |

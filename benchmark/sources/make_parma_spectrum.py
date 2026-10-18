@@ -2,7 +2,8 @@
 """Generate data/parma_vertical_spectrum.csv for the source-spectrum figures.
 
 Mode 3 (PARMA/EXPACS) is the one UCMuon source model with no closed form:
-it is a numerical model that lives only as Fortran in src/parma/.  Every
+it is a numerical model that lives only as Fortran in src/parma/ (JAEA's
+code, not shipped: tools/install_parma.py downloads and installs it).  Every
 other curve in plot_source_spectra.py comes from a pure-Python port in
 ucmuon_spectra.py, so PARMA was missing from the figures.  This script
 runs the *real* PARMA subroutines once and caches the vertical muon
@@ -137,8 +138,9 @@ def main():
             and "--rerun" not in sys.argv):
         print("CSVs exist; pass --rerun to regenerate")
         return
-    if not os.path.isdir(PARMA_DATA):
-        sys.exit(f"PARMA data dir not found: {PARMA_DATA}")
+    if not (os.path.isdir(PARMA_DATA) and os.path.isfile(PARMA_F90[1])):
+        sys.exit("PARMA is not installed (it is JAEA's and not shipped); "
+                 "run python3 tools/install_parma.py first")
     os.makedirs(DATA, exist_ok=True)
     gen_spectrum()
     gen_angular()

@@ -13,7 +13,9 @@ on:
       - 'gui/ucmuon_stochastic_driver.py'
       - 'src/generator/**'
       - 'src/transport/**'
+      - 'src/common/**'
       - 'tests/transport/**'
+      - 'tests/rng/**'
       - 'src/converters/**'
       - 'tests/converters/**'
       - 'tools/check_consistency.py'
@@ -25,7 +27,9 @@ on:
       - 'gui/ucmuon_stochastic_driver.py'
       - 'src/generator/**'
       - 'src/transport/**'
+      - 'src/common/**'
       - 'tests/transport/**'
+      - 'tests/rng/**'
       - 'src/converters/**'
       - 'tests/converters/**'
       - 'tools/check_consistency.py'
@@ -90,3 +94,9 @@ jobs:
         run: |
           make ucmuon_to_phits
           python3 tests/converters/test_converters.py
+      # src/common/ucmuon_rng.f90 replaced the CERNLIB RANLUX, RANMAR and RNORML
+      # (GPL) after 1.4.1 and must give the same numbers, bit for bit.
+      - name: Random number routines reproduce the CERNLIB streams
+        run: |
+          python3 -m pip install pytest
+          python3 -m pytest tests/rng -q -p no:cacheprovider

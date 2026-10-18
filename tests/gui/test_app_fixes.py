@@ -62,6 +62,16 @@ def test_b15_parma_w_from_the_date(new_app):
     assert widget(at, "number_input", "parma_sw") is not None
 
 
+def test_parma_not_installed_is_said(new_app):
+    # PARMA is JAEA's and not shipped; the test copy has no src/, so it is
+    # never installed there, and choosing mode 3 must say how to install it.
+    at = new_app(mode="Advanced")
+    assert not any("PARMA is not installed" in str(e.value) for e in at.error)
+    widget(at, "selectbox", "gen_spectrum_mode").select(3).run()
+    assert any("tools/install_parma.py" in str(e.value) for e in at.error)
+    assert not exceptions(at)
+
+
 def test_b10a_terrain_file_selector_is_keyed(new_app, surface_run):
     at = new_app(mode="Advanced", state=surface_run[1])
     assert widget(at, "selectbox", "terrain_infile_select") is not None

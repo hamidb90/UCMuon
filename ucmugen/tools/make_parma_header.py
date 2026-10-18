@@ -42,7 +42,9 @@ Usage
     python3 make_parma_header.py /path/to/parma_cpp [-o ../include/UCMuGen_PARMA.h]
 
 where the argument is an unpacked parma_cpp.zip from
-https://phits.jaea.go.jp/expacs/download-eng.htm
+https://phits.jaea.go.jp/expacs/download-eng.htm. UCMuon does not ship PARMA
+or the generated header; tools/install_parma.py (run by the installers)
+downloads JAEA's zip and calls this script.
 """
 
 from __future__ import annotations

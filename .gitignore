@@ -74,6 +74,12 @@ external/
 mulder-master/
 MuonElectronGenerator-main/
 
+# PARMA (JAEA, non-commercial terms): not shipped. tools/install_parma.py
+# downloads it into external/parma/ and writes these three.
+/data/EXPACS/
+/src/parma/parma_subroutines.f90
+/ucmugen/include/UCMuGen_PARMA.h
+
 # ── Benchmark scratch working dir (~8 GB raw .dat — keep on disk, never track) ──
 # The curated, tracked copy lives in benchmark/ (codes, reports, figures, CSVs).
 benchmark/geant4_muon_rock_v5/

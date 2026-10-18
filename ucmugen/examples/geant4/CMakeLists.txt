@@ -29,6 +29,7 @@ target_link_libraries(ucmugen_example PRIVATE ${Geant4_LIBRARIES})
 
 # Optional: the location- and date-aware PARMA flux. It is a separate header
 # because it carries JAEA's non-commercial licence, so it is opt-in here too.
+# Generate it first: python3 tools/install_parma.py (from the UCMuon root).
 #   cmake -S . -B build -DUCMUGEN_PARMA=ON
 option(UCMUGEN_PARMA "Use the PARMA/EXPACS flux (JAEA, non-commercial only)" OFF)
 if(UCMUGEN_PARMA)

@@ -13,8 +13,9 @@ c++ -std=c++17 -O2 -I../../include feature_tour.cc -o feature_tour
 ```
 
 Runs in a few seconds. No Geant4, no external data. To include the
-site-aware PARMA spectrum, generate `UCMuGen_PARMA.h` first (see
-`ucmugen/tools/make_parma_header.py`) and add `-DUCMUGEN_TOUR_PARMA`.
+site-aware PARMA spectrum, generate `UCMuGen_PARMA.h` first
+(`python3 tools/install_parma.py` from the UCMuon root downloads PARMA from
+JAEA and writes it) and add `-DUCMUGEN_TOUR_PARMA`.
 
 `./feature_tour --numbers` prints the same values as machine-readable
 `key value` pairs. That is what CI diffs against

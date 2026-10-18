@@ -43,7 +43,7 @@ UCMuon/                              <- project root; always run sbatch from her
 |-- data/                            <- static data (never modified by runs)
 |   |-- music-double-diff-rock.dat   <- required for MUSIC init_tables=0
 |   |-- music-double-diff-water.dat
-|   `-- EXPACS/parma/input/          <- standalone PARMA v4.10 data files
+|   `-- EXPACS/parma/input/          <- PARMA 4.10 data (JAEA; not shipped, see step 2)
 |
 |-- logs/                            <- SLURM .out/.err files (create once, step 4)
 |
@@ -79,8 +79,20 @@ source ~/.bashrc
 
 ```bash
 cd ~/UCMuon
+python3 tools/install_parma.py   # only for spectrum mode 3 (PARMA): downloads it
+                                 # from JAEA, needs internet (the front-end has it)
 make hpc                    # builds all MPI+OMP binaries + PHITS converter
 ```
+
+The installer needs Python 3.7 or later; the system `python3` of
+Lemaitre4 is 3.6, so load one first:
+`module load Python/3.11.5-GCCcore-13.2.0` (in `releases/2023b`).
+PARMA is JAEA's code (free for non-commercial use, cite Sato 2015 and 2016)
+and is not shipped with UCMuon. Without it every spectrum except mode 3
+works; mode 3 then stops with a message saying how to install it. On a
+cluster without internet, download `parma.zip` and `parma_cpp.zip` from
+https://phits.jaea.go.jp/expacs/download-eng.htm elsewhere, copy them over,
+and run `python3 tools/install_parma.py --zip-dir DIR`.
 
 Individual targets:
 ```bash

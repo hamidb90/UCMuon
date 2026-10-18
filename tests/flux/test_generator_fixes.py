@@ -34,7 +34,7 @@ import tempfile
 
 import numpy as np
 
-from _harness import ROOT, Config, Detector, run_fortran
+from _harness import PARMA_DIR, ROOT, Config, Detector, run_fortran
 
 MPI_BIN = ROOT / "bin" / "ucmuon_gen"
 FAILS: list[str] = []
@@ -124,14 +124,17 @@ def main() -> int:
     check(k_c < 10, f"UCMuGen UCMuonLcg: {k_c} of {n} draws on the 2^-24 grid (all of them up to 1.3.2)")
 
     print("PARMA W from the date")
-    w_in, out_in = parma_w(2020, 1, 1)
-    check(w_in > 0 and "WARNING" not in out_in, f"2020-01-01 inside the table: W = {w_in}, no warning")
-    w_late, out_late = parma_w(2027, 3, 1)
-    check(w_late > 0 and "no PARMA W index for this date; using the latest one" in out_late,
-          f"2027-03-01 after the table: W = {w_late} (latest available), with a warning")
-    w_far, out_far = parma_w(2050, 12, 31)
-    check(w_far == w_late and "using the latest one" in out_far,
-          f"2050-12-31 (latest GUI date): W = {w_far}, same fallback")
+    if not (PARMA_DIR.is_dir() and (ROOT / "src/parma/parma_subroutines.f90").exists()):
+        print("  skipped: PARMA not installed (python3 tools/install_parma.py, then make)")
+    else:
+        w_in, out_in = parma_w(2020, 1, 1)
+        check(w_in > 0 and "WARNING" not in out_in, f"2020-01-01 inside the table: W = {w_in}, no warning")
+        w_late, out_late = parma_w(2027, 3, 1)
+        check(w_late > 0 and "no PARMA W index for this date; using the latest one" in out_late,
+              f"2027-03-01 after the table: W = {w_late} (latest available), with a warning")
+        w_far, out_far = parma_w(2050, 12, 31)
+        check(w_far == w_late and "using the latest one" in out_far,
+              f"2050-12-31 (latest GUI date): W = {w_far}, same fallback")
 
     print("MPI generator")
     if not MPI_BIN.exists() or shutil.which("mpirun") is None:

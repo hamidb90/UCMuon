@@ -7,9 +7,13 @@ name: UCMuGen
 # Not covered here, deliberately:
 #   - test_geant4 needs a Geant4 installation (a multi-GB build). run_tests.sh
 #     skips it rather than failing, and it is run locally before releases.
-#   - PARMA's reference build: UCMuGen_PARMA.h is in the tree (JAEA licence,
-#     non-commercial) and test_parma runs here, but its comparison against
-#     JAEA's stock parma_cpp build needs that release, which is not.
+#   - PARMA's reference build: test_parma runs here on UCMuGen_PARMA.h, which
+#     tools/install_parma.py generates from JAEA's parma_cpp.zip (PARMA is not
+#     shipped: JAEA licence, non-commercial), but its comparison against
+#     JAEA's stock parma_cpp build is a local, pre-release step.
+#
+# PARMA is downloaded from JAEA by tools/install_parma.py; the two zips are
+# cached between runs, keyed on the checksums of the tested release.
 
 on:
   push:
@@ -17,6 +21,8 @@ on:
       - 'ucmugen/**'
       - 'src/generator/**'
       - 'src/parma/**'
+      - 'tools/install_parma.py'
+      - 'tools/parma_v4.10.sha256'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -29,6 +35,8 @@ on:
       - 'ucmugen/**'
       - 'src/generator/**'
       - 'src/parma/**'
+      - 'tools/install_parma.py'
+      - 'tools/parma_v4.10.sha256'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -74,6 +82,17 @@ jobs:
       # that way. Including the header is not enough to see it: clang warns
       # only when the tables are compiled into the program, so build a test
       # that uses them.
+      - name: PARMA zips from JAEA (cached)
+        uses: actions/cache@v4
+        with:
+          path: |
+            external/parma/parma.zip
+            external/parma/parma_cpp.zip
+          key: parma-4.10-${{ hashFiles('tools/parma_v4.10.sha256') }}
+
+      - name: Install PARMA (not shipped; JAEA, non-commercial terms)
+        run: python3 tools/install_parma.py --yes
+
       - name: PARMA header compiles clean
         run: |
           ${{ matrix.cxx }} -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror -pthread \
@@ -157,6 +176,17 @@ jobs:
           sudo apt-get update
           sudo apt-get install -y gfortran
           python3 -m pip install --upgrade pip numpy
+
+      - name: PARMA zips from JAEA (cached)
+        uses: actions/cache@v4
+        with:
+          path: |
+            external/parma/parma.zip
+            external/parma/parma_cpp.zip
+          key: parma-4.10-${{ hashFiles('tools/parma_v4.10.sha256') }}
+
+      - name: Install PARMA (not shipped; JAEA, non-commercial terms)
+        run: python3 tools/install_parma.py --yes
 
       - name: C++ / Fortran / Python agree
         run: python3 tests/flux/test_flux_consistency.py

@@ -6,8 +6,11 @@
 #  Easiest: double-click install_windows.bat in the project root.
 #  Or run from the project root in PowerShell:
 #    powershell -ExecutionPolicy Bypass -File install.ps1
-#  Scripted / CI use (no prompts, optional extras skipped):
+#  Scripted / CI use (no prompts, optional extras skipped except PARMA,
+#  which is installed unless -NoParma is given):
 #    powershell -ExecutionPolicy Bypass -File install.ps1 -NoPrompt
+#  PARMA (spectrum mode 3) from zips already downloaded from JAEA:
+#    powershell -ExecutionPolicy Bypass -File install.ps1 -ParmaZipDir C:\path
 #
 #  What this script does:
 #    1. Checks Python >= 3.9
@@ -25,7 +28,7 @@
 #  Engine 4 (PROPOSAL) is not supported on Windows.
 # =============================================================================
 
-param([switch]$NoPrompt)
+param([switch]$NoPrompt, [switch]$NoParma, [string]$ParmaZipDir = "")
 
 $ErrorActionPreference = "Stop"
 Set-Location $PSScriptRoot
@@ -286,6 +289,27 @@ if ($fortran_ok -and (Test-Path $pumas_src)) {
     }
 }
 
+# ── 3c. Optional: PARMA for spectrum mode 3 (JAEA, non-commercial terms) ─────
+# Downloaded from JAEA, not bundled. tools\install_parma.py shows the terms
+# and asks (default yes); -NoPrompt installs without asking, -NoParma skips.
+$ErrorActionPreference = "Continue"
+& $py tools\install_parma.py --status *> $null
+if ($LASTEXITCODE -eq 0) {
+    Write-Host "  OK  PARMA installed  (spectrum mode 3)"
+} elseif ($NoParma) {
+    Write-Host "  --  PARMA skipped  (-NoParma; spectrum mode 3 disabled)"
+} else {
+    $parma_args = @("tools\install_parma.py")
+    if ($NoPrompt -or $ParmaZipDir) { $parma_args += "--yes" }
+    if ($ParmaZipDir) { $parma_args += @("--zip-dir", $ParmaZipDir) }
+    & $py @parma_args
+    & $py tools\install_parma.py --status *> $null
+    if ($LASTEXITCODE -ne 0) {
+        Write-Host "  --  PARMA not installed  (spectrum mode 3 disabled; re-run install to add it)"
+    }
+}
+$ErrorActionPreference = "Stop"
+
 # ── 4. Build Fortran binaries ─────────────────────────────────────────────────
 Write-Host "[4/4] Building Fortran binaries..."
 
@@ -296,9 +320,9 @@ if ($fortran_ok) {
         # from PowerShell leaves its sub-shell without mkdir/cp/gfortran on PATH.
         $env:MSYSTEM        = "UCRT64"
         $env:CHERE_INVOKING = "1"    # keep the current directory in the login shell
-        # -k: keep building other engines when one fails (e.g. MUSIC's
-        #     ranmar_omp THREADPRIVATE common hits a gas .tls_common limit on PE)
-        # -fno-common: works around that assembler limit with GCC on MinGW
+        # -k: keep building other engines when one fails
+        # -fno-common: avoids gas's .tls_common limit on PE with GCC on MinGW
+        #     (once hit by THREADPRIVATE COMMON blocks in the old RNG files)
         & "C:\msys64\usr\bin\bash.exe" -lc "make -k local FFLAGS_F77='-O2 -std=legacy -fno-common'" 2>&1 |
             ForEach-Object { Write-Host "  $_" }
     } else {
@@ -333,6 +357,11 @@ if (Test-Binary "ucmuon_gen_omp") {
     Write-Host "  [x] Generator ucmuon_gen_omp            (bin\ucmuon_gen_omp)"
 } else {
     Write-Host "  [ ] Generator ucmuon_gen_omp            (needs gfortran -- creates surface muons)"
+}
+if (Test-Path "src\parma\parma_subroutines.f90") {
+    Write-Host "  [x] Spectrum 3  PARMA (JAEA)             (downloaded from JAEA, non-commercial use)"
+} else {
+    Write-Host "  [ ] Spectrum 3  PARMA (JAEA)             (re-run install and accept the PARMA download)"
 }
 Write-Host "  [x] Engine 1  UCMuon-MC (flagship)       (Python -- always available)"
 if (Test-Binary "ucmuon_transport_music_omp") {

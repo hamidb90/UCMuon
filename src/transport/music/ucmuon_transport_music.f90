@@ -48,8 +48,7 @@
 ! ─────
 !   make ucmuon_transport_music     (see Makefile)
 !   Requires: mpif90 wrapper + gfortran + OpenMP
-!             music.o  music-crosssections.o  ranlux_omp.o  ranmar_omp.o
-!             rnorml.o  corgen.o
+!             music.o  music-crosssections.o  ucmuon_rng.o  corgen.o
 !
 ! Usage
 ! ─────
