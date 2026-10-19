@@ -9,17 +9,12 @@ total CPU time summed over 10 OpenMP threads (the parser reads PHITS's
 "total cpu time" into phits_timing.txt). The comparison is therefore a fair
 single-core-equivalent CPU-time comparison, not a wall-clock one.
 
-Timing data is read from the four-code benchmark folder so the figure stays
-in sync with the survival table (tab:survival):
-
-  benchmark/geant4_muon_rock_v5/
-    {MUSIC,BB,PROPOSAL,UCMuon}/<code>_timing.txt   "Total : <s> s"   (all depths)
-    phits/phits_timing.txt                         "Elapsed : <s> s"
-
-Geant4 does not expose a machine-readable single-value timing file for the
-full 6x10^5-muon run (the trimmed outputs/ keeps only a 10^5 sub-run), so its
-12.5 h wall time is carried as a documented constant below. The MUSIC, BB,
-PROPOSAL, UCMuon and PHITS values are parsed at runtime.
+All times are read from the shipped record benchmark/results/
+engine_timing_20261018.csv: the TOTAL row of each UCMuon engine (sum over the
+six depths, one process each) and the two reference rows, Geant4 (12.5 h wall
+time of the single-thread run, kept as the run's own outputs are not shipped)
+and PHITS (total CPU time from its phits.out). Up to 1.4.1 the script read
+per-engine timing files from the unshipped benchmark/geant4_muon_rock_v5/.
 
 Both Geant4 (1 thread, SerialOnly) and the four fast engines run on a single
 core (wall = CPU); PHITS ran with 10 OpenMP threads, and its total CPU time is
@@ -30,7 +25,7 @@ Usage:  python3 manuscript/scripts/make_fig10_timing.py
 """
 from __future__ import annotations
 
-import re
+import csv
 import sys
 from pathlib import Path
 
@@ -42,12 +37,11 @@ import matplotlib.ticker as ticker
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUT_PDF    = SCRIPT_DIR.parent / "figs" / "fig10_timing.pdf"
-BENCH_DIR  = (SCRIPT_DIR.parent.parent
-              / "benchmark" / "geant4_muon_rock_v5")
-
-# Geant4 full 6e5-muon run is not recoverable from the trimmed outputs/ folder;
-# carried as a documented constant (12.5 h single thread, FTFP_BERT).
-GEANT4_SECONDS = 45_134
+TIMING_CSV = (SCRIPT_DIR.parent.parent / "benchmark" / "results"
+              / "engine_timing_20261018.csv")
+# CSV engine name -> key used below
+CSV_KEYS = {"UCMuon-MC": "UCMuon", "MUSIC": "MUSIC", "BetheBloch": "BB",
+            "PROPOSAL": "PROPOSAL", "Geant4": "Geant4", "PHITS": "PHITS"}
 
 # Colours match CODE_STYLE in make_fig06.py so the two figures read as a set.
 CODE_STYLE = {
@@ -60,25 +54,23 @@ CODE_STYLE = {
 }
 
 
-def _grep_seconds(path: Path, key: str) -> float:
-    """Return the float following '<key> : <value>' in a timing file."""
-    text = path.read_text()
-    m = re.search(rf"{key}\s*:\s*([\d.]+)", text)
-    if not m:
-        raise ValueError(f"no '{key}' entry in {path}")
-    return float(m.group(1))
-
-
 def load_timings() -> dict[str, float]:
-    t = {"Geant4": float(GEANT4_SECONDS)}
-    for code in ("MUSIC", "BB", "PROPOSAL", "UCMuon"):
-        t[code] = _grep_seconds(BENCH_DIR / code / f"{code}_timing.txt", "Total")
-    t["PHITS"] = _grep_seconds(BENCH_DIR / "phits" / "phits_timing.txt", "Elapsed")
+    """Seconds for the full 6x10^5-muon run of each code (TOTAL rows)."""
+    t = {}
+    with open(TIMING_CSV) as fh:
+        for row in csv.DictReader(r for r in fh if not r.startswith("#")):
+            key = CSV_KEYS.get(row["engine"])
+            if key and row["depth_m"] == "TOTAL":     # UCMuon-MC-auto is not a key
+                t[key] = float(row["seconds_6e5"])
+    missing = set(CSV_KEYS.values()) - set(t)
+    if missing:
+        raise ValueError(f"{TIMING_CSV.name}: no TOTAL row for {sorted(missing)}")
     return t
 
 
 def fmt_time(s: float) -> str:
     if s < 60:        return f"{s:.0f} s"
+    if s < 600:       return f"{s / 60:.1f} min"
     if s < 3_600:     return f"{s / 60:.0f} min"
     return f"{s / 3_600:.1f} h"
 
@@ -127,13 +119,13 @@ def make_fig10(timings: dict[str, float], out_pdf: Path) -> None:
             alpha=0.8, style="italic")
 
     ax.set_xscale("log")
-    ax.set_xlim(60, 1_500_000)
+    ax.set_xlim(20, 1_500_000)
     ax.set_ylim(-0.5, 5.5)
     ax.set_yticks(ypos)
     ax.set_yticklabels([CODE_STYLE[c]["label"] for c in order], fontsize=9.5)
     ax.set_xlabel("CPU time, single-core-equivalent  (log scale)", labelpad=6)
 
-    tick_vals   = [60, 600, 3_600, 36_000, 360_000]
+    tick_vals   = [60, 600, 3_600, 36_000, 360_000]   # Bethe-Bloch (48 s) sits left of 1 min
     tick_labels = ["1 min", "10 min", "1 h", "10 h", "100 h"]
     ax.set_xticks(tick_vals)
     ax.xaxis.set_major_formatter(ticker.FixedFormatter(tick_labels))
@@ -173,8 +165,8 @@ def make_fig10(timings: dict[str, float], out_pdf: Path) -> None:
 
 
 def main() -> int:
-    if not BENCH_DIR.is_dir():
-        print(f"[err] benchmark folder not found: {BENCH_DIR}", file=sys.stderr)
+    if not TIMING_CSV.is_file():
+        print(f"[err] timing record not found: {TIMING_CSV}", file=sys.stderr)
         return 1
     make_fig10(load_timings(), OUT_PDF)
     return 0

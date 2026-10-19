@@ -35,6 +35,7 @@ CODE_STYLE = {
 
 def fmt_time(s: float) -> str:
     if s < 60:    return f"{s:.0f} s"
+    if s < 600:   return f"{s/60:.1f} min"
     if s < 3600:  return f"{s/60:.0f} min"
     return f"{s/3600:.1f} h"
 

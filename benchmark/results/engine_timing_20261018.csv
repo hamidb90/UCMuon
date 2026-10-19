@@ -1,0 +1,70 @@
+# UCMuon engine timing, re-measured 2026-10-18 with the code after 1.4.1 (CERNLIB
+# random-number routines replaced by src/common/ucmuon_rng.f90, which makes MUSIC
+# about 30 % faster with identical output). Supersedes engine_timing_20261016.csv,
+# whose UCMuon-MC times were for its automatic mode (10 worker processes), not
+# for one process as labelled.
+#
+# Monoenergetic benchmark source (6 vertical beams, 5/10/20/50/100/300 GeV, 100k
+# muons each = 6e5 total), Standard Rock rho = 2.65 g/cm^3, Apple M4 Mac (load
+# average 2.9 at start and end). One session:
+#   OUTDIR=... UCMUON_WORKERS=1 bash benchmark/analysis/run_mono_bench.sh
+#   OUTDIR=... UCMUON_WORKERS=0 ENGINES=UCMuon bash benchmark/analysis/run_mono_bench.sh
+# after a discarded warm-up at 1 m. Every engine runs as one process with
+# OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1, so wall time = CPU time.
+# UCMuon-MC-auto is UCMuon-MC's default (stdin item 19 = 0): one worker process
+# per 2x10^4 muons up to the core count, here 10 processes; its seconds are wall
+# time, not CPU time.
+#
+# Outputs, compared with the archive in benchmark/geant4_muon_rock_v5/: Bethe-Bloch,
+# MUSIC, PROPOSAL and UCMuon-MC-auto reproduce their archived files bit for bit
+# (the archived UCMuon-MC outputs were made in the automatic mode). The one-process
+# UCMuon-MC uses another random sequence; its survival fraction, mean exit energy
+# and mean angle agree with the archive within 1.4 sigma at every depth.
+#
+# CONTROLS (code unchanged since 2026-10-16): Bethe-Bloch 48.03 s against 47.31 s,
+# PROPOSAL 1756.09 s against 1761.60 s, UCMuon-MC-auto 98.76 s against 97.92 s.
+#
+# Reference rows: Geant4 11.2 (FTFP_BERT) single-thread wall time of the full
+# 6e5-muon run, 12.5 h (its own outputs are not shipped); PHITS 3.36 total CPU
+# time summed over its 10 OpenMP threads, from its phits.out.
+#
+# seconds_per_1e5 = seconds_6e5 / 6, the unit used in the paper's tables.
+# make_fig10_timing.py reads the TOTAL rows of this file.
+engine,depth_m,seconds_6e5,seconds_per_1e5,processes
+UCMuon-MC,1,37.98,6.33,1
+UCMuon-MC,10,41.14,6.86,1
+UCMuon-MC,25,36.29,6.05,1
+UCMuon-MC,50,47.85,7.98,1
+UCMuon-MC,100,94.71,15.78,1
+UCMuon-MC,200,115.45,19.24,1
+UCMuon-MC,TOTAL,373.42,,1
+BetheBloch,1,8.38,1.40,1
+BetheBloch,10,7.15,1.19,1
+BetheBloch,25,7.33,1.22,1
+BetheBloch,50,7.53,1.26,1
+BetheBloch,100,8.51,1.42,1
+BetheBloch,200,9.13,1.52,1
+BetheBloch,TOTAL,48.03,,1
+MUSIC,1,5.82,0.97,1
+MUSIC,10,12.80,2.13,1
+MUSIC,25,19.66,3.28,1
+MUSIC,50,25.86,4.31,1
+MUSIC,100,35.03,5.84,1
+MUSIC,200,44.99,7.50,1
+MUSIC,TOTAL,144.16,,1
+PROPOSAL,1,16.52,2.75,1
+PROPOSAL,10,122.01,20.34,1
+PROPOSAL,25,232.35,38.73,1
+PROPOSAL,50,333.19,55.53,1
+PROPOSAL,100,461.03,76.84,1
+PROPOSAL,200,590.99,98.50,1
+PROPOSAL,TOTAL,1756.09,,1
+UCMuon-MC-auto,1,10.70,1.78,10
+UCMuon-MC-auto,10,10.85,1.81,10
+UCMuon-MC-auto,25,10.84,1.81,10
+UCMuon-MC-auto,50,13.94,2.32,10
+UCMuon-MC-auto,100,21.25,3.54,10
+UCMuon-MC-auto,200,31.18,5.20,10
+UCMuon-MC-auto,TOTAL,98.76,,10
+Geant4,TOTAL,45134.00,,1
+PHITS,TOTAL,371145.63,,10

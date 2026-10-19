@@ -1,3 +1,7 @@
+# SUPERSEDED by engine_timing_20261018.csv. The UCMuon-MC times in this file are
+# for its automatic mode (stdin item 19 = 0 in run_mono_bench.sh: 10 worker
+# processes on this machine), not for one process as the text below says.
+#
 # UCMuon engine timing, re-measured 2026-07-30. Supersedes the June 2026
 # per-engine timing files for the MONOENERGETIC suite; the realistic suite was
 # re-measured too and needs no change (see the bottom of this file).

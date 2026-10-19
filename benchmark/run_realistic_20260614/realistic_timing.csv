@@ -1,15 +1,24 @@
 # Realistic-source benchmark timing (10^5 realistic cosmic-ray muons, Standard
 # Rock, depths 1/10/25/50/100/200 m). Single-core-equivalent.
-# Engines: sum of the six per-depth runs, OMP_NUM_THREADS=1 (wall = CPU).
+# Engines: sum of the six per-depth runs, one process each, OMP_NUM_THREADS=1
+#          (wall = CPU). Re-measured in one session on 2026-10-18 with the code
+#          after 1.4.1 (new random-number routines, MUSIC faster with identical
+#          output):
+#            OUTDIR=... UCMUON_WORKERS=1 bash benchmark/analysis/run_realistic_bench.sh
+#          Bethe-Bloch, MUSIC and PROPOSAL reproduce their archived outputs bit
+#          for bit; UCMuon-MC in one process uses another random sequence and
+#          agrees with the archived run within 0.8 sigma at every depth.
+#          UCMuon-MC in its default automatic mode (5 worker processes here, as
+#          the archived outputs were made) takes 56.39 s of wall time.
+#          Up to 2026-10-16 the UCMuon value (56 s) was that automatic mode,
+#          and MUSIC took 32 s with the old routines.
 # Geant4 : single run over all depths, serial (wall = CPU).
 # PHITS  : single run over all depths, total CPU summed over 10 OpenMP threads
 #          (Case A, full default physics; from phits.out total cpu time).
-# Engines re-measured in one session on 2026-10-16 with v1.4.0 (seconds
-# rounded; June 2026 values: PROPOSAL 195, UCMuon 53, MUSIC 28, BB 14).
 code,seconds
 Geant4,10851.95
 PHITS,198855.84
-PROPOSAL,194
-UCMuon,56
-MUSIC,32
-BB,14
+PROPOSAL,191.21
+UCMuon,165.53
+MUSIC,22.95
+BB,14.67

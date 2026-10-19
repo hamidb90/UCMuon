@@ -40,6 +40,21 @@ elevation model). No simulated result changes.
   LGPL Mersenne Twister.
 
 ### Fixed
+- Engine timings re-measured with one process per engine
+  (`benchmark/results/engine_timing_20261018.csv`, and the realistic suite's
+  `realistic_timing.csv`). The earlier records and the paper gave UCMuon-MC's
+  time in its automatic mode (10 worker processes for the 6x10^5-muon suite,
+  5 for the realistic one) as a single-thread time: 3.6 s per 10^5 muons at
+  100 m, against 15.8 s for one process (3.5 s with 10 processes). The old
+  files are marked superseded. Bethe-Bloch and PROPOSAL re-measure as before,
+  MUSIC at 5.8 s with the new routines (8.7 s); every output except the
+  one-process UCMuon-MC reproduces the archive bit for bit.
+- `run_mono_bench.sh` and `run_realistic_bench.sh` take `UCMUON_WORKERS` (0,
+  the default, as the archived outputs were made; 1 for a single process) and
+  `OUTDIR`, and write every run's wall time to `timing.csv` with UCMuon-MC's
+  actual process count. `make_fig10_timing.py` reads the shipped timing record
+  instead of per-engine files outside the archive, and shows Bethe-Bloch's bar
+  (below its old 1 min axis limit).
 - The thread-private copy of RANLUX returned only zeros when called before
   RLUXGO (its "not yet initialised" flag started false). No engine reached
   that path, as all seed every thread first; the new code seeds itself.

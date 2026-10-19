@@ -12,6 +12,14 @@
 #    bash run_mono_bench.sh 1                       # smoke test
 #    ENGINES="BB UCMuon" bash run_mono_bench.sh "1 10 25 50 100 200"
 #                                                   # only those engines
+#    OUTDIR=/tmp/t UCMUON_WORKERS=1 bash run_mono_bench.sh
+#                       # timing run: outputs elsewhere, UCMuon-MC in one process
+#
+#  Every run's wall time goes to ${OUTDIR}/timing.csv (engine, depth_m,
+#  seconds, processes). UCMUON_WORKERS is UCMuon-MC's process count (stdin
+#  item 19): 0 (default) is automatic, one process per 2x10^4 muons up to the
+#  core count, as the archived outputs were made; 1 is a single process, as for
+#  the single-thread times in the paper. The other engines run single-threaded.
 # =============================================================================
 set -uo pipefail
 
@@ -19,7 +27,8 @@ REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GUI_DIR="${REPO_ROOT}/gui"
 BIN_DIR="${REPO_ROOT}/bin"
 SOURCE_FILE="${REPO_ROOT}/benchmark/geant4_muon_rock_v5/sources/benchmark_surface.dat"
-OUTDIR="${REPO_ROOT}/benchmark/geant4_muon_rock_v5"
+OUTDIR="${OUTDIR:-${REPO_ROOT}/benchmark/geant4_muon_rock_v5}"
+UCMUON_WORKERS="${UCMUON_WORKERS:-0}"
 
 DEPTHS_STR="${1:-1 10 25 50 100 200}"
 read -ra DEPTHS <<< "$DEPTHS_STR"
@@ -31,6 +40,16 @@ PROP_TABLES="${HOME}/.proposal_tables"
 
 ENGINES="${ENGINES:-BB MUSIC PROPOSAL UCMuon}"
 want() { [[ " ${ENGINES} " == *" $1 "* ]]; }
+
+# Wall time of a run, to 0.01 s, printed and appended to timing.csv.
+now() { perl -MTime::HiRes=time -e 'printf "%.3f", time'; }
+lap() {   # lap ENGINE T0 PROCESSES
+  local s; s=$(perl -e "printf '%.2f', $(now) - $2")
+  echo "${s}s"
+  echo "$1,${DEPTH},${s},$3" >> "${OUTDIR}/timing.csv"
+}
+mkdir -p "${OUTDIR}/BB" "${OUTDIR}/MUSIC" "${OUTDIR}/PROPOSAL" "${OUTDIR}/UCMuon"
+[[ -f "${OUTDIR}/timing.csv" ]] || echo "engine,depth_m,seconds,processes" > "${OUTDIR}/timing.csv"
 
 echo "============================================================"
 echo "  Source : ${SOURCE_FILE}"
@@ -45,7 +64,7 @@ for DEPTH in "${DEPTHS[@]}"; do
   echo "######################## depth = ${DEPTH} m ########################"
 
   if want BB; then
-  echo -n "  [BB]       "; t0=$(date +%s)
+  echo -n "  [BB]       "; t0=$(now)
   python3 "${GUI_DIR}/ucmuon_bb_driver.py" > /dev/null 2>"${OUTDIR}/BB/BB_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/BB/BB_bench_${DEPTH}m.dat
@@ -55,11 +74,11 @@ ${DEPTH}
 1
 1
 EOF
-  echo "$(( $(date +%s) - t0 ))s"
+  lap BB "$t0" 1
   fi
 
   if want MUSIC; then
-  echo -n "  [MUSIC]    "; t0=$(date +%s)
+  echo -n "  [MUSIC]    "; t0=$(now)
   ( cd "${BIN_DIR}" && "${BIN_DIR}/ucmuon_transport_music_omp" > /dev/null 2>"${OUTDIR}/MUSIC/MUSIC_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/MUSIC/MUSIC_bench_${DEPTH}m.dat
@@ -75,11 +94,11 @@ ${DEPTH}
 
 EOF
   )
-  echo "$(( $(date +%s) - t0 ))s"
+  lap MUSIC "$t0" 1
   fi
 
   if want PROPOSAL; then
-  echo -n "  [PROPOSAL] "; t0=$(date +%s)
+  echo -n "  [PROPOSAL] "; t0=$(now)
   "${PROP_PY}" "${GUI_DIR}/proposal_driver.py" > /dev/null 2>"${OUTDIR}/PROPOSAL/PROPOSAL_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/PROPOSAL/PROPOSAL_bench_${DEPTH}m.dat
@@ -91,12 +110,12 @@ ${DEPTH}
 3
 ${PROP_TABLES}
 EOF
-  echo "$(( $(date +%s) - t0 ))s"
+  lap PROPOSAL "$t0" 1
   fi
 
   if want UCMuon; then
-  echo -n "  [UCMuon]   "; t0=$(date +%s)
-  python3 "${GUI_DIR}/ucmuon_stochastic_driver.py" > /dev/null 2>"${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log" <<EOF
+  echo -n "  [UCMuon]   "; t0=$(now)
+  python3 "${GUI_DIR}/ucmuon_stochastic_driver.py" > "${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log" 2>&1 <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/UCMuon/UCMuon_bench_${DEPTH}m.dat
 ${DEPTH}
@@ -115,10 +134,10 @@ ${DEPTH}
 1
 2
 42
-0
+${UCMUON_WORKERS}
 1
 EOF
-  echo "$(( $(date +%s) - t0 ))s"
+  lap UCMuon "$t0" "$(sed -n 's/^ *Workers: *\([0-9]*\).*/\1/p' "${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log")"
   fi
 done
 
