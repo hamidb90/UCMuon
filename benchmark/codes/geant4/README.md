@@ -6,12 +6,25 @@ depth plane. **Reference physics:** `FTFP_BERT` with its default electromagnetic
 physics (`MuonRock.cc` registers `new FTFP_BERT()` and replaces nothing; up to
 1.3.2 this file said `G4EmStandardPhysics_option4` with the Urban model).
 
+**Rock.** Standard Rock as PDG defines it and as the UCMuon engines use it: one
+nucleus with Z = 11, A = 22 (Z/A = 0.5), I = 136.4 eV, and the Sternheimer
+density-effect parameters of Groom, Mokhov and Striganov (2001), Table IV-6
+(`include/SimConfig.hh`). `DetectorConstruction.cc` builds it from a single
+A = 22 isotope, because `G4Material(name, Z, A, density)` in Geant4 11.4 ignores
+A and uses the natural element, here sodium: A = 22.99 (Z/A = 0.478),
+I = 149 eV and generic density-effect parameters, 4 to 5 % less ionisation loss
+than Standard Rock. That was the benchmark material up to UCMuon 1.4.1
+(reference runs `run_file_20260522_210114`, six beams, and
+`run_file_20260614_095725`, realistic source); the run log now prints
+`Standard rock: Z/A = 0.5, I = 136.4 eV`.
+
 ## Files here
 | File / dir | Purpose |
 |---|---|
 | `MuonRock.cc` | main program |
 | `src/`, `include/` | detector, primary generator, stepping/event/run actions |
-| `include/EcoMug.h` | third-party EcoMug generator header (Pagano 2021, GPLv3) |
+| `include/EcoMug_NOTICE.txt` | EcoMug (Pagano 2021, GPL-3.0) is not included; how to get it for `-m ecomug` |
+| `run_parallel.py` | runs a FILE-mode source as independent chunks on several cores and merges them into one run |
 | `CMakeLists.txt` | build script |
 | `run.mac`, `run_file.mac`, `run_powerlaw.mac`, `run_ecomug.mac`, `vis.mac` | macros |
 
@@ -20,9 +33,24 @@ physics (`MuonRock.cc` registers `new FTFP_BERT()` and replaces nothing; up to
 # Build (needs a Geant4 11.x install with its environment sourced)
 cmake -B build && cmake --build build -j
 
-# File mode: read the shared benchmark source, 6e5 muons
-./build/MuonRock -m file -f <benchmark_surface_as_geant4>.txt -q 600000
+# File mode: read the shared benchmark source, 6e5 muons, one core
+./build/MuonRock -m file -f <benchmark_surface_as_geant4>.txt -s 20261019 -q 600000
+
+# The same on 8 cores: 32 chunks, seeds 20261019 + chunk, merged with the event
+# numbering and files of a single run (the reference of 2026-10-19)
+python3 run_parallel.py --exe build/MuonRock --source <source>.txt \
+    --out outputs --name run_stdrock_20261019_mono --chunks 32 --workers 8 --seed 20261019
+
+# Realistic source: its muons start up to 140 m from the axis, so the slab is
+# +-1 km wide (-xy 100000; the default +-25 m suits the vertical beams)
+python3 run_parallel.py --exe build/MuonRock --source source_realistic_g4.txt \
+    --out outputs --name run_stdrock_20261019_realistic --chunks 32 --workers 8 \
+    --seed 20261119 --xy 100000
 ```
+Options added after 1.4.1: `-s <seed>` (Geant4's default seed otherwise; recorded
+in the run summary) and `-xy <cm>` (slab half-width). The merged summary's
+`Elapsed` is the CPU time summed over the chunks; its wall time is stated
+separately.
 The Geant4 source file is produced from the common `benchmark_surface.dat` by
 `../../codes/phits` conventions / the converter in the scratch tree
 (`sources/convert_surface_to_geant4.py`). Output is a `*_muons.csv` per-event

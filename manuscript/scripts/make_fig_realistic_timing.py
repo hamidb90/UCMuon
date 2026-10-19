@@ -24,7 +24,7 @@ TIMING    = REPO_ROOT / "benchmark" / "run_realistic_20260614" / "realistic_timi
 OUT_PDF   = Path(__file__).resolve().parent.parent / "figs" / "fig_timing_realistic.pdf"
 
 CODE_STYLE = {
-    "Geant4":   {"label": "Geant4 11.2 (FTFP_BERT)",      "color": "#1565C0"},
+    "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",      "color": "#1565C0"},
     "PHITS":    {"label": "PHITS 3.36",                   "color": "#C62828"},
     "MUSIC":    {"label": "MUSIC (Engine 2)",             "color": "#FF8F00"},
     "PROPOSAL": {"label": "PROPOSAL (Engine 4)",          "color": "#2E7D32"},

@@ -39,6 +39,38 @@ elevation model). No simulated result changes.
   the CERNLIB routines (the latter undeclared) and, inside JAEA's package, an
   LGPL Mersenne Twister.
 
+### Benchmark: the Geant4 reference is Standard Rock now
+- The Geant4 benchmark built its rock with `G4Material(name, Z=11, A=22,
+  density)`; Geant4 11.4 ignores A there and uses natural sodium, so the
+  reference rock had Z/A = 0.478 (Standard Rock: 0.500), I = 149 eV (136.4)
+  and generic density-effect parameters: 4 to 5 % less ionisation loss than
+  Standard Rock at every energy (G4EmCalculator, checked on water, aluminium
+  and carbon). The material difference alone predicts the engines' exit
+  energies 0.7 / 1.2 / 2.2 / 4.1 % below Geant4's at 25 / 50 / 100 / 200 m;
+  they were 0.9 / 1.4 / 2.5 / 4.1 to 4.6 %. `benchmark/codes/geant4` now builds
+  Standard Rock from one A = 22 isotope with PDG's I and density-effect
+  parameters (within 0.3 % of PDG ionisation, 0.6 % in total).
+- Geant4 re-run with it, both suites (`run_stdrock_20261019_mono`,
+  `..._realistic`, 8 cores via the new `run_parallel.py`; output identical to a
+  single-core run of the same events). Exit energies of UCMuon-MC, MUSIC and
+  PROPOSAL are now within 0.5 % of Geant4 from 25 to 200 m; survival 0.1 to
+  0.3 pp above it; realistic source at 200 m: engines +0.1 to +0.5 pp (were
+  -2.8 to -3.2 pp). Figures, summaries, tables regenerated.
+- The 10 m plane, excluded since May because Geant4 passed half the 5 GeV beam
+  there, is back for every code: the cause was the Geant4 rock. UCMuon-MC and
+  PROPOSAL agree with Geant4 there within 0.4 pp; MUSIC passes 24 % of the
+  5 GeV beam against Geant4's 12 %.
+- The realistic-source reference had been made with a +-1 km slab that was not
+  in the shipped code (the default is +-25 m, which its inclined muons leave
+  through the sides). `MuonRock` takes `-xy <cm>` and `-s <seed>`.
+- Geant4 timing: the paper's 12.5 h was an older run on another source; the
+  Standard Rock reference takes 5.3 h on one core (timed on every 32nd muon and
+  scaled). Speed-ups against Geant4, one process each: Bethe-Bloch 401x, MUSIC
+  134x, UCMuon-MC 52x, PROPOSAL 11x. The Geant4 version is 11.4.1, not 11.2.
+- `analyze_sixcode.py` takes the Geant4 run as an argument instead of the most
+  recent file in a folder; `make_fig06.py` reads the shipped summary;
+  `make_tab_exitke.py` (new) writes the exit-energy table from it.
+
 ### Fixed
 - Engine timings re-measured with one process per engine
   (`benchmark/results/engine_timing_20261018.csv`, and the realistic suite's

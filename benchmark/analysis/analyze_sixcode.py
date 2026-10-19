@@ -5,7 +5,10 @@ Six-code benchmark comparison on the realistic generated source.
 Combines:
   - UCMuon engines (18-col .dat): MUSIC, PROPOSAL, BB, UCMuon-MC, BB_fortran
         from benchmark/run_realistic_20260614/<ENGINE>/<ENGINE>_bench_<d>m.dat
-  - Geant4 (per-crossing muons CSV): latest run_file_*_muons.csv
+  - Geant4 (per-crossing muons CSV): the run given as the first argument
+    (prefix of its _muons.csv), e.g. run_stdrock_20261019_realistic; up to
+    UCMuon 1.4.1 the script took the most recent run_file_*_muons.csv in
+    benchmark/geant4_muon_rock_v5/outputs/
   - PHITS  (tally summary):          phits/phits_summary.csv
 
 Geant4 is the external reference column (deltas computed vs it).
@@ -75,8 +78,12 @@ for e in ENGINE_DAT:
         if s:
             data[e][dm] = s
 
-# ── Geant4 (latest realistic muons CSV) ────────────────────────────────────────
-g4files = sorted(glob.glob(str(G4OUT / "run_file_*_muons.csv")), key=os.path.getmtime)
+# ── Geant4 (the reference run given on the command line) ──────────────────────
+if len(sys.argv) < 2:
+    sys.exit("usage: analyze_sixcode.py GEANT4_RUN_PREFIX  (its _muons.csv is read)")
+g4files = [sys.argv[1] + "_muons.csv"]
+if not os.path.isfile(g4files[0]):
+    sys.exit(f"not found: {g4files[0]}")
 if g4files:
     surv = collections.Counter(); ke = collections.defaultdict(list)
     with open(g4files[-1]) as fh:

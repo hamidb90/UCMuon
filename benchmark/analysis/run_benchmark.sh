@@ -5,9 +5,10 @@
 #   bash benchmark/analysis/run_benchmark.sh GEANT4_RUN_PREFIX [OUTDIR]
 #
 # GEANT4_RUN_PREFIX  the reference Geant4 run of the monoenergetic population
-#                    (600 000 muons, run_file_20260522_210114; its _muons.csv
+#                    (600 000 muons, run_stdrock_20261019_mono; its _muons.csv
 #                    is about 400 MB), e.g.
-#                    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_file_20260522_210114
+#                    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_mono
+#                    (up to 1.4.1: run_file_20260522_210114, sodium rock)
 # OUTDIR             default: benchmark/figures/v2_six_code
 #
 # The UCMuon engines' outputs are read from benchmark/geant4_muon_rock_v5/<ENGINE>/

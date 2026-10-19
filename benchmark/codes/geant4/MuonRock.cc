@@ -7,6 +7,7 @@
 #include "G4UIExecutive.hh"
 #include "G4VisExecutive.hh"
 #include "FTFP_BERT.hh"
+#include "Randomize.hh"
 #include "G4ios.hh"
 
 #include <iostream>
@@ -32,6 +33,8 @@ static void PrintUsage(const char* prog)
         << "  -emax <GeV>   Max energy/momentum in GeV (powerlaw: KE, ecomug: p)\n"
         << "  -theta <deg>  Max zenith angle in degrees for powerlaw/ecomug  [default: 30]\n"
         << "  -o <dir>      Output directory  [default: outputs]\n"
+        << "  -s <seed>     Random seed (default: Geant4's own)\n"
+        << "  -xy <cm>      Half-width of the rock slab  [default: 2500]\n"
         << "  -g            GUI mode — open Qt window (vis.mac must be in build dir)\n"
         << "  -q            Quiet mode — redirect Geant4 log to outputs/geant4.log\n"
         << "  -n <events>   Number of events  (same as positional arg)\n\n"
@@ -114,6 +117,8 @@ int main(int argc, char** argv)
             SimConfig::ECOMUG_PMAX_MEV = KEtoP_MeV(SimConfig::SPEC_EMAX_GEV);
         }
         else if (std::strcmp(argv[i],"-o")==0 && i+1<argc) { outDir = argv[++i]; }
+        else if (std::strcmp(argv[i],"-s")==0 && i+1<argc) { SimConfig::RANDOM_SEED = std::stol(argv[++i]); }
+        else if (std::strcmp(argv[i],"-xy")==0 && i+1<argc) { SimConfig::SLAB_HALF_XY_CM = std::stod(argv[++i]); }
         else if (std::strcmp(argv[i],"-g")==0)              { guiMode  = true; }
         else if (std::strcmp(argv[i],"-q")==0)              { quietMode = true; }
         else if (std::strcmp(argv[i],"-n")==0 && i+1<argc) { nEvents = std::stoi(argv[++i]); }
@@ -189,6 +194,8 @@ int main(int argc, char** argv)
 
     // ── Geant4 setup ──────────────────────────────────────────────────────────
     G4UIExecutive* ui = guiMode ? new G4UIExecutive(argc, argv, "Qt") : nullptr;
+
+    if (SimConfig::RANDOM_SEED != 0) G4Random::setTheSeed(SimConfig::RANDOM_SEED);
 
     auto* det    = new DetectorConstruction();
     auto* runMgr = G4RunManagerFactory::CreateRunManager(G4RunManagerType::SerialOnly);

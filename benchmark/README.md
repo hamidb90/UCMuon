@@ -18,7 +18,9 @@ two independent external Monte Carlo references.
 25, 50, 100, 200 m. Every code receives the **identical** source population
 (`benchmark_surface.dat`, converted per code).
 
-> **Authoritative data:** Geant4 run `run_file_20260522_210114` and PHITS
+> **Authoritative data:** Geant4 run `run_stdrock_20261019_mono` (Standard Rock;
+> up to 1.4.1 `run_file_20260522_210114`, whose rock was sodium, see
+> `codes/geant4/README.md`) and PHITS
 > (May 2026, `reports/BENCHMARK_FEEDBACK.md`); MUSIC and PROPOSAL from the July
 > 2026 run, Bethe-Bloch and UCMuon-MC re-run on 2026-10-16 with the multiple
 > scattering accumulated along the path (survival and energies unchanged).

@@ -127,6 +127,8 @@ void RunAction::EndOfRunAction(const G4Run* run)
        << "  Run name   : " << gBaseName        << "\n"
        << "  Source     : " << modeStr           << "\n"
        << "  Events     : " << nEvents           << "\n"
+       << "  Seed       : " << (SimConfig::RANDOM_SEED != 0 ? std::to_string(SimConfig::RANDOM_SEED)
+                                                           : std::string("Geant4 default")) << "\n"
        << "  Muon plane crossings : " << gMuonHits         << "\n"
        << "  Sec hits             : " << gSecHits           << "\n"
        << "  Stopped muons        : " << gStopCount         << "\n";

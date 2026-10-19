@@ -109,12 +109,13 @@ ROCK_DENSITY  = 2.65     # g/cm³ standard rock
 M_MU          = 0.10566  # GeV/c²
 X0_ROCK_GCM2  = 27.74    # radiation length of standard rock [g/cm²]
 
-# Depths excluded from all comparison figures and tables.
-# 1000 cm (26.5 MWE): Geant4's 5 GeV muon range ≈ 996 cm, so ~54% of 5 GeV muons
-# pass the 10 m plane while all other codes stop them before 10 m (range ~860 cm).
-# This Bragg-peak boundary effect creates a 7–9 pp transmission gap that propagates
-# into exit KE and MCS angle comparisons at that depth, making codes incomparable.
-EXCLUDE_DEPTH_CM = {1000}
+# Depths excluded from all comparison figures and tables. Up to UCMuon 1.4.1
+# this held 1000 cm (26.5 MWE): Geant4 passed about half of the 5 GeV beam at the
+# 10 m plane where every other code stopped it. The cause was the Geant4 rock,
+# natural sodium (Z/A = 0.478, I = 149 eV) instead of standard rock, not the
+# plane; with standard rock (benchmark/codes/geant4, after 1.4.1) Geant4 agrees
+# there too, so no depth is excluded.
+EXCLUDE_DEPTH_CM: set[int] = set()
 
 PDG_NAMES = {
     22: r"$\gamma$", 11: r"$e^-$", -11: r"$e^+$", 13: r"$\mu^-$", -13: r"$\mu^+$",
@@ -847,7 +848,7 @@ def fig_angular(results, outdir):
                   r"(3-D deflection from each muon's initial direction)", fontsize=12)
     ax1.legend(fontsize=9); ax1.grid(True, alpha=0.3)
     ax1.text(0.98, 0.97,
-             "Error bars: ±SEM  |  26.5 MWE excluded (5 GeV Bragg boundary)",
+             "Error bars: ±SEM" + ("  |  26.5 MWE excluded" if 1000 in EXCLUDE_DEPTH_CM else ""),
              transform=ax1.transAxes, ha="right", va="top",
              fontsize=8, color="#777", style="italic")
 

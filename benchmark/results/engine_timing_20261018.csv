@@ -24,9 +24,15 @@
 # CONTROLS (code unchanged since 2026-10-16): Bethe-Bloch 48.03 s against 47.31 s,
 # PROPOSAL 1756.09 s against 1761.60 s, UCMuon-MC-auto 98.76 s against 97.92 s.
 #
-# Reference rows: Geant4 11.2 (FTFP_BERT) single-thread wall time of the full
-# 6e5-muon run, 12.5 h (its own outputs are not shipped); PHITS 3.36 total CPU
-# time summed over its 10 OpenMP threads, from its phits.out.
+# Reference rows. Geant4 11.4.1 (FTFP_BERT) with Standard Rock (run
+# run_stdrock_20261019_mono, benchmark/codes/geant4): one core, timed on 1/32 of
+# the population (every 32nd muon, 18 750 muons, 601.42 s, 2026-10-19, output
+# identical to the same events of the full run) and scaled by 32. Up to
+# 2026-10-18 this row held 45 134 s (12.5 h), the time of an older Geant4 run
+# on another source (run_file_20260517_210013); the 1.4.1 reference itself,
+# run_file_20260522_210114, took 18 879 s on one core. PHITS 3.36: total CPU
+# time summed over its 10 OpenMP threads, from its phits.out (not shipped; the
+# run's batch.out reports 40 h 27 min, which is not yet reconciled).
 #
 # seconds_per_1e5 = seconds_6e5 / 6, the unit used in the paper's tables.
 # make_fig10_timing.py reads the TOTAL rows of this file.
@@ -66,5 +72,5 @@ UCMuon-MC-auto,50,13.94,2.32,10
 UCMuon-MC-auto,100,21.25,3.54,10
 UCMuon-MC-auto,200,31.18,5.20,10
 UCMuon-MC-auto,TOTAL,98.76,,10
-Geant4,TOTAL,45134.00,,1
+Geant4,TOTAL,19245.44,,1
 PHITS,TOTAL,371145.63,,10

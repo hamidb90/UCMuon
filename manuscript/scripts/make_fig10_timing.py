@@ -11,15 +11,14 @@ single-core-equivalent CPU-time comparison, not a wall-clock one.
 
 All times are read from the shipped record benchmark/results/
 engine_timing_20261018.csv: the TOTAL row of each UCMuon engine (sum over the
-six depths, one process each) and the two reference rows, Geant4 (12.5 h wall
-time of the single-thread run, kept as the run's own outputs are not shipped)
+six depths, one process each) and the two reference rows, Geant4 (one core,
+Standard Rock, scaled from 1/32 of the population; see the record's header)
 and PHITS (total CPU time from its phits.out). Up to 1.4.1 the script read
 per-engine timing files from the unshipped benchmark/geant4_muon_rock_v5/.
 
-Both Geant4 (1 thread, SerialOnly) and the four fast engines run on a single
-core (wall = CPU); PHITS ran with 10 OpenMP threads, and its total CPU time is
-8.2x that of Geant4 -- i.e. it consumes 8.2x more CPU, which is the point of the
-annotation.
+Geant4 (SerialOnly) and the four fast engines are timed on a single core
+(wall = CPU); PHITS ran with 10 OpenMP threads and its value is its total CPU
+time, so the comparison is CPU against CPU.
 
 Usage:  python3 manuscript/scripts/make_fig10_timing.py
 """
@@ -45,7 +44,7 @@ CSV_KEYS = {"UCMuon-MC": "UCMuon", "MUSIC": "MUSIC", "BetheBloch": "BB",
 
 # Colours match CODE_STYLE in make_fig06.py so the two figures read as a set.
 CODE_STYLE = {
-    "Geant4":   {"label": "Geant4 11.2 (FTFP_BERT)",      "color": "#1565C0"},
+    "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",      "color": "#1565C0"},
     "PHITS":    {"label": "PHITS 3.36",                   "color": "#C62828"},
     "MUSIC":    {"label": "MUSIC (Engine 2)",             "color": "#FF8F00"},
     "PROPOSAL": {"label": "PROPOSAL (Engine 4)",          "color": "#2E7D32"},

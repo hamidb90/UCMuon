@@ -32,8 +32,9 @@ BENCH_INDIR = REPO_ROOT / "benchmark" / "geant4_muon_rock_v5"
 # the raw mono CSVs were pruned, and outputs/*_muons.csv + phits_summary.csv
 # now hold the June REALISTIC-source runs — picking them by mtime silently
 # plots realistic references against monoenergetic engines (wrong by design).
-REF_SUMMARY = str(REPO_ROOT / "benchmark" / "geant4_muon_rock_v5" /
-                  "figures_benchmark" / "benchmark_summary.csv")
+# The shipped six-code summary (Geant4 standard-rock run and PHITS); up to 1.4.1
+# this read a copy outside the archive (geant4_muon_rock_v5/figures_benchmark/).
+REF_SUMMARY = str(REPO_ROOT / "benchmark" / "results" / "benchmark_summary_v2.csv")
 G4_DEFAULT  = None
 PHITS_DEFAULT = None
 OUT_PDF     = Path(__file__).resolve().parent.parent / "figs/fig06_survival_curve.pdf"
@@ -41,13 +42,13 @@ OUT_PDF     = Path(__file__).resolve().parent.parent / "figs/fig06_survival_curv
 # ── Physics constants ──────────────────────────────────────────────────────────
 ROCK_DENSITY = 2.65   # g/cm³  Standard Rock
 M_MU_GEV     = 0.10566
-DEPTHS_M     = [1, 25, 50, 100, 200]
+DEPTHS_M     = [1, 10, 25, 50, 100, 200]   # 10 m excluded up to 1.4.1 (Geant4 rock)
 DEPTHS_MWE   = [d * ROCK_DENSITY for d in DEPTHS_M]
 N_INPUT      = 600_000
 
 # ── Style ──────────────────────────────────────────────────────────────────────
 CODE_STYLE: dict[str, dict] = {
-    "Geant4":   {"label": "Geant4 11.2 (FTFP_BERT)",
+    "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",
                  "color": "#1565C0", "marker": "o", "ls": "-",  "lw": 2.2, "ms": 6, "zorder": 5},
     "PHITS":    {"label": "PHITS 3.36",
                  "color": "#C62828", "marker": "s", "ls": "-.", "lw": 2.2, "ms": 6, "zorder": 5},

@@ -9,8 +9,8 @@ every engine) and emits a LaTeX table of survival fraction (%) per
 Authoritative data: benchmark/geant4_muon_rock_v5/<ENGINE>/<ENGINE>_bench_<DEPTH>m.dat
 (the post-fix "v2" run of 2026-05-25 documented in BENCHMARK_FEEDBACK.md; the
 flat ../output/*_bench_*.dat copies are an earlier v1 UCMuon run and must NOT
-be used). The 10 m plane is excluded (5 GeV near-threshold boundary effect;
-see Table~\ref{tab:survival}).
+be used). The 10 m plane, excluded up to UCMuon 1.4.1 because the Geant4
+reference rock was wrong there (see benchmark_analysis.py), is included.
 
 Column 5 (1-based) = surface energy [GeV]; column 9 = alive flag (0/1).
 The .dat files are git-ignored (too large to track); regenerate with
@@ -26,7 +26,22 @@ BENCH    = Path(__file__).resolve().parent.parent.parent / "benchmark" / "geant4
 ENGINES  = ["BB", "UCMuon", "MUSIC", "PROPOSAL"]      # column order
 LABELS   = {"BB": "Bethe--Bloch", "UCMuon": "UCMuon-MC",
             "MUSIC": r"\music{}", "PROPOSAL": r"\proposal{}"}
-DEPTHS   = [1, 25, 50, 100, 200]
+DEPTHS   = [1, 10, 25, 50, 100, 200]
+# Geant4 per beam and depth (Standard Rock reference), shipped as a small CSV
+# because the per-crossing Geant4 output (400 MB) is not.
+G4_CSV   = Path(__file__).resolve().parent.parent.parent / "benchmark" / "results" / "geant4_survival_by_beam.csv"
+
+
+def geant4_survival():
+    """Return {(E_GeV, depth_m): survival_percent} from G4_CSV."""
+    out = {}
+    with open(G4_CSV) as fh:
+        for line in fh:
+            if line.startswith(("#", "beam")) or not line.strip():
+                continue
+            b, d, s = line.strip().split(",")
+            out[(float(b), int(d))] = float(s)
+    return out
 
 
 def survival(engine, depth):
@@ -62,37 +77,57 @@ def main():
 
     # keep only informative cells (not all-0 and not all->=99.95); the
     # 99.95 guard keeps the near-threshold cells the paper discusses
+    g4 = geant4_survival()
     rows = []
     for (e, d) in sorted(cube):
         vals = [cube[(e, d)].get(x, float("nan")) for x in ENGINES]
-        if all(v == 0 for v in vals) or all(v >= 99.95 for v in vals):
+        g = g4[(round(e), d)]
+        if all(v < 0.05 for v in vals + [g]) or all(v >= 99.95 for v in vals + [g]):
             continue
-        rows.append((e, d, vals))
+        rows.append((e, d, vals, g))
 
+    # the numbers the caption states, from the rows themselves
+    col = {x: ENGINES.index(x) for x in ENGINES}
+    first = rows[0]                                   # 5 GeV at 10 m
+    rest = rows[1:]
+    dmp_rest = max(abs(v[col["MUSIC"]] - v[col["PROPOSAL"]]) for _, _, v, _ in rest)
+    up_all = max(abs(v[col["UCMuon"]] - v[col["PROPOSAL"]]) for _, _, v, _ in rows)
+    um_rest = max(abs(v[col["UCMuon"]] - v[col["MUSIC"]]) for _, _, v, _ in rest)
+    v0, g0 = first[2], first[3]
+    # how far the stochastic engines sit above Geant4 in the other cells
+    above = [min(v[col[x]] for x in ("UCMuon", "MUSIC", "PROPOSAL")) - g for _, _, v, g in rest]
     print(r"\begin{table}[ht]")
     print(r"\centering")
-    print(r"\caption{Depth-resolved survival fraction (\%) for the four "
-          r"\ucmuon{} transport engines on identical monoenergetic vertical "
+    print(r"\caption{Depth-resolved survival fraction (\%) for \geantfour{} and "
+          r"the four \ucmuon{} transport engines on identical monoenergetic vertical "
           r"beams (Standard Rock, $\rho=2.65$\,g\,cm$^{-3}$, $10^5$ muons per "
           r"cell). Only the transition cells ($0<\text{survival}<100$) are "
-          r"shown; all omitted cells are $0\%$ (below CSDA range) or $\ge99.95\%$ "
-          r"(well above range) for every engine. $\Delta_{\text{M--P}}$ is the "
-          r"\music{}--\proposal{} difference, which stays below $0.7$ "
-          r"percentage points everywhere. The deterministic Bethe--Bloch engine "
-          r"returns $100\%$ in every transition cell (no range straggling); "
-          r"UCMuon-MC agrees with \music{} and \proposal{} to within $1$ "
-          r"percentage point in every cell.}")
+          r"shown; all omitted cells are below $0.05\%$ (below CSDA range) or "
+          r"$\ge99.95\%$ (well above range) for every code. $\Delta_{\text{M--P}}$ is the "
+          r"\music{}--\proposal{} difference, which stays below "
+          f"${dmp_rest:.1f}$ percentage points in every cell but the first: "
+          f"at {first[0]:g}\\,GeV and {first[1]}\\,m, near the end of the beam's "
+          f"range, \\music{{}} passes ${v0[col['MUSIC']]:.1f}\\%$ against "
+          f"${v0[col['PROPOSAL']]:.1f}\\%$ (\\proposal{{}}), ${v0[col['UCMuon']]:.1f}\\%$ "
+          f"(UCMuon-MC) and ${g0:.1f}\\%$ (\\geantfour{{}}). The deterministic "
+          r"Bethe--Bloch engine returns $0$ or $100\%$ (no range straggling); "
+          f"UCMuon-MC agrees with \\proposal{{}} within ${up_all:.1f}$ percentage "
+          f"points in every cell and with \\music{{}} within ${um_rest:.1f}$ in "
+          r"every cell but the first. \geantfour{} (Standard Rock) passes fewer "
+          f"muons than all three stochastic engines in every other cell, by "
+          f"${min(above):.2f}$ to ${max(above):.2f}$ percentage points, which is where "
+          r"the aggregate difference of Table~\ref{tab:survival}.}")
     print(r"\label{tab:survival_matrix}")
-    print(r"\begin{tabular}{rr" + "c" * len(ENGINES) + "c}")
+    print(r"\begin{tabular}{rrc" + "c" * len(ENGINES) + "c}")
     print(r"\toprule")
-    print(r"$E$ [GeV] & $d$ [m] & " +
+    print(r"$E$ [GeV] & $d$ [m] & \geantfour{} & " +
           " & ".join(LABELS[x] for x in ENGINES) +
           r" & $\Delta_{\text{M--P}}$ \\")
     print(r"\midrule")
-    for e, d, vals in rows:
+    for e, d, vals, g in rows:
         dmp = vals[ENGINES.index("MUSIC")] - vals[ENGINES.index("PROPOSAL")]
         cells = " & ".join(f"{v:.2f}" for v in vals)
-        print(f"{e:g} & {d} & {cells} & {dmp:+.2f} \\\\")
+        print(f"{e:g} & {d} & {g:.2f} & {cells} & {dmp:+.2f} \\\\")
     print(r"\bottomrule")
     print(r"\end{tabular}")
     print(r"\end{table}")

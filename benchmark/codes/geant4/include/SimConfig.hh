@@ -61,7 +61,9 @@ constexpr double ECOMUG_PLANE_Z_MM        = 1.0;     // 1 mm above rock entry z=
 //   World: z = +505 cm (5 m headroom) → z = -20010 cm
 //   Rock entry face: z = 0   (muons enter here, travel in -z)
 // ============================================================================
-constexpr double SLAB_HALF_XY_CM = 2500.0;           // 25 m
+// -xy <cm> changes it: the realistic-source benchmark uses 100000 (+-1 km), so
+// that inclined muons from its 200 m disk do not leave through the sides.
+inline double SLAB_HALF_XY_CM = 2500.0;              // 25 m
 inline const std::vector<double> SCORING_DEPTHS_CM = {
     100.0, 1000.0, 2500.0, 5000.0, 10000.0, 20000.0  // 1m 10m 25m 50m 100m 200m
 };
@@ -69,9 +71,22 @@ inline const std::vector<double> SCORING_DEPTHS_CM = {
 // ============================================================================
 // ROCK MATERIAL
 // ============================================================================
+// Standard rock as PDG defines it (Groom, Mokhov, Striganov 2001, Table IV-6):
+// one fictitious nucleus Z = 11, A = 22, I = 136.4 eV, and the Sternheimer
+// density-effect parameters below. DetectorConstruction builds it from one
+// isotope: Geant4 11.4 ignores A in G4Material(name, Z, A, density) and uses
+// natural sodium (A = 22.99, I = 149 eV), as UCMuon's benchmark did up to 1.4.1.
 constexpr double ROCK_DENSITY = 2.65;
 constexpr double ROCK_Z_EFF   = 11.0;
 constexpr double ROCK_A_EFF   = 22.0;
+constexpr double ROCK_I_EV    = 136.4;
+constexpr double ROCK_DE_C  = 3.7738, ROCK_DE_M  = 3.4120, ROCK_DE_A  = 0.08301;
+constexpr double ROCK_DE_X0 = 0.0492, ROCK_DE_X1 = 3.0549, ROCK_DE_D0 = 0.0;
+
+// ============================================================================
+// RANDOM SEED (-s); 0 keeps Geant4's default seed
+// ============================================================================
+inline long RANDOM_SEED = 0;
 
 // ============================================================================
 // PHYSICS

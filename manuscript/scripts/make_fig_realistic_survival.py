@@ -30,7 +30,7 @@ N_SRC        = 100_000
 
 # Same style/colours as make_fig06.py
 CODE_STYLE = {
-    "Geant4":   {"label": "Geant4 11.2 (FTFP_BERT)",      "color": "#1565C0", "marker": "o", "ls": "-",  "lw": 2.2, "ms": 6, "zorder": 5},
+    "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",      "color": "#1565C0", "marker": "o", "ls": "-",  "lw": 2.2, "ms": 6, "zorder": 5},
     "PHITS":    {"label": "PHITS 3.36",                   "color": "#C62828", "marker": "s", "ls": "-.", "lw": 2.2, "ms": 6, "zorder": 5},
     "MUSIC":    {"label": "MUSIC (Engine 2)",             "color": "#FF8F00", "marker": "^", "ls": "-",  "lw": 1.6, "ms": 5, "zorder": 4},
     "PROPOSAL": {"label": "PROPOSAL (Engine 4)",          "color": "#2E7D32", "marker": "v", "ls": "--", "lw": 1.6, "ms": 5, "zorder": 4},

@@ -6,6 +6,8 @@
 #include "G4PVPlacement.hh"
 #include "G4NistManager.hh"
 #include "G4Material.hh"
+#include "G4Element.hh"
+#include "G4Isotope.hh"
 #include "G4SystemOfUnits.hh"
 #include "G4VisAttributes.hh"
 #include "G4Colour.hh"
@@ -24,10 +26,23 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
 {
     G4NistManager* nist = G4NistManager::Instance();
 
+    // Standard rock: one isotope Z = 11, A = 22 (see SimConfig.hh), PDG's
+    // mean excitation energy and density-effect parameters.
+    auto* rockIso = new G4Isotope("StandardRock22", (G4int)SimConfig::ROCK_Z_EFF,
+                                  (G4int)SimConfig::ROCK_A_EFF,
+                                  SimConfig::ROCK_A_EFF * (g/mole));
+    auto* rockEl = new G4Element("StandardRockElement", "SR", 1);
+    rockEl->AddIsotope(rockIso, 1.0);
     G4Material* rock = new G4Material("StandardRock",
-                                      SimConfig::ROCK_Z_EFF,
-                                      SimConfig::ROCK_A_EFF * (g/mole),
-                                      SimConfig::ROCK_DENSITY * (g/cm3));
+                                      SimConfig::ROCK_DENSITY * (g/cm3), 1);
+    rock->AddElement(rockEl, 1.0);
+    rock->GetIonisation()->SetMeanExcitationEnergy(SimConfig::ROCK_I_EV * eV);
+    rock->GetIonisation()->SetDensityEffectParameters(
+        SimConfig::ROCK_DE_C, SimConfig::ROCK_DE_M, SimConfig::ROCK_DE_A,
+        SimConfig::ROCK_DE_X0, SimConfig::ROCK_DE_X1, SimConfig::ROCK_DE_D0);
+    G4cout << "[Detector] Standard rock: Z/A = "
+           << rock->GetElectronDensity() / (CLHEP::Avogadro * rock->GetDensity() / (g/mole))
+           << ", I = " << rock->GetIonisation()->GetMeanExcitationEnergy() / eV << " eV\n";
     G4Material* air = nist->FindOrBuildMaterial("G4_AIR");
 
     // -----------------------------------------------------------------------

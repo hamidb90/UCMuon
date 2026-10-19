@@ -19,8 +19,15 @@ from the scratch tree.
 ```bash
 # From anywhere; the argument is the reference Geant4 run (600 000 muons):
 bash benchmark/analysis/run_benchmark.sh \
-    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_file_20260522_210114
+    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_mono
+
+# Realistic source: the six-code summary and figures of ../run_realistic_20260614/
+python3 benchmark/analysis/analyze_sixcode.py \
+    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_realistic
 ```
+Both Geant4 runs use Standard Rock (`../codes/geant4/README.md`); up to 1.4.1
+the references were `run_file_20260522_210114` and `run_file_20260614_095725`,
+whose rock was sodium.
 It writes `../figures/v2_six_code/`, whose `benchmark_summary.csv` equals
 `../results/benchmark_summary_v2.csv`.
 
