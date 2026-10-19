@@ -19,6 +19,8 @@
 #include "G4ThreeVector.hh"
 #include "Randomize.hh"
 
+#include <cstdlib>
+
 #ifdef UCMUGEN_EXAMPLE_PARMA
 #include "UCMuGen_PARMA.h"
 #endif
@@ -40,10 +42,15 @@ Generator PrimaryGeneratorAction::MakeGenerator() {
       .setSurface(std::make_shared<Plane>(300.0, 300.0, Vec3{0.0, 0.0, 300.0}))
       .setEnergyRange(1.0, 1000.0)            // total energy, GeV
       .setThetaRange(0.0, 70.0 * kPi / 180.0)
-      // Aim at the detector: only muons whose ray reaches it are generated,
-      // and rate() below becomes the rate into it rather than through the sky
-      // plane. Comment this out and the example still works, just far slower.
-      .setDetector(detector);
+      ;
+
+  // Aim at the detector: only muons whose ray reaches it are generated, and
+  // rate() below becomes the rate into it rather than through the sky plane.
+  // UCMUGEN_EXAMPLE_BLIND=1 skips this and samples the whole sky plane: the
+  // run then counts, in Geant4, how many muons enter the plate per second of
+  // live time, a check of the directed-sampling normalisation that does not
+  // go through it (README).
+  if (!std::getenv("UCMUGEN_EXAMPLE_BLIND")) gen.setDetector(detector);
 
 #ifdef UCMUGEN_EXAMPLE_PARMA
   // The flux itself was installed once from main(); see InstallFlux() below.

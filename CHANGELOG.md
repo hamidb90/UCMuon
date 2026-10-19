@@ -39,6 +39,18 @@ elevation model). No simulated result changes.
   the CERNLIB routines (the latter undeclared) and, inside JAEA's package, an
   LGPL Mersenne Twister.
 
+### UCMuGen example and Fig. 5
+- The Geant4 example's README called the agreement between predicted and
+  measured rate (0.09 %) an end-to-end normalisation check, but the live time
+  is n / rate(), so that agreement is only the fraction of muons reaching the
+  plate. `UCMUGEN_EXAMPLE_BLIND=1` now samples the whole sky plane, and Geant4
+  alone counts the muons entering the plate: 325.37 +- 0.72 Hz against the
+  325.372 Hz predicted by the detector-directed sampling (2x10^6 muons).
+- `make_fig05_energy_spectra.py` drew the CSDA threshold, a surface energy, on
+  the underground exit-energy spectrum and stopped the axis at 10 GeV. It now
+  shows the surface spectrum of the survivors, where the threshold applies,
+  and the exit energies down to 0.1 GeV.
+
 ### Benchmark: the Geant4 reference is Standard Rock now
 - The Geant4 benchmark built its rock with `G4Material(name, Z=11, A=22,
   density)`; Geant4 11.4 ignores A there and uses natural sodium, so the

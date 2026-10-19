@@ -27,6 +27,8 @@
 #include "G4VUserDetectorConstruction.hh"
 #include "G4UserRunAction.hh"
 #include "G4UserSteppingAction.hh"
+
+#include <cstdlib>
 #include "G4Run.hh"
 #include "FTFP_BERT.hh"
 
@@ -102,8 +104,9 @@ class RunAction : public G4UserRunAction {
            << "  muons entering the plate: " << hits << "  ("
            << (100.0 * hits / n) << " %)\n";
     if (live > 0.0) {
-      G4cout << "  rate into the detector : " << PrimaryGeneratorAction::Rate()
-             << " Hz\n"
+      G4cout << (std::getenv("UCMUGEN_EXAMPLE_BLIND") ? "  rate through the sky  : "
+                                                      : "  rate into the detector : ")
+             << PrimaryGeneratorAction::Rate() << " Hz\n"
              << "  live time of this run  : " << live << " s\n"
              << "  measured hit rate      : " << (hits / live) << " Hz\n";
     }
@@ -132,7 +135,8 @@ int main(int argc, char** argv) {
   // MT would run on every worker and say the same thing ten times.
   G4cout << "[UCMuGen] " << PrimaryGeneratorAction::MakeGenerator().provenance()
          << G4endl;
-  G4cout << "[UCMuGen] rate into the detector : "
+  G4cout << (std::getenv("UCMUGEN_EXAMPLE_BLIND") ? "[UCMuGen] rate through the sky   : "
+                                                  : "[UCMuGen] rate into the detector : ")
          << PrimaryGeneratorAction::Rate() << " Hz" << G4endl;
   G4cout << "[UCMuGen] 1e6 muons correspond to: "
          << PrimaryGeneratorAction::LiveTime(1000000) << " s of live time"

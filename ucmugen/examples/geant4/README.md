@@ -51,20 +51,35 @@ file does not matter.
 Two things in that output are worth dwelling on, because they are the reason to
 use this generator rather than a spectrum sampler.
 
-**The predicted rate and the measured rate agree to 0.09%.** `rate()` is a Monte
-Carlo integral computed before the run; the measured value is Geant4 counting
-muons that actually crossed into the plate. Nothing forces them to agree, and
-that they do is an end-to-end check of the flux normalisation, the surface
-projection and the unit conversions at once. It also means the run has an
-*exposure*: 10⁵ muons here are 307 seconds of real sky, so simulated counts
-convert into a rate.
+**The run has an exposure.** `rate()` is a Monte Carlo integral computed before
+the run, and the live time is n / `rate()`: 10⁵ muons here are 307 seconds of
+real sky, so simulated counts convert into a rate. The measured hit rate above
+is therefore the predicted rate times the fraction of muons that reach the
+plate; it does not check the normalisation by itself.
+
+**The normalisation is checked by blind sampling.** With
+`UCMUGEN_EXAMPLE_BLIND=1` the generator samples the whole 6 m x 6 m sky plane
+instead of aiming at the plate, so `rate()` is the rate through the plane and
+Geant4 alone decides which muons enter the plate:
+
+```
+UCMUGEN_EXAMPLE_BLIND=1 ./ucmugen_example blind.mac    # run.mac with beamOn 2000000
+  muons entering the plate: 184269  (9.21345 %)
+  rate through the sky  : 3531.42 Hz
+  live time of this run  : 566.344 s
+  measured hit rate      : 325.366 Hz
+```
+
+325.37 ± 0.72 Hz counted in Geant4 against 325.372 Hz predicted by the directed
+sampling: they agree within the 0.22 % statistical uncertainty, which checks
+the detector-directed normalisation, the surface projection and the unit
+conversions at once (Geant4 11.4.1, 8 threads, 2026-10-19).
 
 **99.91% of generated muons reach the plate, not 100%.** Detector-directed
 sampling guarantees the *ray* intersects the detector, not that the muon
 survives to it. The missing 0.09% is decay in flight across 3 m of air, which is
-the right order for these momenta. If you disable the detector (comment out
-`setDetector`) the run still works and gives the same rate, but generates
-hundreds of times more muons to get there.
+the right order for these momenta. Blind sampling gives the same rate but
+generates about eleven times more muons to get there.
 
 ## Threads
 

@@ -9,9 +9,13 @@ number of survivors at 100 m (CSDA threshold 62 GeV): with the CosmoALEPH
 p^-3.2 spectrum from 1 GeV only ~1e-4 of the muons would survive.
 
 Runs bin/ucmuon_gen_omp and bin/ucmuon_transport_music_omp in a scratch
-directory (manuscript/scripts/_fig05_work) and plots the resulting
-13-column surface file and 18-column underground file (Appendix A
-formats).  Re-running reuses existing output unless --rerun is given.
+directory (manuscript/scripts/_fig05_work) and plots, per generated muon and
+per GeV: the surface spectrum, the surface spectrum of the muons that survive
+to 100 m (which starts at the CSDA threshold, a SURFACE energy), and the
+underground exit-energy spectrum, down to 0.1 GeV, the range a detector sees.
+Up to UCMuon 1.4.1 the threshold line was drawn on the exit spectrum and the
+axis stopped at 10 GeV. Re-running reuses existing output unless --rerun is
+given.
 
 Usage:  python3 manuscript/scripts/make_fig05_energy_spectra.py [--rerun]
 """
@@ -68,28 +72,36 @@ def main():
     E_surf = surf[:, 10]                       # col 11: total energy [GeV]
     alive = underg[:, 8] == 1                  # col  9: alive flag
     E_und = underg[alive, 12]                  # col 13: underground energy
+    E_srf_alive = underg[alive, 4]             # col  5: their surface energy
+    n_gen = len(E_surf)
     surv = alive.mean()
     print(f"  surface muons: {len(E_surf):,}   "
           f"survivors at {DEPTH_M:.0f} m: {alive.sum():,} "
           f"({100 * surv:.2f}%)")
 
-    bins = np.logspace(np.log10(E_MIN), np.log10(E_MAX), 50)
+    bins = np.logspace(np.log10(0.1), np.log10(E_MAX), 60)
+    width = np.diff(bins)
+
+    def per_muon(e):                            # dN/dE per generated muon
+        return np.histogram(e, bins=bins)[0] / width / n_gen
+
     fig, ax = plt.subplots(figsize=(6.0, 4.2))
-    ax.hist(E_surf, bins=bins, histtype="step", density=True,
-            color="#1565C0", lw=1.8, label="Surface (CosmoALEPH)")
-    ax.hist(E_und, bins=bins, histtype="step", density=True,
-            color="#FF8F00", lw=1.8,
-            label=f"Underground ({DEPTH_M:.0f} m, MUSIC)")
+    ax.stairs(per_muon(E_surf), bins, color="#1565C0", lw=1.8,
+              label="Surface, all (CosmoALEPH)")
+    ax.stairs(per_muon(E_srf_alive), bins, color="#1565C0", lw=1.4, ls=":",
+              label=f"Surface, survivors to {DEPTH_M:.0f} m")
+    ax.stairs(per_muon(E_und), bins, color="#FF8F00", lw=1.8,
+              label=f"Underground, at {DEPTH_M:.0f} m (MUSIC)")
     ax.axvline(T_MIN_CSDA, ls="--", color="gray", lw=1.2,
-               label=rf"$T_{{\min}}$ CSDA = {T_MIN_CSDA:.0f} GeV")
+               label=rf"CSDA threshold (surface) {T_MIN_CSDA:.0f} GeV")
 
     ax.set_xscale("log")
     ax.set_yscale("log")
-    ax.set_xlim(E_MIN, E_MAX)
+    ax.set_xlim(0.1, E_MAX)
     ax.set_xlabel("Total energy $E$ [GeV]")
-    ax.set_ylabel("Normalised counts [GeV$^{-1}$]")
+    ax.set_ylabel("Muons per GeV per generated muon")
     ax.grid(alpha=0.3, which="both")
-    ax.legend(fontsize=8.5, loc="upper right")
+    ax.legend(fontsize=8.5, loc="lower left")
 
     fig.tight_layout()
     OUT_PDF.parent.mkdir(parents=True, exist_ok=True)
