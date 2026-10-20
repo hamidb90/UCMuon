@@ -12,7 +12,7 @@ MIT License · [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.20826984.svg)
 UCMuon simulates cosmic muon flux from the surface through rock, water, or ice, with applications to muography of geological structures, CO₂ storage monitoring, and glacier/bedrock imaging. It can be run interactively through a browser-based GUI on any laptop, or in batch mode on an HPC cluster using MPI-parallelised Fortran executables.
 
 - **Surface muon generator** — eight spectrum models (CosmoALEPH, power-law, PARMA/EXPACS, Guan 2015, Frosin 2025, Gaisser 1990, Reyna 2006, cosmic electrons; see [Surface spectra](#surface-spectra-validity-and-absolute-normalisation)), three source geometries, OpenMP and MPI parallelism
-- **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, Backward MC, UCMuon Terrain (DEM ray-tracing), PUMAS (backward/forward MC)
+- **Seven transport engines** — **UCMuon-MC** (the native stochastic MC introduced by UCMuon: PDG-table-anchored per-process sampling + δ-ray straggling), MUSIC, Bethe-Bloch+MS, PROPOSAL, backward CSDA flux integrator, UCMuon Terrain (DEM ray-tracing), PUMAS (backward/forward MC)
 - **Streamlit GUI** — a Basic mode (three tabs, the essential inputs, the rest derived) and an Advanced mode (every setting), interactive simulation, live progress, 3D plots, PHITS/Geant4 export, density analysis tab, works on Windows / macOS / Linux
 - **HPC workflow** — MPI+OMP Fortran executables, SLURM scripts, automatic PHITS conversion
 - **Transmission maps** — terrain engine outputs `T_sim = Φ_rock / Φ_sky` per direction; run at multiple densities to build a T_sim library for inversion
@@ -106,7 +106,7 @@ bash run_gui.sh        # opens http://localhost:8501
 
 ### Windows
 
-Engines 1 (**UCMuon-MC**) and 5 (Backward MC) are pure Python and work immediately. The surface generator and Engines 2 and 3 need a Fortran compiler via MSYS2 (the installer offers to install it). Engine 4 (PROPOSAL) is not supported on Windows.
+Engines 1 (**UCMuon-MC**) and 5 (backward CSDA flux integrator) are pure Python and work immediately. The surface generator and Engines 2 and 3 need a Fortran compiler via MSYS2 (the installer offers to install it). Engine 4 (PROPOSAL) is not supported on Windows.
 
 ```powershell
 # 1. Install Python 3.11+ from https://www.python.org/downloads/
@@ -266,7 +266,7 @@ UCMuon/
 │   ├── fast_flux_estimator.py    analytical flux / rate estimator
 │   ├── ucmuon_stochastic_driver.py   Engine 1: UCMuon-MC (flagship)
 │   ├── proposal_driver.py        Engine 4: PROPOSAL driver
-│   ├── ucmuon_backward_mc.py     Engine 5: Backward MC integrator
+│   ├── ucmuon_backward_mc.py     Engine 5: backward CSDA flux integrator
 │   ├── ucmuon_terrain_driver.py  Engine 6: DEM overburden + transmission map
 │   ├── ucmuon_density_analysis.py    density inversion (library fit + opacity)
 │   ├── ucmuon_pumas_driver.py    Engine 7: PUMAS backward/forward MC
@@ -325,8 +325,8 @@ Seven engines: ① to ⑤ and ⑦ in the 🪨 **Transport** tab (Basic mode leav
 | ② | **MUSIC** | Full stochastic MC (Kudryavtsev 2009) | Fortran binary + MUSIC source files | External reference; deep overburden |
 | ③ | **Bethe-Bloch** | Deterministic CSDA + Highland MS | Fortran binary (OMP) or pure Python/NumPy (`ucmuon_bb_driver.py`) | Fast cross-check; well above threshold |
 | ④ | **PROPOSAL** | Full stochastic MC (Koehne 2013, Alameddine 2024) | `pip install proposal` + system Python venv | Independent stochastic cross-check |
-| ⑤ | **Backward MC** | CSDA backward inversion + stochastic P_surv | No install needed | Instant sensitivity estimate, no input file |
-| ⑥ | **UCMuon Terrain** | DEM ray-tracing + Backward MC physics | `pip install rasterio` | Real field sites (volcano, CCS, alpine) |
+| ⑤ | **Backward CSDA flux integrator** | CSDA backward inversion + heuristic P_surv (deterministic, not a Monte Carlo) | No install needed | Instant sensitivity estimate, no input file |
+| ⑥ | **UCMuon Terrain** | DEM ray-tracing + the Engine 5 integrator | `pip install rasterio` | Real field sites (volcano, CCS, alpine) |
 | ⑦ | **PUMAS** | True backward MC (Niess 2017); also forward mode | `make pumas` (C binary, local only) | 100% detector-efficiency flux spectra; no muon input file |
 
 **Key distinction of Engine ⑥:** All other engines assume a flat uniform slab. UCMuon Terrain computes the actual rock overburden per azimuth and zenith direction from a real DEM file — essential when terrain height varies with direction.
@@ -443,7 +443,7 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 
 ---
 
-## Engine 5: Backward MC Flux Integrator
+## Engine 5: Backward CSDA Flux Integrator
 
 Computes expected muon flux at a detector **without any surface muon file** in seconds. Uses backward CSDA energy inversion: for each `(E_det, θ)` bin, finds the required surface energy `E_s` and weights by the surface spectrum and Jacobian `|dE_s/dE_det|`.
 

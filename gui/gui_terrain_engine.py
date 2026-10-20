@@ -3482,7 +3482,8 @@ def render_terrain_tab(script_dir, project_dir,
                     # ── 4 — Integrated muon flux vs elevation (backward MC) ────────────────
                     st.markdown("#### 4 — Integrated muon flux vs elevation at selected azimuth")
                     st.caption(
-                        "Backward MC (CSDA + stochastic correction; Guan et al. 2015 by default) run for each "
+                        "Backward MC (CSDA + stochastic correction, calibrated on the forward engines; "
+                        "Guan et al. 2015 by default) run for each "
                         "elevation bin at the selected azimuth, for both terrain-blocked and "
                         "open-sky directions."
                     )
@@ -3529,7 +3530,7 @@ def render_terrain_tab(script_dir, project_dir,
                                         _flux_opensky[_iz_c] = _bmc.directional_flux(
                                             0.0, np.radians(_ze_c_v), _spec_mode_comp,
                                             E_min_GeV=_emin_comp, E_max_GeV=_emax_comp,
-                                            n_E=40, mode=1)
+                                            n_E=40, mode=2)
                                     except Exception:
                                         pass
                                     if not _sky_slice[_iz_c] and ob_map[_az_slice_idx, _iz_c] > 1.0:
@@ -3538,7 +3539,7 @@ def render_terrain_tab(script_dir, project_dir,
                                                 float(ob_map[_az_slice_idx, _iz_c]),
                                                 np.radians(_ze_c_v), _spec_mode_comp,
                                                 E_min_GeV=_emin_comp, E_max_GeV=_emax_comp,
-                                                n_E=40, mode=1)
+                                                n_E=40, mode=2)
                                         except Exception:
                                             pass
                                     _prog_comp.progress((_iz_c + 1) / len(ze_c),
@@ -3597,7 +3598,7 @@ def render_terrain_tab(script_dir, project_dir,
                             )
                             st.plotly_chart(_fig_flux, config={"displayModeBar": True}, key="comp_flux_plot")
                             st.caption(
-                                "UCMuon backward CSDA + stochastic MC: open-sky (gold dashed) vs "
+                                "UCMuon backward CSDA flux integrator (forward-calibrated): open-sky (gold dashed) vs "
                                 "terrain-blocked (blue) integrated flux. A published MURAVES flux "
                                 "reference can be overlaid here once digitised from a peer-reviewed source."
                             )

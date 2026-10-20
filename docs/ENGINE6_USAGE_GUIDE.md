@@ -197,10 +197,13 @@ differs from the generator's)
 The GUI Terrain tab instead transports the Generator's own muons, so its
 spectrum is the one chosen in the Generator tab.
 
-Survival probability mode
-  "CSDA + stochastic" (recommended) — includes the Poisson correction for
-  catastrophic radiative losses. More accurate at overburden > 200 m.w.e.
-  "CSDA only" — faster, slightly optimistic at large overburdens.
+Survival probability mode (command-line driver, input 11)
+  2 = forward-calibrated (default): mode 1 times a correction measured against
+      UCMuon-MC and MUSIC in Standard Rock up to 5000 m w.e. Without it the
+      transmission is 1-6 % low at 500-1000 m w.e. and up to 15 % low at
+      3000 m w.e., because the quadrature neglects energy-loss fluctuations.
+  1 = CSDA + stochastic: the Poisson factor for catastrophic radiative losses.
+  0 = CSDA only.
 
 Grid settings
   Azimuth bins (n_az):  36 (10° steps) is standard. Use 72 for publication quality.
@@ -285,11 +288,11 @@ Expected muon flux per solid angle at the detector for each direction.
 The rate through a horizontal 1 m² detector is Σ Φ(az, ze) cos(ze) ΔΩ(ze),
 ΔΩ the solid angle of each (az, ze) bin; terrain_summary.dat gives it.
 
-Typical values (Guan, 1-5000 GeV, CSDA + stochastic):
+Typical values (Guan, 1-5000 GeV, mode 2, rock of 2.65 g/cm³):
   Open sky, vertical:           58 m⁻² s⁻¹ sr⁻¹
   Open sky, ze=60°:             17 m⁻² s⁻¹ sr⁻¹
   100 m of rock, vertical:      0.34 m⁻² s⁻¹ sr⁻¹
-  1000 m of rock, vertical:     2.6×10⁻⁴ m⁻² s⁻¹ sr⁻¹
+  1000 m of rock, vertical:     4.0×10⁻⁴ m⁻² s⁻¹ sr⁻¹
 
 ────────────────────────────────────────────────────────────────────────────────
 terrain_summary.dat

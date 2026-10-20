@@ -10,6 +10,7 @@ time, added with the September 2026 flux audit
 | `test_flux_reference.py` | each spectrum against PDG, CosmoALEPH Table 1 and the digitised Reyna 2006 Fig. 3 data, with the tolerances in its header (PARMA when `UCMuGen_PARMA.h` is present) | numpy; `c++` for PARMA |
 | `test_joint_sampling.py` | angular mode 6 of `bin/ucmuon_gen_omp` against `ucmugen::Generator` in bins of energy and zenith angle, six configurations; legacy mode 4 as a control that must fail | `make ucmuon_gen_omp`, `c++` |
 | `test_backward_mc_range.py` | the backward MC warns, with an estimate of what is left out, when its range table (10 TeV, 6889 m w.e.; 2 TeV up to 1.3.2) cuts a flux, instead of returning a silent zero; the terrain engine prints one summary line per map and warns below a spectrum's fitted range | numpy |
+| `test_backward_calibration.py` | the backward MC's forward calibration (mode 2, the default): the module's table is the one in `benchmark/results/backward_calibration_20261020.csv`, mode 2 is mode 1 times C with the open sky unchanged, C goes to 1 below 100 m w.e. and is held beyond 5000 m w.e. with one warning, other materials get mode 1, and mode 2 is the default everywhere | numpy |
 | `test_live_time.py` | the GUI live time (`gui/live_time.py`, T = N_tried / R) against UCMuGen's `liveTime` for plane, disk and hemisphere sources, with and without a detector filter; weighted legacy modes | `make ucmuon_gen_omp`, `c++` |
 | `test_generator_fixes.py` | the generator fixes after 1.3.2: PARMA "W from the date" after the last year of its table falls back to the latest W with a warning (it was W = 0); the MPI generator keeps E_min below 1 GeV, generates electrons for spectrum 8, and writes exactly N rows without a detector | `make ucmuon_gen_omp`; `make ucmuon_gen` and `mpirun` for the MPI part (skipped without them) |
 
@@ -17,6 +18,7 @@ time, added with the September 2026 flux audit
 python3 tests/flux/test_flux_consistency.py
 python3 tests/flux/test_flux_reference.py
 python3 tests/flux/test_backward_mc_range.py
+python3 tests/flux/test_backward_calibration.py
 python3 tests/flux/test_joint_sampling.py     # --quick: CI size
 python3 tests/flux/test_live_time.py          # --quick: CI size
 python3 tests/flux/test_generator_fixes.py

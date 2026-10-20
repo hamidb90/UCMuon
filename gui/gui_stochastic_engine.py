@@ -322,9 +322,10 @@ def render_backward_mc_tab(script_dir):
         bmc_theta_max = st.slider("θ_max [°]", 10, 80, 70, 5, key="bmc_theta_max")
         bmc_mode = st.radio(
             "Survival probability",
-            options=[1, 0],
+            options=[2, 1, 0],
             format_func=lambda x: {
-                1: "CSDA + stochastic P_surv (recommended)",
+                2: "CSDA + stochastic P_surv, forward-calibrated (recommended)",
+                1: "CSDA + stochastic P_surv",
                 0: "CSDA only  (P_surv = 1)",
             }[x],
             key="bmc_mode",
@@ -332,7 +333,10 @@ def render_backward_mc_tab(script_dir):
                 "Stochastic correction: P_surv = exp(−λ_fatal × X_slant)  "
                 "where λ_fatal accounts for catastrophic radiative events that "
                 "stop a muon even when mean CSDA loss says it survives.  "
-                "Reduces to 1 in the CSDA limit."
+                "Reduces to 1 in the CSDA limit.  Forward-calibrated: the "
+                "stochastic result times a correction measured against "
+                "UCMuon-MC and MUSIC in Standard Rock (up to 5000 m w.e.), "
+                "for the energy-loss fluctuations the quadrature leaves out."
             ),
         )
 

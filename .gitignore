@@ -126,3 +126,6 @@ manuscript/scripts/*.dSYM/
 
 # Test-run scratch output (reference copies live in test_run/expected/)
 test_run/output/
+
+# Work folder of benchmark/analysis/validate_backward.py (transport outputs)
+/benchmark/backward_validation_work/

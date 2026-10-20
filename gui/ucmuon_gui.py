@@ -4967,7 +4967,7 @@ with tab_music:
         "MUSIC":                                                              "② MUSIC — Kudryavtsev stochastic (OMP)",
         "Bethe-Bloch (PDG) + Groom radiative losses + Highland MS":          "③ UCMuon CSDA — Bethe-Bloch + MS (OMP)",
         "PROPOSAL":                                                           "④ PROPOSAL — full stochastic MC",
-        "Backward MC Flux Integrator":                                        "⑤ Backward MC flux integrator",
+        "Backward MC Flux Integrator":                                        "⑤ Backward CSDA flux integrator",
         "PUMAS":                                                              "⑦ PUMAS — backward MC + forward (C)",
     }
 
@@ -4984,7 +4984,7 @@ with tab_music:
         "**② MUSIC**: Full stochastic MC — Kudryavtsev XS tables. OMP-parallel.\n\n"
         "**③ Bethe-Bloch**: Analytical a+bE loss + Highland MS. OMP-parallel. No external files.\n\n"
         "**④ PROPOSAL**: Full stochastic MC (IceCube/KM3NeT). Requires `pip install proposal`.\n\n"
-        "**⑤ Backward MC**: Flux integrator — no muon file needed.\n\n"
+        "**⑤ Backward CSDA flux integrator**: deterministic quadrature, no muon file needed.\n\n"
         "**⑦ PUMAS**: True backward MC (Niess 2017). "
         "Forward or backward mode. No muon file needed in backward mode. Run `make pumas`.\n\n"
         "📌 ⑥ UCMuon Terrain, for real terrain (volcano, glacier), is the **Terrain** tab (Advanced mode)."
@@ -4997,7 +4997,7 @@ with tab_music:
                 format_func=lambda x: _ENGINE_LABELS.get(x, x),
                 key="transport_engine_basic", help=_engine_help,
             )
-            st.caption("Advanced mode is set to the Backward MC flux integrator, "
+            st.caption("Advanced mode is set to the backward CSDA flux integrator, "
                        "which Basic does not offer; it is kept for Advanced.")
         else:
             transport_engine = st.selectbox(
@@ -5035,10 +5035,12 @@ with tab_music:
             "PROPOSAL.  Default choice for slab and terrain transport."
         ),
         "Backward MC Flux Integrator": (
-            "**Flux integrator** — no surface muon file needed.  "
-            "Convolves the surface spectrum with pre-computed survival probabilities "
-            "to return the underground flux directly.  "
-            "Based on Kudryavtsev (2008) backward MC formalism."
+            "**Backward CSDA flux integrator** — no surface muon file needed.  "
+            "A deterministic quadrature: maps each detector energy back to the surface "
+            "energy through the CSDA range, weights it by the surface spectrum, and "
+            "multiplies by a heuristic survival factor for catastrophic losses.  "
+            "It is not a Monte Carlo; the paper (Sec. 4.5) gives its equations and "
+            "its comparison with the forward engines."
         ),
         "PUMAS": (
             "**True backward MC** (PUMAS — Niess et al. 2017).  "
@@ -5082,9 +5084,9 @@ with tab_music:
         elif transport_engine == "Backward MC Flux Integrator":
             _stochastic_ok2, _ = stochastic_available()
             if _stochastic_ok2:
-                st.success("✅ **Backward MC** ready — no input muon file needed.")
+                st.success("✅ **Backward CSDA flux integrator** ready — no input muon file needed.")
             else:
-                st.warning("⚠️ **Backward MC** not ready — place `gui_stochastic_engine.py` in `gui/`.")
+                st.warning("⚠️ **Backward CSDA flux integrator** not ready — place `gui_stochastic_engine.py` in `gui/`.")
             st.caption("CSDA backward inversion · flux integrator · no generator step needed")
         elif transport_engine == "PUMAS":
             _pumas_bin_ok = _bin_path("ucmuon_transport_pumas") is not None
@@ -5121,7 +5123,7 @@ with tab_music:
     | ② | **MUSIC** | Full stochastic MC (Kudryavtsev 2009) | External reference; Landau fluctuations; OMP | Requires table files; init ~1 min on first run |
     | ③ | **UCMuon CSDA** | Bethe-Bloch $a+bE$ + Highland MS | Fastest; OMP; no files | No Landau fluctuations → overestimates survival by ~5–20% |
     | ④ | **PROPOSAL** | Full stochastic MC (Koehne/Alameddine 2013/2024) | Landau; LPM; 3D MS; independent check | Requires `pip install proposal`; first run ~60 s |
-    | ⑤ | **Backward MC** | Flux integrator (CSDA + stochastic) | No muon file needed; gives flux at depth | No individual muon tracking |
+    | ⑤ | **Backward CSDA** | Flux integrator (CSDA + heuristic survival factor) | No muon file needed; gives flux at depth | No individual muon tracking |
     | ⑦ | **PUMAS** | True backward MC (Niess 2017) | No muon file in backward mode; 100% efficiency; CSDA/mixed/straggled | Requires `make pumas`; C binary |
 
     **Survival fraction ordering** (same input, same geometry):

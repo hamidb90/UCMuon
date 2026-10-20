@@ -273,7 +273,7 @@ def test_every_engine_renders_in_basic(new_app, engine):
 
 
 def test_basic_has_no_backward_mc_and_keeps_it_for_advanced(new_app, repo_copy):
-    bmc, label = "Backward MC Flux Integrator", "⑤ Backward MC flux integrator"
+    bmc, label = "Backward MC Flux Integrator", "⑤ Backward CSDA flux integrator"
     assert label not in widget(new_app(), "selectbox", "transport_engine").options
     assert label in widget(new_app(mode="Advanced"), "selectbox", "transport_engine").options
     at = new_app(mode="Advanced", state={"transport_engine": bmc})

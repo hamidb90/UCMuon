@@ -66,7 +66,8 @@ Stdin protocol (one value per line):
    9  ze_max_deg            maximum zenith angle    (default 85°)
   10  step_m                largest ray sampling step [m] (default 50; refined
                             to a quarter DEM pixel, boundaries bisected)
-  11  mode                  0=CSDA only  1=+stochastic P_surv  (default 1)
+  11  mode                  0=CSDA only  1=+stochastic P_surv
+                            2=mode 1 with the forward calibration (default 2)
   12  outfile_overburden    output overburden map        (default terrain_overburden.dat)
   13  outfile_flux          output flux map              (default terrain_flux.dat)
   14  outfile_summary       output summary stats         (default terrain_summary.dat)
@@ -608,7 +609,7 @@ def _load_bmc(script_dir):
 
 
 def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
-                     rho, spectrum_mode=1, mode=1,
+                     rho, spectrum_mode=1, mode=2,
                      E_min_GeV=1.0, E_max_GeV=5000.0,
                      n_E=40, script_dir=None, progress_cb=None):
     """
@@ -821,7 +822,7 @@ def main():
     n_ze         = _rd(7,  18,     int)
     ze_max_deg   = _rd(8,  85.0,   float)
     step_m       = _rd(9,  50.0,   float)
-    mode         = _rd(10,  1,     int)
+    mode         = _rd(10,  2,     int)
     out_ob       = _rd(11, "terrain_overburden.dat")
     out_flux     = _rd(12, "terrain_flux.dat")
     out_summ     = _rd(13, "terrain_summary.dat")

@@ -26,6 +26,7 @@ on:
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
+      - 'benchmark/results/backward_calibration_20261020.csv'
       - 'tests/flux/**'
       - 'tests/geometry/**'
       - 'gui/live_time.py'
@@ -40,6 +41,7 @@ on:
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
+      - 'benchmark/results/backward_calibration_20261020.csv'
       - 'tests/flux/**'
       - 'tests/geometry/**'
       - 'gui/live_time.py'
@@ -196,6 +198,9 @@ jobs:
 
       - name: Backward MC warns at the end of its range table
         run: python3 tests/flux/test_backward_mc_range.py
+
+      - name: Backward MC forward calibration (mode 2)
+        run: python3 tests/flux/test_backward_calibration.py
 
       - name: Detector-filter ray intersections
         run: bash tests/geometry/run.sh

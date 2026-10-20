@@ -149,14 +149,14 @@ rock densities plus open sky.
   60, the 50-point energy grid is 4 % low and cancels in T_sim); PDG quotes
   ≈ 70, with recent measurements 10–15 % lower.
 - **Coloured curves** (ρ = 1.0, 2.0, 2.65, 3.0 g/cm³): one elevation bin below
-  the summit (el = 15.5°) the flux has already dropped 10–75×, to 0.54
-  (ρ = 1.0) and 0.097 (ρ = 2.65) m⁻² s⁻¹ sr⁻¹.
+  the summit (el = 15.5°) the flux is already 9 to 50 times below the open sky,
+  at 0.55 (ρ = 1.0) and 0.10 (ρ = 2.65) m⁻² s⁻¹ sr⁻¹.
 - **Density separation**: the curves stay apart all the way down the cone. At
-  el = 10.5° they are 2.7 × 10⁻², 3.8 × 10⁻³, 1.4 × 10⁻³ and 8.6 × 10⁻⁴ for
+  el = 10.5° they are 2.9 × 10⁻², 4.2 × 10⁻³, 1.6 × 10⁻³ and 9.7 × 10⁻⁴ for
   ρ = 1.0, 2.0, 2.65, 3.0: this is the density-sensitive zone used for
   inversion.
-- **Near the cone base** the flux falls to 1.7 × 10⁻⁴ of the open sky at
-  ρ = 2.65 and 8 × 10⁻⁵ at ρ = 3.0, under up to 4170 and 4730 m w.e. of rock.
+- **Near the cone base** the flux falls to 2.1 × 10⁻⁴ of the open sky at
+  ρ = 2.65 and 1.1 × 10⁻⁴ at ρ = 3.0, under up to 4170 and 4730 m w.e. of rock.
   The backward MC's range table ends at 10 TeV (6889 m w.e.), and the flux
   needing more than that at the surface is left out: 2 % and 5 % here (the
   script prints a warning). Up to 1.3.2 the table ended at 2 TeV
@@ -208,7 +208,7 @@ the YlGn colormap runs white (low) → green (high).
 footprint is clearly triangular at az ≈ 85–126°, el ≈ 5–16°, with the apex
 at the summit (white star).
 
-Inside the cone at ρ = 2.65 g/cm³ the median transmission is 8 × 10⁻⁴: 54 % of
+Inside the cone at ρ = 2.65 g/cm³ the median transmission is 9 × 10⁻⁴: 51 % of
 the blocked directions are below 0.001, and the rim reaches 0.16.
 This map is the forward model input for density inversion: running at multiple
 densities and comparing against measured T_data reveals the internal density
@@ -221,16 +221,22 @@ structure of the volcano.
 To invert for density you need one `terrain_transmission.dat` file per bulk
 density. A library for the MURAVES detector ships in `tsim_library/`
 (ρ = 1.5, 2.0, 2.5, 2.65, 3.0 g/cm³; Guan 2015, 1–2500 GeV, real DEM), written
-by `make_tsim_library.py` from the bundled `vesuvius_dem.tif`. Its deepest
+by `make_tsim_library.py` from the bundled `vesuvius_dem.tif` with the
+integrator's forward calibration (mode 2, the default). Up to 1.4.1 the library
+used mode 1, whose transmission in the pixels the inversion uses is 2 % below
+the forward engines' (median; up to 9 %), which biased the synthetic test below
+by -0.022 g/cm³; with mode 2 it is +0.011 g/cm³
+(`benchmark/analysis/bmc_density_bias.py`). Its deepest
 directions are lower bounds: at ρ = 2.65, 399 of the 1059 directions through
 rock need surface energies beyond the backward MC's range table (10 TeV) for
-more than 1 % of their flux, and 205 read exactly 0. None of the 460 pixels the
+more than 1 % of their flux, and 205 read exactly 0. None of the 467 pixels the
 inversion below uses is cut by more than 1 % at any library density (up to
 1.3.2, with a 2 TeV table, 106 of them were, by up to 33 %).
 
 To write your own with the terrain driver CLI (stdin, one value per line: DEM,
 latitude, longitude, altitude, density, spectrum, n_az, n_ze, ze_max, step,
-transport mode, then the overburden, flux, summary and transmission paths):
+integrator mode (2 = forward-calibrated), then the overburden, flux, summary
+and transmission paths):
 
 ```bash
 mkdir -p output/vesuvius_tsim
@@ -247,7 +253,7 @@ ${rho}
 85
 85.0
 25.0
-1
+2
 output/vesuvius_tsim/overburden_${rho}.dat
 output/vesuvius_tsim/flux_${rho}.dat
 output/vesuvius_tsim/summary_${rho}.dat
@@ -307,13 +313,13 @@ write_density_map(az_c, el_c, rho_map, sigma_rho, status,
 | Region | Status | Why |
 |---|---|---|
 | Most directions (el > 20°, no cone) | 1 — open sky | T_sim ≈ 1 for all densities |
-| Deep inside the mountain (599 pixels, el 5.5–14.5°, median 8.5°) | 4 — low sensitivity | too few muons for 10⁵ events |
-| Thinner rock (460 pixels, el 5.5–16.5°, median 10.5°) | 0 — OK | Density-sensitive zone; T_sim varies with ρ |
+| Deep inside the mountain (592 pixels, el 5.5–14.5°, median 8.5°) | 4 — low sensitivity | too few muons for 10⁵ events |
+| Thinner rock (467 pixels, el 5.5–16.5°, median 10.5°) | 0 — OK | Density-sensitive zone; T_sim varies with ρ |
 
 For the synthetic test with the shipped library (ρ_true = 2.0, N = 10⁵; the
 synthetic data are seeded, so these numbers reproduce exactly):
-- Recovered density in the 460 OK pixels: **ρ̂ = 2.002 g/cm³**, pixel-to-pixel
-  scatter 0.022 g/cm³
+- Recovered density in the 467 OK pixels: **ρ̂ = 2.002 g/cm³** (mean),
+  pixel-to-pixel scatter 0.025 g/cm³
 - Double ratio D = 1.68 (median; D > 1 since ρ_true < ρ_ref = 2.65)
 
 Up to v1.1.2 the shipped library gave no OK pixels in this test: its open-sky
@@ -373,6 +379,6 @@ EOF
 | `ModuleNotFoundError: rasterio` | DEM mode without rasterio | `pip install rasterio` |
 | Figures not found | Wrong working directory | Run from project root; figs go to `examples/vesuvius/figs/` |
 | All T_sim ≈ 0 everywhere | Ray step too coarse for thin outer flanks | Use `--step 10` |
-| Many pixels have status 4 (low sensitivity) | Expected deep inside the mountain: too little transmission | The 460 thinner-rock pixels at el 5.5–16.5° invert (see Expected inversion results) |
+| Many pixels have status 4 (low sensitivity) | Expected deep inside the mountain: too little transmission | The 467 thinner-rock pixels at el 5.5–16.5° invert (see Expected inversion results) |
 | Density curves identical in Fig 2 | Cone edge narrower than bin width | Use default 360×85 grid (1° bins) |
 | Summit at wrong azimuth vs MURAVES | Different convention | Add 75° to azimuth: MURAVES puts summit at 180°, here it is at 105° |

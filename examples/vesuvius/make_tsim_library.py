@@ -38,7 +38,7 @@ for rho in RHOS:
     # the integral above 1 GeV/c, so Phi_sky, and every T = Phi_rock/Phi_sky,
     # rested on that extrapolation (docs/FLUX_NORMALISATION_AUDIT.md).
     fmap, osky = td.compute_flux_map(az_c, ze_c, ob, sky, rho,
-                                     spectrum_mode=3, mode=1, n_E=40,
+                                     spectrum_mode=3, mode=2, n_E=40,
                                      E_min_GeV=1.0, E_max_GeV=2500.0,
                                      script_dir='gui')
     T = td.compute_transmission_map(fmap, osky)

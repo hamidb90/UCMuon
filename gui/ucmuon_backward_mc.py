@@ -36,6 +36,21 @@ Poisson approximation:
 where λ_fatal = b_total × ln(1/v_stop) / ln(1/v_cut)  [events/g/cm²]
 and v_stop is the minimum energy fraction that would stop the muon.
 
+Forward calibration (mode 2, the default)
+─────────────────────────────────────────
+The quadrature neglects energy-loss fluctuations, which on a steep spectrum
+raise the flux at depth, and the factor above can only lower it: against the
+forward stochastic engines it is up to 15 % low at 3000 m w.e. (validated
+2026-10-19). Mode 2 multiplies the mode-1 flux by C(spectrum, θ, X), the
+forward engines' transmission over the mode-1 transmission, measured with
+UCMuon-MC and MUSIC on a grid of zenith angles and slant opacities
+(benchmark/results/backward_calibration_20261020.csv, from
+benchmark/analysis/validate_backward.py and build_backward_calibration.py) and
+interpolated in θ and ln X; C goes linearly to 1 at X = 0 and is held, with a
+warning, beyond the last opacity of the grid (5000 m w.e.). The table is for
+Standard Rock (any density) with the default b and v_cut; for the other
+materials mode 2 is mode 1, with a warning.
+
 Spectrum models (backward-MC numbering, NOT the generator's 1-8; e.g. 3 is
 Guan here, PARMA in the generator):
     1 = CosmoALEPH (Schmelling 2013)  dN/dp ∝ p^{-3.195}
@@ -55,6 +70,7 @@ Stdin input:
      9  n_E            energy grid bins
     10  n_theta        zenith angle bins
     11  mode           0=CSDA only  1=CSDA + stochastic P_surv correction
+                       2=mode 1 with the forward calibration (default)
     12  v_cut          catastrophic threshold (default 0.05)
     13  b_rad          radiative coefficient override [cm2/g] (0=use database)
     14  outfile        output ASCII file
@@ -180,7 +196,7 @@ class RangeTableWarning(UserWarning):
 
 
 def _beyond_table_contribution(E_det_MeV, X_gcm2, theta_rad, spectrum_mode,
-                               tab, b_total, v_cut, mode):
+                               tab, b_total, v_cut, mode, mat_id=1):
     """φ_det [m⁻² s⁻¹ sr⁻¹ GeV⁻¹] of a detector energy whose surface energy is
     beyond the table, with the table continued as dE/dX = a + bE. For the
     warning only."""
@@ -193,9 +209,11 @@ def _beyond_table_contribution(E_det_MeV, X_gcm2, theta_rad, spectrum_mode,
     E_s = ((a + b * T0) * np.exp(b * (R_surf - R0)) - a) / b
     J = (a + b * E_s) / max(float(_dedx(E_det_MeV, tab)), 1e-12)
     Ps = 1.0
-    if mode == 1:
+    if mode in (1, 2):
         v_stop = float(np.clip(1.0 - R_det / R_surf, v_cut, 1.0 - 1e-6))
         Ps = float(np.exp(-b_total * np.log(1.0 / v_stop) / np.log(1.0 / v_cut) * X_gcm2))
+    if mode == 2:
+        Ps *= forward_calibration(X_gcm2, theta_rad, spectrum_mode, mat_id)
     return float(_flux_surface(E_s / 1000.0, theta_rad, spectrum_mode)) * J * Ps
 
 
@@ -433,13 +451,83 @@ def _P_surv_stochastic(E_s_MeV, E_det_MeV, X_gcm2, b_total, v_cut, tab=None):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Forward calibration (mode 2)
+# ─────────────────────────────────────────────────────────────────────────────
+# C[spectrum_mode][i_theta, i_X] = T_forward / T_mode1, mean of UCMuon-MC and
+# MUSIC, 2x10^4 muons per cell (benchmark/results/backward_calibration_20261020.csv).
+_CAL_THETA_DEG = np.array([0.0, 60.0, 80.0, 85.0])
+_CAL_X = np.array([1.0e4, 2.0e4, 5.0e4, 1.0e5, 2.0e5, 3.0e5, 4.0e5, 5.0e5])
+_CAL = {
+    1: np.array([
+        [1.0145, 1.0426, 1.0483, 1.0620, 1.1202, 1.1503, 1.2030, 1.3894],
+        [1.0527, 1.0373, 1.0372, 1.0619, 1.1178, 1.1551, 1.1982, 1.3874],
+        [1.0515, 1.0361, 1.0532, 1.0870, 1.1157, 1.1498, 1.2366, 1.3904],
+        [1.0265, 1.0569, 1.0744, 1.0748, 1.1357, 1.1159, 1.2306, 1.3914],
+    ]),
+    2: np.array([
+        [1.0591, 1.0724, 1.0730, 1.1003, 1.1825, 1.2388, 1.3420, 1.5348],
+        [1.0504, 1.0738, 1.0811, 1.1165, 1.1825, 1.2611, 1.3473, 1.5300],
+        [1.0393, 1.0671, 1.0954, 1.1007, 1.2194, 1.2417, 1.3554, 1.5520],
+        [1.0534, 1.0765, 1.0910, 1.1029, 1.2097, 1.2385, 1.3245, 1.5422],
+    ]),
+    3: np.array([
+        [1.0113, 1.0245, 1.0318, 1.0653, 1.1619, 1.1759, 1.2976, 1.4666],
+        [1.0131, 0.9844, 1.0528, 1.0527, 1.1084, 1.1622, 1.2593, 1.4542],
+        [1.0015, 1.0123, 1.0248, 1.0491, 1.1068, 1.1385, 1.2277, 1.4405],
+        [1.0028, 1.0245, 1.0200, 1.0510, 1.0905, 1.1333, 1.2139, 1.4280],
+    ]),
+    4: np.array([
+        [0.9995, 1.0258, 1.0537, 1.0725, 1.1332, 1.1784, 1.2786, 1.4617],
+        [0.9999, 1.0317, 1.0178, 1.0669, 1.1363, 1.1931, 1.2837, 1.4781],
+        [1.0044, 1.0217, 1.0180, 1.0250, 1.1039, 1.1420, 1.2529, 1.4690],
+        [1.0145, 1.0229, 1.0303, 1.0497, 1.0753, 1.1176, 1.2418, 1.3959],
+    ]),
+}
+
+
+_CAL_WARNED = set()
+
+
+def has_calibration(spectrum_mode):
+    return int(spectrum_mode) in _CAL
+
+
+def _warn_calibration_once(key, text):
+    if key not in _CAL_WARNED:         # once per process: a map makes thousands of calls
+        _CAL_WARNED.add(key)
+        warnings.warn(text, stacklevel=3)
+
+
+def forward_calibration(X_gcm2, theta_rad, spectrum_mode, mat_id=1):
+    """C(spectrum, θ, X) of mode 2: 1 when there is no table or no rock."""
+    tab = _CAL.get(int(spectrum_mode))
+    if tab is None or X_gcm2 <= 0.0:
+        return 1.0
+    if int(mat_id) != 1:
+        _warn_calibration_once("material", "Backward MC mode 2: the forward calibration is "
+                               "for Standard Rock only; this material gets mode 1.")
+        return 1.0
+    if X_gcm2 > _CAL_X[-1]:
+        _warn_calibration_once("depth", f"Backward MC mode 2: slant opacity {X_gcm2 / 100.0:.0f} "
+                               f"m w.e. is beyond the forward calibration ({_CAL_X[-1] / 100.0:.0f} "
+                               f"m w.e.); the correction there is held at its last value.")
+    th = float(np.clip(np.degrees(theta_rad), _CAL_THETA_DEG[0], _CAL_THETA_DEG[-1]))
+    lnx = np.log(np.clip(X_gcm2, _CAL_X[0], _CAL_X[-1]))
+    col = [np.interp(lnx, np.log(_CAL_X), row) for row in tab]
+    c = float(np.interp(th, _CAL_THETA_DEG, col))
+    if X_gcm2 < _CAL_X[0]:
+        c = 1.0 + (c - 1.0) * X_gcm2 / _CAL_X[0]
+    return c
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # Backward MC flux integration
 # ─────────────────────────────────────────────────────────────────────────────
 
 def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
                      E_min_GeV=0.1, E_max_GeV=5000.0,
                      theta_max_deg=70.0, n_E=80, n_theta=30,
-                     mode=1, v_cut=0.05, b_rad_override=0.0,
+                     mode=2, v_cut=0.05, b_rad_override=0.0,
                      progress_cb=None):
     """
     Compute expected muon flux at depth by backward CSDA integration.
@@ -503,7 +591,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
                 if E_det <= _T_FINE[-1]:       # surface energy beyond the table
                     missing_rate += _beyond_table_contribution(
                         E_det, X_sl, th, spectrum_mode, tab, b_total, v_cut,
-                        mode) * dO * cos_t * dE_GeV
+                        mode, mat_id) * dO * cos_t * dE_GeV
                 continue
             E_s_GeV = E_s / 1000.0
             if E_s_GeV < E_min_GeV or E_s_GeV > E_max_GeV:
@@ -514,14 +602,15 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
             if phi_s <= 0:
                 continue
 
-            # Survival probability
-            if mode == 1:
+            # Survival probability (mode 2 adds the forward calibration)
+            if mode in (1, 2):
                 Ps = _P_surv_stochastic(E_s, E_det, X_sl, b_total, v_cut, tab)
             else:
                 Ps = 1.0
+            cal = forward_calibration(X_sl, th, spectrum_mode, mat_id) if mode == 2 else 1.0
 
             # Detector flux contribution  [m⁻² s⁻¹ GeV⁻¹ sr⁻¹ → m⁻² s⁻¹ GeV⁻¹]
-            phi_det  = phi_s * Jacob * Ps       # [m⁻² s⁻¹ GeV⁻¹ sr⁻¹]
+            phi_det  = phi_s * Jacob * Ps * cal  # [m⁻² s⁻¹ GeV⁻¹ sr⁻¹]
             contrib  = phi_det * dO * cos_t     # [m⁻² s⁻¹ GeV⁻¹]
 
             sum_flux += contrib
@@ -558,7 +647,8 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
                            spectrum_mode=spectrum_mode,
                            n_E=n_E, n_theta=n_theta,
                            theta_max_deg=theta_max_deg,
-                           mode="CSDA+stochastic" if mode == 1 else "CSDA only",
+                           mode={0: "CSDA only", 1: "CSDA+stochastic",
+                                 2: "CSDA+stochastic, forward-calibrated"}.get(mode, str(mode)),
                            v_cut=v_cut, range_note=range_note),
     )
 
@@ -569,7 +659,7 @@ def backward_mc_flux(depth_m, rho, mat_id, spectrum_mode,
 
 def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
                      E_min_GeV=0.5, E_max_GeV=5000.0, n_E=40,
-                     mode=1, v_cut=0.05, mat_id=1, b_rad_override=0.0):
+                     mode=2, v_cut=0.05, mat_id=1, b_rad_override=0.0):
     """
     Through-rock integrated directional flux [m⁻² s⁻¹ sr⁻¹] at ONE zenith
     angle and ONE slant opacity:
@@ -605,16 +695,18 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
                 if E_det <= _T_FINE[-1]:   # surface energy beyond the table
                     missing += _beyond_table_contribution(
                         E_det, X_slant_gcm2, theta_rad, spectrum_mode, tab,
-                        b_total, v_cut, mode) * dE_GeV
+                        b_total, v_cut, mode, mat_id) * dE_GeV
                 continue
             Ps = (_P_surv_stochastic(E_s, E_det, X_slant_gcm2,
                                      b_total, v_cut, tab)
-                  if mode == 1 else 1.0)
+                  if mode in (1, 2) else 1.0)
         else:
             E_s, Jacob, Ps = E_det, 1.0, 1.0
         phi_s = float(_flux_surface(E_s / 1000.0, theta_rad, spectrum_mode))
         if phi_s > 0.0:
             flux += phi_s * Jacob * Ps * dE_GeV
+    if mode == 2:
+        flux *= forward_calibration(X_slant_gcm2, theta_rad, spectrum_mode, mat_id)
     _warn_off_table(X_slant_gcm2, flux, missing)
     return flux
 
@@ -688,7 +780,7 @@ def main():
     theta_max_deg = _rd(7,  70.0,    float)
     n_E           = _rd(8,  60,      int)
     n_theta       = _rd(9,  25,      int)
-    mode          = _rd(10, 1,       int)
+    mode          = _rd(10, 2,       int)
     v_cut         = _rd(11, 0.05,    float)
     b_rad_ov      = _rd(12, 0.0,     float)
     outfile       = _rd(13, "backward_mc_results.dat")

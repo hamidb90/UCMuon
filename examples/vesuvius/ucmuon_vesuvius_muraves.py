@@ -176,7 +176,7 @@ def _opensky_flux(ze_c: np.ndarray, spec_mode: int,
     """
     return np.array([_bmc.directional_flux(0.0, np.radians(ze), spec_mode,
                                            E_min_GeV=E_min, E_max_GeV=E_max,
-                                           n_E=n_E, mode=1)
+                                           n_E=n_E, mode=2)
                      for ze in ze_c])
 
 
@@ -190,7 +190,7 @@ def _rock_flux(X: float, ze: float,
     """
     return float(_bmc.directional_flux(X, np.radians(ze), spec_mode,
                                        E_min_GeV=E_min, E_max_GeV=E_max,
-                                       n_E=n_E, mode=1))
+                                       n_E=n_E, mode=2))
 
 
 def flux_maps(az_c: np.ndarray, ze_c: np.ndarray, overburden: np.ndarray,

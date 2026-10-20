@@ -39,6 +39,45 @@ elevation model). No simulated result changes.
   the CERNLIB routines (the latter undeclared) and, inside JAEA's package, an
   LGPL Mersenne Twister.
 
+### Engine 5 is a backward CSDA flux integrator, validated and calibrated
+- Renamed in the GUI (display labels; the internal key is unchanged), the
+  README and the paper: it is a deterministic quadrature, not a Monte Carlo.
+- `benchmark/analysis/validate_backward.py` compares its transmission
+  T(X, theta), the quantity the terrain driver gives the density inversion,
+  with UCMuon-MC, MUSIC and PROPOSAL (Standard Rock, Guan, flux above 1 GeV,
+  zenith 0/60/80/85 deg, 200 to 3000 m w.e.; `benchmark/results/
+  backward_validation_20261019.csv`). The forward engines agree within 3.4 %;
+  the integrator was within 2.1 % at 200 m w.e., 1 to 6 % low at 500 and
+  1000 m w.e., 8 to 14 % low at 2000 and 12 to 15 % low at 3000 m w.e.: it
+  neglects energy-loss fluctuations, which on a steep spectrum add muons at
+  depth.
+- **New mode 2, the default** (`ucmuon_backward_mc.py`, the terrain driver,
+  the GUI's Backward MC tab and terrain flux plot, the Vesuvius example):
+  mode 1 times a correction C(spectrum, theta, X) measured with UCMuon-MC and
+  MUSIC for all four spectra at zenith 0/60/80/85 deg and 100 to 5000 m w.e.
+  (8 opacities, 2x10^4 muons per cell and engine; `benchmark/results/
+  backward_calibration_20261020.csv`, built by
+  `benchmark/analysis/build_backward_calibration.py`), interpolated in theta
+  and ln X, going to 1 below 100 m w.e. and held beyond 5000 m w.e. with a
+  warning. For Guan C is 1.00 to 1.01 at 100 m w.e., 1.13 to 1.18 at 3000
+  and 1.43 to 1.47 at 5000 m w.e. (there it also restores the 7 to 8 % of the
+  flux beyond the range table). Tested where the calibration has no node
+  (zenith 40/70/75/82 deg, 350 to 4500 m w.e., all three engines;
+  `backward_validation_offnode_20261020.csv`): within 2.4 % of the engines'
+  mean in every cell, where mode 1 was up to 26 % low. Standard Rock only:
+  other materials get mode 1, with a warning. Modes 0 and 1 are unchanged and
+  still selectable. `tests/flux/test_backward_calibration.py`.
+- The Vesuvius library (`examples/vesuvius/tsim_library/`) and figures are
+  regenerated with mode 2. Synthetic test: 467 density-sensitive pixels (460),
+  mean density 2.002 g/cm^3 (2.002), scatter 0.025 (0.022).
+  `benchmark/analysis/bmc_density_bias.py` draws the synthetic data from the
+  forward engines' transmission instead: the density bias is -0.022 g/cm^3
+  with mode 1 (1.6 times the per-pixel uncertainty) and +0.011 with mode 2
+  (0.8 times).
+- `docs/ENGINE6_USAGE_GUIDE.md`: the vertical flux under 1000 m of rock was
+  given as 2.6x10^-4 m^-2 s^-1 sr^-1, the value with the 2 TeV range table of
+  1.3.2 and earlier; mode 1 now gives 3.4x10^-4 and mode 2 4.0x10^-4.
+
 ### UCMuGen example and Fig. 5
 - The Geant4 example's README called the agreement between predicted and
   measured rate (0.09 %) an end-to-end normalisation check, but the live time
