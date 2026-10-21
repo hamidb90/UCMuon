@@ -68,15 +68,71 @@ elevation model). No simulated result changes.
   other materials get mode 1, with a warning. Modes 0 and 1 are unchanged and
   still selectable. `tests/flux/test_backward_calibration.py`.
 - The Vesuvius library (`examples/vesuvius/tsim_library/`) and figures are
-  regenerated with mode 2. Synthetic test: 467 density-sensitive pixels (460),
-  mean density 2.002 g/cm^3 (2.002), scatter 0.025 (0.022).
-  `benchmark/analysis/bmc_density_bias.py` draws the synthetic data from the
-  forward engines' transmission instead: the density bias is -0.022 g/cm^3
-  with mode 1 (1.6 times the per-pixel uncertainty) and +0.011 with mode 2
-  (0.8 times).
+  regenerated with mode 2. `benchmark/analysis/bmc_density_bias.py` draws the
+  synthetic data from the forward engines' transmission instead of the
+  library's: over the inverted pixels the density bias is -0.026 g/cm^3 with
+  mode 1 (once the per-pixel uncertainty) and +0.010 with mode 2 (0.4 times).
+- The terrain driver writes transmission maps with seven significant digits
+  (`%.6e`). Up to 1.4.1 it wrote six decimals, so a transmission near 1e-6
+  was rounded by up to 40 %: in the Vesuvius library 57 to 299 rock pixels per
+  density are below 1e-4.
 - `docs/ENGINE6_USAGE_GUIDE.md`: the vertical flux under 1000 m of rock was
   given as 2.6x10^-4 m^-2 s^-1 sr^-1, the value with the 2 TeV range table of
   1.3.2 and earlier; mode 1 now gives 3.4x10^-4 and mode 2 4.0x10^-4.
+
+### Density inversion: uncertainties, flag and the Vesuvius example tested
+- `invert_density_map`: sigma_rho is sigma_T over the slope of the
+  interpolation that gives rho_hat (ln T linear between the two library
+  densities around it); it was np.gradient of T at the library densities,
+  one-sided at the ends. `generate_synthetic_tdata`: sigma_T is Poisson,
+  sqrt(T/N), as the counts it draws; it was binomial, sqrt(T(1-T)/N). On the
+  Vesuvius example the pulls (rho_hat - rho_true)/sigma_rho had an RMS of 1.3;
+  now 0.99 to 1.09 at and between library densities (20 seeds).
+- Status 4 (low sensitivity) is sigma_rho > `max_sigma_rho` (default
+  0.1 g/cm^3; "Max σ_ρ" in the Density tab) when the data have uncertainties,
+  and |dT/drho| < `min_sensitivity` only when they do not. It was always the
+  slope, which ignores counting statistics: in the example it flagged 591
+  pixels, half of them measured to better than 0.1 g/cm^3. A library with one
+  density is refused instead of failing inside the loop.
+- Transmission maps have no value (NaN) beyond the opacity up to which the
+  backward MC's flux is validated (`opacity_limit`: 5000 m w.e. in mode 2,
+  the end of its calibration; the end of the range table otherwise), and the
+  inversion skips them (status 1, "Open sky / no T_sim" in the GUI). Up to
+  1.4.1 they were kept as lower bounds and under the thickest rock were 0.
+- Vesuvius synthetic test: 695 pixels invert (468), 14 are flagged (591), 350
+  have no library value; mean density 2.002 g/cm^3, scatter 0.039, mean
+  sigma_rho 0.032, double ratio 2.00.
+- `examples/vesuvius/inversion_tests.py` tests what the closure test cannot
+  show: pulls at and between library densities; the interpolation bias
+  between them (+0.5 % at 1.75 and +0.4 % at 2.25 g/cm^3, +2.9 and +3.0 %
+  interpolating T; the paper said +2.6 % at 1.75, on an older library); data
+  from the forward engines (+0.01 g/cm^3); data from Frosin 2025 read with the
+  Guan library (-0.14 to -0.16 g/cm^3); Method 2 with each flux model (1.70
+  with Reyna to 2.16 with Frosin; 0.15 with Gaisser 1990, which is valid only
+  above ~100 GeV); the altitude, with PARMA at the site
+  (`parma_altitude.cc`): a sea-level library reads 608 m data as 2.06 to
+  2.10 g/cm^3; and the exposure, 1.9 to 9.4 m^2 yr per pixel for 10^5 events.
+  `tests/gui/test_density_statistics.py`.
+- Method 2 (direct opacity inversion) uses Guan 2015 by default, the
+  spectrum of the T_sim libraries, in the GUI and in `invert_opacity_map`,
+  `transmission_vs_opacity` and `path_length_from_tsim`; it was Reyna 2006,
+  labelled "recommended", which reads the Vesuvius closure-test data
+  (rho = 2.0) as 1.70 g/cm^3. `invert_opacity_map` warns when asked for the
+  plain Gaisser 1990 formula, which the GUI does not offer there (0.15 g/cm^3
+  on the same data).
+- Method 2's transmission uses one detector threshold, `E_th_GeV` (1 GeV by
+  default, the lower end of the Guan and Frosin fits and the threshold of the
+  T_sim libraries): T = I(>E_s)/I(>E_th) with R(E_s) = R(E_th) + X. Up to
+  1.4.1 the open sky was integrated from 0.5 GeV, below the fitted range of
+  Guan, Frosin and Reyna, and the rock from zero energy at the detector. It
+  now agrees with Engine 5 without its survival factor within 0.4 % from 10
+  to 2000 m w.e.; it differed by -17 to +13 % looking vertically and -3 to
+  +5 % at 75 to 85 deg (Vesuvius closure test with Guan: 2.003 g/cm^3, was
+  1.997).
+- The Density tab's "Preview density" slider formatted its label with
+  `f"{r:.3f}"`; Streamlit 1.54's AppTest passes the formatted label back in,
+  so `test_density_with_the_shipped_library` failed there. The format is
+  idempotent now.
 
 ### UCMuGen example and Fig. 5
 - The Geant4 example's README called the agreement between predicted and

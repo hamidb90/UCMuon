@@ -196,7 +196,7 @@ def _settings_snapshot():
         "terrain_setup_3d_radius",
         "comp_az_target", "comp_spec_mode", "comp_emin", "comp_emax", "comp_logscale",
         "da_method", "da_lib_paths_text", "da_tdata_mode", "da_tdata_path",
-        "da_synth_nevents", "da_min_sens", "da_use_sig", "da_sig_N",
+        "da_synth_nevents", "da_min_sens", "da_max_sigma_rho", "da_use_sig", "da_sig_N",
         "da_det_baseline", "da_det_nch_x", "da_det_nch_y", "da_det_pitch_x",
         "da_det_pitch_y",
         "di_tpath", "di_tgt_path", "di_opn_path", "di_L_source", "di_Lsim_path",

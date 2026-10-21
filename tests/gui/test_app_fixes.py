@@ -95,7 +95,9 @@ def test_b12_config_restore_applies_settings(new_app, repo_copy):
 
 def test_b13a_no_plain_gaisser_for_the_direct_inversion(new_app):
     at = new_app(mode="Advanced", state={"da_method": "direct"})
-    assert "bugaev" not in widget(at, "selectbox", "di_model_sel").options
+    sel = widget(at, "selectbox", "di_model_sel")
+    assert "bugaev" not in sel.options
+    assert sel.value == "guan_2015"            # the libraries' spectrum (Reyna up to 1.4.1)
 
 
 def test_b13b_measured_data_without_density_header(repo_copy, tmp_path):

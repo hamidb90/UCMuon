@@ -41,18 +41,22 @@ for rho in RHOS:
                                      spectrum_mode=3, mode=2, n_E=40,
                                      E_min_GeV=1.0, E_max_GeV=2500.0,
                                      script_dir='gui')
-    T = td.compute_transmission_map(fmap, osky)
+    # NaN beyond 5000 m w.e., the last opacity of the integrator's calibration
+    x_lim = td._load_bmc('gui').opacity_limit(2, 3)
+    T = td.compute_transmission_map(fmap, osky, ob, x_lim)
     # validation
     open_ok = np.allclose(T[sky], 1.0)
     blocked = ~sky & (ob > 1.0)
     mono_ok = True
     if prev_T is not None:
-        mono_ok = np.all(T[blocked] <= prev_T[blocked] + 1e-12)
+        both = blocked & np.isfinite(T) & np.isfinite(prev_T)
+        mono_ok = np.all(T[both] <= prev_T[both] + 1e-12)
     fname = f'{OUT}/terrain_transmission_{rho:.2f}.dat'
     td.write_transmission_map(az_c, ze_c, T, fname, *DET, rho)
     print(f"RHO {rho:.2f}: open-sky T=1 {'OK' if open_ok else 'FAIL'}; "
           f"monotone-vs-prev-rho {'OK' if mono_ok else 'FAIL'}; "
           f"min T {np.nanmin(T[blocked]):.3e}; blocked-bin mean T {np.nanmean(T[blocked]):.4f}; "
+          f"{int(np.isnan(T).sum())} beyond {x_lim / 100:.0f} m w.e. (NaN); "
           f"{time.time()-t1:.0f}s -> {fname}", flush=True)
     prev_T = T
 print("LIBRARY COMPLETE", flush=True)

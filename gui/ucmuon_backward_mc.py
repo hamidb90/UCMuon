@@ -492,6 +492,17 @@ def has_calibration(spectrum_mode):
     return int(spectrum_mode) in _CAL
 
 
+def opacity_limit(mode, spectrum_mode, mat_id=1):
+    """Slant opacity [g/cm²] beyond which the flux is not a validated result:
+    in mode 2 with a calibrated spectrum in Standard Rock, the last opacity of
+    the calibration (5000 m w.e.; beyond it C is held and the range table cuts
+    more and more of the flux); otherwise the end of the range table
+    (6889 m w.e. of Standard Rock), beyond which the flux is 0."""
+    if int(mode) == 2 and has_calibration(spectrum_mode) and int(mat_id) == 1:
+        return float(_CAL_X[-1])
+    return RANGE_TABLE_R_MAX_GCM2
+
+
 def _warn_calibration_once(key, text):
     if key not in _CAL_WARNED:         # once per process: a map makes thousands of calls
         _CAL_WARNED.add(key)

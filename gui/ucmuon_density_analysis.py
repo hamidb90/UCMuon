@@ -33,6 +33,8 @@ Author: Hamid Basiri <hamid.basiri@uclouvain.be>
 MIT License 2026
 """
 
+import warnings
+
 import numpy as np
 from pathlib import Path
 
@@ -250,11 +252,19 @@ def build_tsim_library(file_list):
 # Core inversion
 # ─────────────────────────────────────────────────────────────────────────────
 
-def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
+def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005,
+                       max_sigma_rho=0.1):
     """
     Recover density ρ̂(az, el) by interpolating T_sim(ρ) = T_data pixel-by-pixel.
 
     Returns (rho_map, sigma_rho, status_map), all shape (n_az, n_el).
+
+    σ_ρ = σ_T / |dT/dρ|, with dT/dρ the slope of the interpolation that gives
+    ρ̂ (ln T linear between the two library densities around ρ̂). Up to 1.4.1
+    it was np.gradient of T at the library densities, which is not that slope
+    and is one-sided at the ends; with the binomial σ_T of the synthetic data
+    the pulls (ρ̂ − ρ_true)/σ_ρ had an RMS of 1.3 on the Vesuvius example, 1.0
+    now.
 
     Status codes:
       0 = OK
@@ -263,13 +273,18 @@ def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
           muons NaN)
       2 = T_data above library range (ρ < ρ_min, under-dense)
       3 = T_data below library range (ρ > ρ_max, over-dense)
-      4 = low sensitivity (|dT/dρ| < min_sensitivity)
+      4 = low sensitivity: σ_ρ > max_sigma_rho [g/cm³] when sigma_T is given,
+          |dT/dρ| < min_sensitivity [cm³/g] when it is not. Up to 1.4.1 it was
+          always the |dT/dρ| test, which ignores counting statistics: under
+          thick rock T and dT/dρ are small, but so is σ_T.
     """
     if not tsim_lib:
         raise ValueError("tsim_lib is empty.")
 
     rho_vec = np.array(sorted(tsim_lib.keys()), dtype=np.float64)
     n_rho   = len(rho_vec)
+    if n_rho < 2:
+        raise ValueError("The T_sim library needs at least two densities to interpolate.")
 
     # Stack T_sim arrays: shape (n_rho, n_az, n_el)
     T_stack = np.stack([tsim_lib[r] for r in rho_vec], axis=0)
@@ -322,26 +337,31 @@ def invert_density_map(T_data, tsim_lib, sigma_T=None, min_sensitivity=0.005):
                 # chord between library densities lies above the curve, and ρ̂
                 # came out +2.6/+1.5/+0.4 % at ρ = 1.75/2.25/2.8 g/cm³ on the
                 # Vesuvius library (+0.5/+0.3/+0.04 % in ln T).
-                if td > 0.0 and np.all(T_vec > 0.0):
+                # The slope dT/dρ at ρ̂ is that of the same interpolation, on
+                # the interval [ρ_i, ρ_i+1] that holds ρ̂.
+                log_ok = td > 0.0 and np.all(T_vec > 0.0)
+                if log_ok:
                     rho_hat = np.interp(np.log(td), np.log(T_vec[::-1]), rho_vec[::-1])
                 else:
                     rho_hat = np.interp(td, T_vec[::-1], rho_vec[::-1])
                 rho_map[ia, ie] = rho_hat
-
-                # Estimate gradient dT/dρ at ρ̂ using finite differences on T_vec
-                grad_T = np.gradient(T_vec, rho_vec)   # (n_rho,)
-                dT_drho = float(np.interp(rho_hat, rho_vec, grad_T))
-
-                if abs(dT_drho) < min_sensitivity:
-                    status_map[ia, ie] = 4
+                i = int(np.clip(np.searchsorted(rho_vec, rho_hat) - 1, 0, n_rho - 2))
+                d_rho = rho_vec[i + 1] - rho_vec[i]
+                if log_ok:
+                    dT_drho = td * float(np.log(T_vec[i + 1] / T_vec[i])) / d_rho
                 else:
-                    status_map[ia, ie] = 0
+                    dT_drho = float(T_vec[i + 1] - T_vec[i]) / d_rho
 
                 # Propagate uncertainty
-                if sigma_T is not None:
-                    sT = float(sigma_T[ia, ie])
-                    if abs(dT_drho) > _GRADIENT_THRESHOLD and sT > 0.0:
-                        sigma_rho[ia, ie] = sT / abs(dT_drho)
+                sT = float(sigma_T[ia, ie]) if sigma_T is not None else np.nan
+                if abs(dT_drho) > _GRADIENT_THRESHOLD and sT > 0.0:
+                    sigma_rho[ia, ie] = sT / abs(dT_drho)
+
+                if np.isfinite(sT):
+                    low = not (sigma_rho[ia, ie] <= max_sigma_rho)
+                else:
+                    low = abs(dT_drho) < min_sensitivity
+                status_map[ia, ie] = 4 if low else 0
 
     return rho_map, sigma_rho, status_map
 
@@ -467,12 +487,12 @@ def generate_synthetic_tdata(tsim_lib, true_rho, n_events=10_000, seed=42):
                 T_data[ia, ie]  = 1.0
                 sigma_T[ia, ie] = 1.0 / np.sqrt(max(n_events, 1))
             else:
-                # Poisson sampling
+                # Poisson sampling, and its σ: n_events is the expected
+                # open-sky count, N_rock ~ Poisson(n_events·T). Up to 1.4.1
+                # σ_T was binomial, √(T(1 − T)/n), too small by √(1 − T).
                 N_rock = int(rng.poisson(n_events * T_true))
                 T_data[ia, ie]  = N_rock / n_events
-                sigma_T[ia, ie] = float(np.sqrt(
-                    T_true * max(1.0 - T_true, 0.0) / max(n_events, 1)
-                ))
+                sigma_T[ia, ie] = float(np.sqrt(T_true / max(n_events, 1)))
 
     return T_data, sigma_T
 
@@ -580,13 +600,21 @@ def flux_model_labels():
         return {"reyna_bugaev": "Reyna–Bugaev (2006)"}
 
 
-def transmission_vs_opacity(theta_deg, model="reyna_bugaev", altitude_m=0.0,
-                            opacity_grid=None):
+def transmission_vs_opacity(theta_deg, model="guan_2015", altitude_m=0.0,
+                            opacity_grid=None, E_th_GeV=1.0):
     """
-    Tabulate T(ϱ) = I(>E_min(ϱ), θ) / I(>0, θ) for a single zenith angle.
+    Tabulate T(ϱ) = I(>E_s(ϱ), θ) / I(>E_th, θ) for a single zenith angle,
+    with E_th the detector threshold [GeV, kinetic] and E_s(ϱ) the surface
+    energy that reaches the detector with E_th: R(E_s) = R(E_th) + ϱ (CSDA).
+
+    E_th = 1 GeV by default, the lower end of the Guan and Frosin fits and the
+    threshold of the T_sim libraries (Engine 5, 1-2500 GeV at the detector).
+    Up to 1.4.1 the open sky was integrated from 0.5 GeV, below the fitted
+    range of Guan, Frosin and Reyna, and through rock from the energy that
+    stops at the detector: two different thresholds.
 
     Returns (opacity_grid, T_curve), with T_curve monotonically decreasing
-    from ~1 (ϱ=0) toward 0 (deep rock).
+    from 1 (ϱ=0) toward 0 (deep rock).
 
     The differential flux dΦ/dT is evaluated once for this angle and integrated
     cumulatively, so the whole curve costs a single flux evaluation.
@@ -594,6 +622,9 @@ def transmission_vs_opacity(theta_deg, model="reyna_bugaev", altitude_m=0.0,
     ff = _load_flux_engine()
     if opacity_grid is None:
         opacity_grid = _OPACITY_GRID
+    if not ff._T_GRID[0] <= E_th_GeV < ff._T_GRID[-1]:
+        raise ValueError(f"E_th_GeV = {E_th_GeV} is outside the flux grid "
+                         f"({ff._T_GRID[0]:g}-{ff._T_GRID[-1]:g} GeV).")
 
     T_energy = ff._T_GRID                                  # energy grid [GeV]
     phi      = ff.differential_flux(T_energy, theta_deg, model, altitude_m)
@@ -603,25 +634,25 @@ def transmission_vs_opacity(theta_deg, model="reyna_bugaev", altitude_m=0.0,
     seg = 0.5 * (phi[1:] + phi[:-1]) * dE                 # trapezoid segments
     rev = np.cumsum(seg[::-1])[::-1]                       # integral node→top
     I_above = np.concatenate((rev, [0.0]))                # len == len(T_energy)
-    I_open  = float(I_above[0])
+    I_open  = float(np.interp(E_th_GeV, T_energy, I_above))
 
     if I_open <= 0.0:
         return opacity_grid, np.full(len(opacity_grid), np.nan)
 
+    R_th = float(ff._R_of_T(E_th_GeV))
     T_curve = np.empty(len(opacity_grid))
     for i, x in enumerate(opacity_grid):
-        emin = ff.emin_from_opacity(float(x))
-        if emin is None:                                  # beyond CSDA table
+        e_s = E_th_GeV if x <= 0.0 else ff.emin_from_opacity(R_th + float(x))
+        if e_s is None:                                   # beyond CSDA table
             T_curve[i] = 0.0
         else:
-            emin_c     = max(float(emin), float(T_energy[0]))
-            I_x        = float(np.interp(emin_c, T_energy, I_above))
-            T_curve[i] = I_x / I_open
+            T_curve[i] = float(np.interp(e_s, T_energy, I_above)) / I_open
     return opacity_grid, np.clip(T_curve, 0.0, 1.0)
 
 
-def invert_opacity_map(T_data, el_c, model="reyna_bugaev", altitude_m=0.0,
-                       sigma_T=None, opacity_grid=None, opensky_threshold=0.999):
+def invert_opacity_map(T_data, el_c, model="guan_2015", altitude_m=0.0,
+                       sigma_T=None, opacity_grid=None, opensky_threshold=0.999,
+                       E_th_GeV=1.0):
     """
     Invert a measured transmission map into an opacity map ϱ̂(az, el) [g/cm²].
 
@@ -632,6 +663,8 @@ def invert_opacity_map(T_data, el_c, model="reyna_bugaev", altitude_m=0.0,
     model  : str                    sea-level flux model key (fast_flux_estimator)
     altitude_m : float              detector altitude [m a.s.l.]
     sigma_T : (n_az, n_el) | None   1-σ uncertainty on T (for error propagation)
+    E_th_GeV : float                detector threshold [GeV, kinetic], 1 GeV by
+                                    default (see transmission_vs_opacity)
 
     Returns
     -------
@@ -652,6 +685,16 @@ def invert_opacity_map(T_data, el_c, model="reyna_bugaev", altitude_m=0.0,
     n_az, n_el = T_data.shape
     if opacity_grid is None:
         opacity_grid = _OPACITY_GRID
+    if model == "bugaev":
+        # Not offered by the GUI here. On the Vesuvius closure-test data
+        # (rho = 2.0) it reads 0.15 g/cm3 (examples/vesuvius/inversion_tests.py).
+        warnings.warn(
+            "invert_opacity_map: the plain Gaisser (1990) formula is valid only "
+            "for E > 100/cosθ GeV, but T(ϱ) integrates the flux from the "
+            "detector threshold (1 GeV by default), where it overestimates it "
+            "×12; the opacities and densities it "
+            "gives are wrong. Use guan_2015 (the spectrum of the T_sim "
+            "libraries) or another model.", stacklevel=2)
 
     opacity_map   = np.full((n_az, n_el), np.nan, dtype=np.float64)
     sigma_opacity = np.full((n_az, n_el), np.nan, dtype=np.float64)
@@ -659,7 +702,8 @@ def invert_opacity_map(T_data, el_c, model="reyna_bugaev", altitude_m=0.0,
 
     for ie in range(n_el):
         theta = 90.0 - float(el_c[ie])
-        _, T_curve = transmission_vs_opacity(theta, model, altitude_m, opacity_grid)
+        _, T_curve = transmission_vs_opacity(theta, model, altitude_m, opacity_grid,
+                                             E_th_GeV)
 
         if np.all(np.isnan(T_curve)):
             status_map[:, ie] = 1
@@ -734,8 +778,8 @@ def opacity_to_density(opacity_map, L_map, sigma_opacity=None):
     return rho_map, sigma_rho
 
 
-def path_length_from_tsim(T_sim, rho_sim, el_c, model="reyna_bugaev",
-                          altitude_m=0.0, opacity_grid=None):
+def path_length_from_tsim(T_sim, rho_sim, el_c, model="guan_2015",
+                          altitude_m=0.0, opacity_grid=None, E_th_GeV=1.0):
     """
     Recover a line-of-sight path length map L(az, el) [m] from a single
     simulated transmission map at known density ρ_sim.
@@ -749,7 +793,7 @@ def path_length_from_tsim(T_sim, rho_sim, el_c, model="reyna_bugaev",
         raise ValueError(f"rho_sim must be positive, got {rho_sim}.")
     opac_sim, _, status = invert_opacity_map(
         T_sim, el_c, model=model, altitude_m=altitude_m,
-        opacity_grid=opacity_grid,
+        opacity_grid=opacity_grid, E_th_GeV=E_th_GeV,
     )
     L_map = np.where(np.isfinite(opac_sim), opac_sim / (100.0 * rho_sim), 0.0)
     L_map[status == 1] = 0.0

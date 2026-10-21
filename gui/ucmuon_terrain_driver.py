@@ -665,12 +665,18 @@ def compute_flux_map(az_c, ze_c, overburden, open_sky_map,
     return flux_map, opensky_flux
 
 
-def compute_transmission_map(flux_map, opensky_flux):
+def compute_transmission_map(flux_map, opensky_flux, overburden=None,
+                             max_opacity=None):
     """
     T_sim(az, ze) = Phi_rock / Phi_sky — transmission ratio in [0, 1].
 
     flux_map     : 2-D array (n_az, n_ze) from compute_flux_map — through-rock flux.
     opensky_flux : 1-D array (n_ze,)       from compute_flux_map — open-sky reference.
+    overburden, max_opacity : optional; directions whose slant opacity
+                   [g/cm²] is above max_opacity get NaN, "no result" (the
+                   backward MC's opacity_limit: beyond it the flux is not
+                   validated). A density inversion skips them; up to 1.4.1
+                   they were kept, and under the thickest rock they were 0.
 
     Returns a 2-D array of shape (n_az, n_ze).  Open-sky bins where
     both numerator and denominator are equal give T ≈ 1.  Completely
@@ -679,7 +685,10 @@ def compute_transmission_map(flux_map, opensky_flux):
     opensky_2d = np.broadcast_to(opensky_flux[np.newaxis, :], flux_map.shape)
     with np.errstate(divide='ignore', invalid='ignore'):
         T = np.where(opensky_2d > 0.0, flux_map / opensky_2d, 0.0)
-    return np.clip(T, 0.0, 1.0)
+    T = np.clip(T, 0.0, 1.0)
+    if overburden is not None and max_opacity is not None:
+        T = np.where(np.asarray(overburden) > max_opacity, np.nan, T)
+    return T
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -734,9 +743,11 @@ def write_transmission_map(az_c, ze_c, T_sim, fpath,
         fh.write(f"# Grid: {len(az_c)} az bins  x  {len(ze_c)} el bins"
                  f"  (elevation = 90 - zenith)\n")
         fh.write("# Cols: azimuth[deg]  elevation[deg]  transmission\n")
+        # Seven significant digits: up to 1.4.1 this was six decimals, so a
+        # transmission near 1e-6 was rounded by up to 40 %.
         for ia, az in enumerate(az_c):
             for iz in range(len(ze_c)):
-                fh.write(f"{az:8.2f}  {el_c[iz]:7.2f}  {T_sim[ia, iz]:.6f}\n")
+                fh.write(f"{az:8.2f}  {el_c[iz]:7.2f}  {T_sim[ia, iz]:.6e}\n")
 
 
 def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
@@ -886,8 +897,13 @@ def main():
                    det_lat, det_lon, det_alt_m)
     print(f"  Flux map written: {out_flux}", flush=True)
 
-    # 4. Transmission map
-    T_sim = compute_transmission_map(flux_map, opensky_flux)
+    # 4. Transmission map: no result beyond the integrator's validated opacity
+    x_lim = _load_bmc(script_dir).opacity_limit(mode, spec_mode)
+    T_sim = compute_transmission_map(flux_map, opensky_flux, overburden, x_lim)
+    n_lim = int(np.sum(overburden > x_lim))
+    if n_lim:
+        print(f"  {n_lim} directions beyond {x_lim / 100.0:.0f} m w.e. have no "
+              f"transmission (NaN): the flux there is not validated.", flush=True)
     write_transmission_map(az_c, ze_c, T_sim, out_trans,
                            det_lat, det_lon, det_alt_m, rho)
     print(f"  Transmission map written: {out_trans}", flush=True)

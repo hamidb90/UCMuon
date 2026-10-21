@@ -93,7 +93,7 @@ def _status_heatmap(az_c, el_c, status_map, height=340):
         3: "rgb(220,50,50)",
         4: "rgb(50,120,255)",
     }
-    _STATUS_LABELS = {0: "OK", 1: "Open sky", 2: "ρ < ρ_min", 3: "ρ > ρ_max", 4: "Low sensitivity"}
+    _STATUS_LABELS = {0: "OK", 1: "Open sky / no T_sim", 2: "ρ < ρ_min", 3: "ρ > ρ_max", 4: "Low sensitivity"}
     z_plot = status_map.T.astype(float)
     colorscale = [
         [0.00, _STATUS_COLORS[0]], [0.20, _STATUS_COLORS[0]],
@@ -251,7 +251,8 @@ def _tab_library(da):
             sel_rho  = st.select_slider(
                 "Preview density",
                 options=rho_keys,
-                format_func=lambda r: f"{r:.3f} g/cm³",
+                # AppTest (Streamlit 1.54) passes the formatted label back in
+                format_func=lambda r: r if isinstance(r, str) else f"{r:.3f} g/cm³",
                 key="da_preview_rho",
             )
             st.plotly_chart(
@@ -506,7 +507,7 @@ def _tab_inversion(da):
     st.divider()
 
     rho_keys = sorted(lib.keys())
-    _c1, _c2 = st.columns(2)
+    _c1, _c3, _c2 = st.columns(3)
     ref_rho = _c1.selectbox(
         "Reference density for double-ratio map",
         options=rho_keys,
@@ -515,12 +516,21 @@ def _tab_inversion(da):
         key="da_ref_rho",
         help="D = T_data / T_sim(ρ_ref).  Choose a plausible background density.",
     )
+    max_sig = _c3.number_input(
+        "Max σ_ρ [g/cm³]",
+        min_value=0.001, max_value=1.0,
+        value=0.1, step=0.01, format="%.3f",
+        key="da_max_sigma_rho",
+        help="With uncertainties on T_data, pixels whose σ_ρ is above this are "
+             "flagged as low sensitivity (status 4).",
+    )
     min_sens = _c2.number_input(
         "Min sensitivity |dT/dρ|",
         min_value=0.0001, max_value=0.1,
         value=0.005, step=0.001, format="%.4f",
         key="da_min_sens",
-        help="Pixels with sensitivity below this are flagged as unreliable (status 4).",
+        help="Without uncertainties on T_data, pixels with sensitivity below "
+             "this are flagged as unreliable (status 4).",
     )
 
     if st.button("▶  Run Inversion", key="da_run_inversion_btn", type="primary",
@@ -538,6 +548,7 @@ def _tab_inversion(da):
                 rho_map, sigma_rho, status_map = da.invert_density_map(
                     T_data, lib, sigma_T=sigma_T,
                     min_sensitivity=float(min_sens),
+                    max_sigma_rho=float(max_sig),
                 )
                 st.write("Computing double ratio…")
                 D_map = da.compute_double_ratio(T_data, lib[ref_rho])
@@ -908,7 +919,7 @@ def _di_path_length(da):
          "Opacity only — skip L (no density)"],
         key="di_L_source",
     )
-    model = st.session_state.get("di_model", "reyna_bugaev")
+    model = st.session_state.get("di_model", "guan_2015")
     alt   = st.session_state.get("di_alt", 0.0)
 
     if src.startswith("Derive"):
@@ -995,7 +1006,7 @@ def _di_run_and_results(da, method_key):
     sigma_T = st.session_state.get("di_sigma")
     L_map   = st.session_state.get("di_L")
     L_desc  = st.session_state.get("di_L_desc", "—")
-    model   = st.session_state.get("di_model", "reyna_bugaev")
+    model   = st.session_state.get("di_model", "guan_2015")
     alt     = st.session_state.get("di_alt", 0.0)
 
     if T_2d is None:
@@ -1136,14 +1147,17 @@ def _render_direct_workflow(da, method_key):
 
     # Flux-model config (shared, sticky across steps)
     _f1, _f2 = st.columns([3, 1])
-    labels = da.flux_model_labels()
+    # Default Guan, the spectrum of the shipped T_sim libraries (up to 1.4.1
+    # Reyna, which reads the Vesuvius closure-test data, rho = 2.0, as 1.70).
+    labels = {k: v.split("←")[0].strip() for k, v in da.flux_model_labels().items()}
+    labels["guan_2015"] += "  ← default, the spectrum of the T_sim libraries"
     # Not the plain Gaisser (1990) formula: valid only for E > 100/cosθ GeV,
-    # while T(ϱ) integrates the flux from 0.5 GeV, where it overestimates
+    # while T(ϱ) integrates the flux from 1 GeV, where it overestimates
     # ×12 (up to v1.2.0 it was offered here with no warning).
-    keys   = [k for k in labels if k != "bugaev"]
+    keys   = ["guan_2015"] + [k for k in labels if k not in ("bugaev", "guan_2015")]
+    _cur   = st.session_state.get("di_model", "guan_2015")
     sel    = _f1.selectbox("Sea-level flux model", keys,
-                           index=keys.index(st.session_state.get("di_model", keys[0]))
-                                 if st.session_state.get("di_model", keys[0]) in keys else 0,
+                           index=keys.index(_cur) if _cur in keys else 0,
                            format_func=lambda k: labels[k], key="di_model_sel")
     st.session_state["di_model"] = sel
     st.session_state["di_alt"] = _f2.number_input("Altitude [m]", 0.0, 6000.0,

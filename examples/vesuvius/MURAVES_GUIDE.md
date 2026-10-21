@@ -16,6 +16,9 @@ and outputs four publication-style figures directly into `examples/vesuvius/figs
 ```
 examples/vesuvius/
 ├── ucmuon_vesuvius_muraves.py   ← main simulation script
+├── make_tsim_library.py         ← writes tsim_library/ (Part 2)
+├── inversion_tests.py           ← the inversion beyond the closure test (Part 2)
+├── parma_altitude.cc            ← PARMA at the site, for inversion_tests.py
 ├── MURAVES_GUIDE.md             ← this file
 └── figs/                        ← output figures (auto-created on first run)
     ├── fig_vesuvius_thickness.png
@@ -226,12 +229,13 @@ integrator's forward calibration (mode 2, the default). Up to 1.4.1 the library
 used mode 1, whose transmission in the pixels the inversion uses is 2 % below
 the forward engines' (median; up to 9 %), which biased the synthetic test below
 by -0.022 g/cm³; with mode 2 it is +0.011 g/cm³
-(`benchmark/analysis/bmc_density_bias.py`). Its deepest
-directions are lower bounds: at ρ = 2.65, 399 of the 1059 directions through
-rock need surface energies beyond the backward MC's range table (10 TeV) for
-more than 1 % of their flux, and 205 read exactly 0. None of the 467 pixels the
-inversion below uses is cut by more than 1 % at any library density (up to
-1.3.2, with a 2 TeV table, 106 of them were, by up to 33 %).
+(`benchmark/analysis/bmc_density_bias.py`). Directions beyond 5000 m w.e.,
+the last opacity of the calibration, have no transmission (`nan`): 3 at
+ρ = 1.5 and 350 at ρ = 3.0. Beyond it the correction is only held, and the
+backward MC's range table (10 TeV) cuts more and more of the flux; up to 1.4.1
+those directions were kept, as lower bounds, and 205 of them read exactly 0 at
+ρ = 2.65. Transmissions are written with seven significant digits (six
+decimals up to 1.4.1, which rounded T ≈ 10⁻⁶ by up to 40 %).
 
 To write your own with the terrain driver CLI (stdin, one value per line: DEM,
 latitude, longitude, altitude, density, spectrum, n_az, n_ze, ze_max, step,
@@ -312,15 +316,46 @@ write_density_map(az_c, el_c, rho_map, sigma_rho, status,
 
 | Region | Status | Why |
 |---|---|---|
-| Most directions (el > 20°, no cone) | 1 — open sky | T_sim ≈ 1 for all densities |
-| Deep inside the mountain (592 pixels, el 5.5–14.5°, median 8.5°) | 4 — low sensitivity | too few muons for 10⁵ events |
-| Thinner rock (467 pixels, el 5.5–16.5°, median 10.5°) | 0 — OK | Density-sensitive zone; T_sim varies with ρ |
+| Most directions (el > 20°, no cone) | 1 (open sky) | T_sim ≈ 1 for all densities |
+| Under the thickest rock (350 pixels, el 5.5–11.5°, median 7.5°) | 1 (no T_sim) | beyond 5000 m w.e. at ρ = 3.0, no library value |
+| 14 pixels, el 8.5–12.5° | 4 (low sensitivity) | σ_ρ above 0.1 g/cm³ with 10⁵ events |
+| The rest of the cone (695 pixels, el 5.5–16.5°, median 10.5°) | 0 (OK) | T_sim varies with ρ |
 
-For the synthetic test with the shipped library (ρ_true = 2.0, N = 10⁵; the
-synthetic data are seeded, so these numbers reproduce exactly):
-- Recovered density in the 467 OK pixels: **ρ̂ = 2.002 g/cm³** (mean),
-  pixel-to-pixel scatter 0.025 g/cm³
-- Double ratio D = 1.68 (median; D > 1 since ρ_true < ρ_ref = 2.65)
+For the synthetic test with the shipped library (ρ_true = 2.0, N = 10⁵ open-sky
+muons per pixel; the synthetic data are seeded, so these numbers reproduce
+exactly):
+- Recovered density in the 695 OK pixels: **ρ̂ = 2.002 g/cm³** (mean),
+  pixel-to-pixel scatter 0.039 g/cm³, mean σ_ρ 0.032 g/cm³
+- Double ratio D = 2.00 (median; D > 1 since ρ_true < ρ_ref = 2.65)
+
+Status 4 comes from σ_ρ when the data have uncertainties (`max_sigma_rho`,
+default 0.1 g/cm³; the GUI's "Max σ_ρ"), and from |dT/dρ| only when they do
+not. Up to 1.4.1 it was always |dT/dρ| < 0.005, which ignores counting
+statistics and flagged 591 pixels; with the binomial σ_T of the synthetic
+data and a finite-difference slope, the pulls (ρ̂ − ρ_true)/σ_ρ had an RMS of
+1.3, and 1.0 now.
+
+### Beyond the closure test
+
+The test above is a closure test: the data come from the library itself, at
+one of its densities. `inversion_tests.py` (15 s; part 7 needs PARMA) measures
+what it cannot show:
+
+| Test | ρ_true [g/cm³] | Result |
+|---|---|---|
+| pull RMS, data from Engine 5, 20 seeds | 1.75, 2.0, 2.3, 2.8 | 0.99–1.09 (10⁴ events: 1.05–1.12) |
+| interpolation, noise-free Engine 5 data | 1.75, 2.25, 2.8 | ρ̂ +0.5, +0.4, +0.1 % (interpolating T instead of ln T: +2.9, +3.0, +0.6 %) |
+| data from the forward engines | 2.0, 2.3 | +0.008, +0.018 g/cm³ (Engine 5 data, same seeds: −0.001, +0.009) |
+| data from Frosin 2025, Guan library | 2.0, 2.3 | −0.14, −0.16 g/cm³ |
+| Method 2, flux models of `fast_flux_estimator.py` | 2.0 | ρ̂ 1.70 (Reyna), 2.00 (Guan, the default), 2.03 (Tang), 2.16 (Frosin), 0.15 (Gaisser, valid only above ~100 GeV: not offered in the GUI, and `invert_opacity_map` warns); the same at 0 and 608 m |
+| sea-level library, data at 608 m (PARMA at the site) | 2.0 | read as 2.06–2.10 |
+| exposure for 10⁵ open-sky muons per 1° × 1° pixel | | 1.9–9.4 m² yr of an ideal detector (median 4.1); with 10⁴ events 401 pixels invert, scatter 0.067 g/cm³ |
+
+The flux model and the altitude dominate: the library uses a sea-level
+spectrum (the terrain driver offers no PARMA), and the analytic models'
+altitude factor cancels in T. Angular resolution, efficiency and the soft and
+upward-going backgrounds, which matter most next to the skyline where these
+pixels lie, are not modelled.
 
 Up to v1.1.2 the shipped library gave no OK pixels in this test: its open-sky
 reference integrated CosmoALEPH, a fit above ~100 GeV/c, from 0.5 GeV, which
@@ -379,6 +414,6 @@ EOF
 | `ModuleNotFoundError: rasterio` | DEM mode without rasterio | `pip install rasterio` |
 | Figures not found | Wrong working directory | Run from project root; figs go to `examples/vesuvius/figs/` |
 | All T_sim ≈ 0 everywhere | Ray step too coarse for thin outer flanks | Use `--step 10` |
-| Many pixels have status 4 (low sensitivity) | Expected deep inside the mountain: too little transmission | The 467 thinner-rock pixels at el 5.5–16.5° invert (see Expected inversion results) |
+| Many pixels have status 4 (low sensitivity) | σ_ρ above "Max σ_ρ": too few events for the transmission there | Raise N events or Max σ_ρ; with 10⁵ events 695 pixels at el 5.5–16.5° invert (see Expected inversion results) |
 | Density curves identical in Fig 2 | Cone edge narrower than bin width | Use default 360×85 grid (1° bins) |
 | Summit at wrong azimuth vs MURAVES | Different convention | Add 75° to azimuth: MURAVES puts summit at 180°, here it is at 105° |
