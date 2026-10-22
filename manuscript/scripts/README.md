@@ -22,6 +22,8 @@ python3 make_fig02_flux_spectra.py   # or one at a time
 | `make_fig07_scaling.py` | Fig. 7, HPC scaling (data from `run_scaling_hpc.sh`) |
 | `make_fig08_source_validation.py` | Fig. 8, source-spectrum validation |
 | `make_fig10_timing.py` | Fig. 10, engine timings |
+| `make_fig_bmc_validation.py` | backward CSDA flux integrator (Engine 5) against the forward engines (data from `benchmark/analysis/validate_backward.py`) |
+| `make_fig_mcs.py` | multiple scattering of every engine (data from `benchmark/analysis/mcs_distributions.py`) |
 | `make_fig_realistic_survival.py` | survival, realistic spectrum |
 | `make_fig_realistic_timing.py` | timing, realistic spectrum |
 | `make_fig_ucmugen_directed.py` | UCMuGen directed-sampling figure |

@@ -29,8 +29,9 @@ Total energy loss per step dx [g/cm²]:
   (1/v, Bethe-Heitler) remain selectable for reproducibility.
 
 Additional physics:
-  · Multiple scattering  : Highland (1975) accumulated along the path (exact
-                           Highland up to one X0, variance linear beyond;
+  · Multiple scattering  : Highland (Lynch and Dahl 1991) accumulated along
+                           the path (Highland up to 8.4 X0, variance linear
+                           beyond at 14.7 MeV, the thick-target limit;
                            independent of the step size, see _ms_theta0)
   · Muon decay           : Poisson probability per step (p·cτ, p = √(E²−m²))
   · Range cut            : muons whose *deterministic-loss* range (a_ion +
@@ -937,34 +938,51 @@ def _read_input(fpath, transport_all):
 # Multiple scattering
 # ─────────────────────────────────────────────────────────────────────────────
 
+# Thick-target limit of multiple Coulomb scattering (see _ms_theta0): the
+# projected width once θ0 is far above the nuclear-size angle ħ/(pR), from the
+# second moment of the screened Rutherford cross section with a nuclear form
+# factor. 14.73 MeV for Standard Rock, 14.66 for water, 14.82 for iron, 15.04
+# for lead (benchmark/analysis/mcs_thick_target.py), so one value serves every
+# material to about 1 %. Highland's log term stops growing at T_SAT_X0.
+HIGHLAND_MEV  = 13.6
+ES_THICK_MEV  = 14.7
+T_SAT_X0      = float(np.exp((ES_THICK_MEV / HIGHLAND_MEV - 1.0) / 0.038))   # 8.4 X0
+
+
 def _ms_theta0(S_acc, t_acc, dt, beta_p):
     """
     Projected scattering angle RMS [rad] added by one step, and the updated
     path sums (S_acc, t_acc).
 
-    Highland's θ0 = 13.6 MeV/(βp)·√t·(1 + 0.038 ln t) describes a whole layer
-    of t radiation lengths.  Adding it per step in quadrature (up to 1.3.2)
-    made the angles depend on the step size, ~10 % per decade, and is
-    systematically too small (PDG).  The variance is accumulated along the
-    path instead,
+    Highland's θ0 = 13.6 MeV/(βp)·√t·(1 + 0.038 ln t) (Lynch and Dahl 1991)
+    describes a whole layer of t radiation lengths, fitted for 1e-3 < t < 100.
+    Adding it per step in quadrature (up to 1.3.2) made the angles depend on
+    the step size, ~10 % per decade, and is systematically too small (PDG).
+    The variance is accumulated along the path instead,
         θ0²(path) = (13.6 MeV)² · F(t)² · Σ Δt_i/(β_i p_i)²,
-        F(t)      = 1 + 0.038 ln(min(t, 1)),
-    and each step adds the increase of θ0²(path).  Up to one radiation length
+        F(t)      = 1 + 0.038 ln(min(t, T_SAT_X0)),
+    and each step adds the increase of θ0²(path). Up to T_SAT_X0 = 8.4 X0
     this is Highland applied once to the layer crossed so far; beyond it the
-    variance grows linearly with the path at Highland's one-X0 value, the
-    Gaussian regime of thick absorbers.  (Letting the log term grow, a fit
-    validated only to 100 X0, puts the angles 20 % above Geant4 in 25-200 m
-    of rock; this form is within 4 % of it from 1 to 200 m.)
+    variance grows linearly with the path, at 13.6 F(T_SAT_X0) = 14.7 MeV.
+    That is the thick-target limit: once θ0 is well above the angle ħ/(pR) at
+    which the nuclear size cuts single scatterings off (about 10 X0 of
+    rock), the distribution is Gaussian with the finite second moment of the
+    single-scattering cross section, so its width grows like √t and Highland's
+    log term, a fit to thinner layers, stops growing. Geant4 (Standard Rock)
+    gives 14.8-15.0 MeV and MUSIC 15.0-15.2 MeV from 25 to 200 m of rock; the
+    uncapped log gives 17.5 MeV at 200 m. Up to 1.4.1 the log was capped at
+    one radiation length (13.6 MeV), tuned to a Geant4 reference whose rock
+    was sodium: 7-9 % below the corrected Geant4.
 
     S_acc : Σ Δt/(βp)² so far [GeV⁻²]   t_acc : path so far [X0]
     dt    : step [X0]                   beta_p : βp at the step [GeV]
     """
     S_new = S_acc + dt / beta_p**2
     t_new = t_acc + dt
-    F_old = np.maximum(1.0 + 0.038 * np.log(np.clip(t_acc, 1e-300, 1.0)), 0.0)
-    F_new = np.maximum(1.0 + 0.038 * np.log(np.clip(t_new, 1e-300, 1.0)), 0.0)
+    F_old = np.maximum(1.0 + 0.038 * np.log(np.clip(t_acc, 1e-300, T_SAT_X0)), 0.0)
+    F_new = np.maximum(1.0 + 0.038 * np.log(np.clip(t_new, 1e-300, T_SAT_X0)), 0.0)
     var   = S_new * F_new**2 - S_acc * F_old**2
-    return 13.6e-3 * np.sqrt(np.maximum(var, 0.0)), S_new, t_new
+    return HIGHLAND_MEV * 1e-3 * np.sqrt(np.maximum(var, 0.0)), S_new, t_new
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -1220,15 +1238,23 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
             alive[idx[la][rng.uniform(size=la.sum()) < P_dec]] = False
 
         # 6. Multiple scattering: Highland accumulated along the path
-        #    (_ms_theta0; βp from p = √(E²−m²), up to 1.3.2 p was taken as E)
+        #    (_ms_theta0; βp from p = √(E²−m²), up to 1.3.2 p was taken as E).
+        #    The step's 1/(βp)² is the mean of its values at the start and the
+        #    end of the step (trapezoid): exact on average for one hard loss
+        #    at a random point of the step. Up to 1.4.1 it was the start's,
+        #    which under-scatters with coarse steps: 50 GeV through 25 m of
+        #    rock, the mean angle was 1.75 % lower with 13 steps than with 1325.
         if ms_enable:
             la2 = alive[idx]
             if la2.any():
                 oi      = idx[la2]
                 E_GeV2  = E_tot[la2] / 1000.0
-                p_GeV2  = np.sqrt(np.maximum(E_GeV2**2 - M_MU_GEV**2, 1e-12))
+                E_end2  = (np.maximum(E_new[la2], E_stop) + M_MU) / 1000.0
+                bp0_sq  = (np.maximum(E_GeV2**2 - M_MU_GEV**2, 1e-12) / E_GeV2) ** 2
+                bp1_sq  = (np.maximum(E_end2**2 - M_MU_GEV**2, 1e-12) / E_end2) ** 2
+                bp_eff  = 1.0 / np.sqrt(0.5 * (1.0 / bp0_sq + 1.0 / bp1_sq))
                 theta0, ms_S[oi], ms_t[oi] = _ms_theta0(
-                    ms_S[oi], ms_t[oi], dx_i[la2] / X0_gcm2, p_GeV2**2 / E_GeV2)
+                    ms_S[oi], ms_t[oi], dx_i[la2] / X0_gcm2, bp_eff)
 
                 phi_az  = rng.uniform(0.0, 2.0*np.pi, size=la2.sum())
                 # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS

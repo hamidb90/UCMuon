@@ -582,7 +582,10 @@ contains
     real(8) :: slant_gcm2, ds_gcm2, ds_cm
     real(8) :: gamma_mu, beta2, p_GeV, bg, Tmax, I_GeV
     real(8) :: log_arg, x_dens, delta, dEdX
-    real(8) :: t_X0, theta0, ms_S, ms_t, F_old, F_new
+    real(8) :: t_X0, theta0, ms_S, ms_t, F_old, F_new, inv_bp2_beg, inv_bp2
+    ! Highland's log term stops growing at T_SAT X0, where 13.6 MeV F = 14.7 MeV
+    ! (ES_THICK_MEV and T_SAT_X0 in gui/ucmuon_stochastic_driver.py)
+    real(8), parameter :: T_SAT = exp((14.7d0/13.6d0 - 1.d0)/0.038d0)
     real(8) :: e1x, e1y, e1z, e2x, e2y, e2z, norm
     real(8) :: theta_s, phi_s, ct, st, cp, sp
     real(4) :: rr(4)
@@ -603,6 +606,7 @@ contains
       beta2    = max(0.d0, 1.d0 - (MMUON_/E)**2)
       p_GeV    = sqrt(max(0.d0, E*E - MMUON_*MMUON_))
       bg       = p_GeV / MMUON_
+      inv_bp2_beg = 1.d0 / max(1.d-12, beta2*p_GeV*p_GeV)  ! 1/(beta p)^2 at the step start
 
       Tmax = 2.d0*ME_*beta2*gamma_mu*gamma_mu / &
              (1.d0 + 2.d0*gamma_mu*ME_/MMUON_ + (ME_/MMUON_)**2)
@@ -633,16 +637,20 @@ contains
         if (t_X0 > 1.d-14) then
           p_GeV  = sqrt(max(0.d0, E*E - MMUON_*MMUON_))
           beta2  = max(1.d-12, 1.d0 - (MMUON_/E)**2)
+          ! mean of the step's start and end 1/(beta p)^2 (up to 1.4.1 the end's)
+          inv_bp2 = 0.5d0 * (inv_bp2_beg + 1.d0 / max(1.d-12, beta2*p_GeV*p_GeV))
           ! Highland accumulated along the path (step-size independent; as
           ! the OpenMP engine and UCMuon-MC): theta_0^2(path) =
-          ! (13.6 MeV)^2 F(t)^2 sum dt/(beta*p)^2, F = 1 + 0.038 ln(min(t,1));
-          ! up to 1.3.2 Highland was applied per step in quadrature.
+          ! (13.6 MeV)^2 F(t)^2 sum dt/(beta*p)^2, F = 1 + 0.038 ln(min(t,T_SAT)),
+          ! T_SAT = 8.4 X0 where 13.6 F = 14.7 MeV, the thick-target limit (see
+          ! the OpenMP engine); up to 1.4.1 the log was capped at 1 X0, up to
+          ! 1.3.2 Highland was applied per step in quadrature.
           F_old = 0.d0
-          if (ms_t > 0.d0) F_old = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t, 1.d0)))
-          F_new = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t + t_X0, 1.d0)))
+          if (ms_t > 0.d0) F_old = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t, T_SAT)))
+          F_new = max(0.d0, 1.d0 + 0.038d0*log(min(ms_t + t_X0, T_SAT)))
           theta0 = 13.6d-3 * sqrt(max(0.d0, &
-                   (ms_S + t_X0/(beta2*p_GeV*p_GeV))*F_new**2 - ms_S*F_old**2))
-          ms_S = ms_S + t_X0/(beta2*p_GeV*p_GeV)
+                   (ms_S + t_X0*inv_bp2)*F_new**2 - ms_S*F_old**2))
+          ms_S = ms_S + t_X0*inv_bp2
           ms_t = ms_t + t_X0
           if (theta0 <= 0.d0) cycle
 

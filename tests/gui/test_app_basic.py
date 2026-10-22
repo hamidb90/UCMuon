@@ -39,7 +39,8 @@ def test_fresh_install_detector_is_underground(new_app):
             widget(at, "number_input", "bd_radius").value) == (30.0, 1.0, 0.5)
     assert widget(at, "number_input", "nmuonsgen").value == 10_000
     card = {m.label: m.value for m in top_tab(at, "Generator").metric}
-    assert (card["Safety margin"], card["Source"]) == ("126 cm", "R = 380 m")
+    # 2.5 sigma_r of the thick-target model (2 sigma_r of a wider envelope, 126 cm, up to 1.4.1)
+    assert (card["Safety margin"], card["Source"]) == ("140 cm", "R = 380 m")
 
 
 def test_fresh_install_advanced_renders(new_app):

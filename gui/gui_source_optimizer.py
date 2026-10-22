@@ -50,8 +50,9 @@ def _sr(E: float, th: float, d_cm: float, rho=2.65, X0=26.7) -> float:
     """Highland RMS radial MCS displacement [cm]."""
     M = 0.10566; p = np.sqrt(max(E**2 - M**2, 1e-6))
     cz = max(np.cos(np.radians(th)), 0.02); L = d_cm / cz
+    from ucmuon_stochastic_driver import T_SAT_X0     # log term stops at 8.4 X0
     xr = max(rho * L / X0, 1e-12); beta = p / np.sqrt(p**2 + M**2)
-    th0 = (13.6 / (beta * p * 1000)) * np.sqrt(xr) * (1 + 0.038 * np.log(xr))
+    th0 = (13.6 / (beta * p * 1000)) * np.sqrt(xr) * (1 + 0.038 * np.log(min(xr, T_SAT_X0)))
     return float(np.sqrt(2) * (L / np.sqrt(3)) * th0)
 
 
@@ -110,7 +111,7 @@ def _compute(detectors, e_min, theta_max_deg, rho, X0):
     # threshold even when the user sets a lower E_min.
     E_effs = [max(float(e_min), _groom(rho * g["depth_mid"])) for g in geoms]
 
-    # MCS in-scattering margins: 2σ_r with energy loss at the deepest face,
+    # MCS in-scattering margins: 2.5σ_r with energy loss at the deepest face,
     # the rule of the Generator's margin warning (gui/mcs_margin.py). Up to
     # 1.3.2 this was 1.5σ_r at a constant surface momentum, e.g. 102 cm where
     # the Generator asked for 231 cm (r = 10 cm cylinder at 90 m, E_min 45).

@@ -225,16 +225,22 @@ def transport_bb(muons, depth_m, mat, n_steps=0, ms_enable=True,
             alive[idx[E_new < E_stop]] = False
 
             # Highland MCS, accumulated along the path (step-size
-            # independent; per-step Highland up to 1.3.2, see _ms_theta0)
+            # independent; per-step Highland up to 1.3.2, see _ms_theta0).
+            # The step's 1/(βp)² is the mean of its start and end values, as
+            # in UCMuon-MC (up to 1.4.1 the end's, over-scattering a little
+            # with coarse steps).
             la = alive[idx]
             if la.any():
                 oi     = idx[la]
-                E_ms   = E_cur[oi]
-                # E_ms is the KINETIC energy [MeV]: p^2 = T^2 + 2 T m.
-                p_GeV  = np.sqrt(E_ms**2 + 2.0 * E_ms * M_MU) / 1000.0
-                beta   = p_GeV / np.sqrt(p_GeV**2 + M_MU_GEV**2)
+                bp_sq  = []
+                for E_ms in (E_i[la], E_cur[oi]):
+                    # E_ms is the KINETIC energy [MeV]: p^2 = T^2 + 2 T m.
+                    p_GeV  = np.sqrt(E_ms**2 + 2.0 * E_ms * M_MU) / 1000.0
+                    beta   = p_GeV / np.sqrt(p_GeV**2 + M_MU_GEV**2)
+                    bp_sq.append(np.maximum(beta * p_GeV, 1e-6) ** 2)
+                bp_eff = 1.0 / np.sqrt(0.5 * (1.0 / bp_sq[0] + 1.0 / bp_sq[1]))
                 theta0, ms_S[oi], ms_t[oi] = _ms_theta0(
-                    ms_S[oi], ms_t[oi], dx[oi] / X0_gcm2, beta * p_GeV)
+                    ms_S[oi], ms_t[oi], dx[oi] / X0_gcm2, bp_eff)
 
                 phi_az  = rng.uniform(0.0, 2.0 * np.pi, size=la.sum())
                 # Rayleigh(theta0) polar deflection: Highland theta0 is the RMS

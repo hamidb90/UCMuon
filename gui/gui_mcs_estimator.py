@@ -5,7 +5,11 @@
 #
 # Physics: Highland–Lynch–Dahl formula (PDG Rev. Part. Phys., §34.3)
 #
-#   θ₀ = (13.6 MeV / βcp) · √(x/X₀) · [1 + 0.038 ln(x/X₀)]
+#   θ₀ = (13.6 MeV / βcp) · √(x/X₀) · [1 + 0.038 ln(min(x/X₀, 8.4))]
+#
+#   The log term stops growing at 8.4 X₀, where 13.6 MeV·F = 14.7 MeV, the
+#   thick-target limit (ucmuon_stochastic_driver._ms_theta0); up to 1.4.1 it
+#   kept growing, 19 % wider than Geant4 at 200 m of rock.
 #
 #   σ_⊥  = (L / √3) · θ₀          RMS lateral displacement, one projected plane
 #   σ_r  = √2 · σ_⊥               RMS radial displacement in 2D transverse plane
@@ -56,8 +60,9 @@ def highland_theta0(p_GeV: np.ndarray,
     E_GeV  = np.sqrt(p_GeV**2 + _M_MU_GEV**2)
     beta   = p_GeV / np.maximum(E_GeV, 1e-12)
     p_MeV  = p_GeV * 1000.0
+    from ucmuon_stochastic_driver import T_SAT_X0
     xr     = np.maximum(x_gcm2 / X0_gcm2, 1e-12)
-    theta0 = (_HIGHLAND_K / (beta * p_MeV)) * np.sqrt(xr) * (1.0 + 0.038 * np.log(xr))
+    theta0 = (_HIGHLAND_K / (beta * p_MeV)) * np.sqrt(xr) * (1.0 + 0.038 * np.log(np.minimum(xr, T_SAT_X0)))
     return np.clip(theta0, 0.0, np.pi)
 
 
@@ -188,7 +193,7 @@ def estimate_mcs_acceptance(df: pd.DataFrame,
         (Groom 2001, Standard Rock);
       - otherwise multiple scattering moves it sideways by a 2-D Gaussian of
         RMS σ_r (gui/mcs_margin.py: Highland integrated with CSDA energy
-        loss, the upper envelope the margin rule uses);
+        loss and the engines' thick-target limit, the margin rule's σ_r);
       - it is a hit when its displaced position at the nominal impact point
         (closest approach to the cylinder axis; entry face for a box) lies
         inside the detector itself, not the inflated one.
@@ -424,7 +429,12 @@ def render_mcs_panel(load_file_fn) -> None:
         st.latex(
             r"\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}"
             r"\sqrt{\frac{x}{X_0}}"
-            r"\left[1 + 0.038\,\ln\frac{x}{X_0}\right]"
+            r"\left[1 + 0.038\,\ln\min\left(\frac{x}{X_0},\,8.4\right)\right]"
+        )
+        st.markdown(
+            "The log term stops growing at 8.4 X₀ (13.6 MeV × F = 14.7 MeV): "
+            "beyond it the nuclear size cuts single scatterings off and the width "
+            "grows like √x, the thick-target limit the transport engines use."
         )
         st.markdown(
             "- **Path length:** L = (z_start − z_top) / |cos θ_z|, a flat slab of rock "
@@ -432,8 +442,8 @@ def render_mcs_panel(load_file_fn) -> None:
             "- **Range-out:** muons whose CSDA range (Groom 2001) is shorter than L "
             "never arrive  \n"
             "- **Radial displacement (2D):** σ_r of `gui/mcs_margin.py`, Highland "
-            "integrated along L with CSDA energy loss (the upper envelope the margin "
-            "rule uses); σ_⊥ = σ_r/√2 per plane  \n"
+            "integrated along L with CSDA energy loss (the engines' model); "
+            "σ_⊥ = σ_r/√2 per plane  \n"
             "- **Nominal position:** closest-approach to cylinder axis, clipped to "
             "cylinder z-range (corrects mid-plane projection error for oblique tracks)  \n"
             "- **Expected after MCS:** N draws of (δx, δy) ~ 𝒩(0, σ_⊥²); a hit lands "
@@ -442,10 +452,11 @@ def render_mcs_panel(load_file_fn) -> None:
             "scattered into it are not in the sample; for a uniform flux they equal the "
             "muons starting inside the detector that scatter out beyond the margin. "
             "Acceptance = expected hits / (expected hits + lost hits)  \n"
-            "- **Accuracy:** σ_r is an upper envelope (≈ 22 % above UCMuon-MC's "
-            "scattering, 9 % above MUSIC's), so the loss comes out high and the expected "
-            "hits about 10 % low (checked against UCMuon-MC transport through 30 m: "
-            "96 expected vs 113 hits, 322 vs 354)  \n"
+            "- **Accuracy:** σ_r is the transport engines' model (within 1 % of the core "
+            "of UCMuon-MC's lateral displacement, 3-4 % below MUSIC's); the displacement "
+            "is taken as Gaussian, while the engines' tails are wider, so at a 2σ_r margin "
+            "they keep 1-1.5 points fewer hits than estimated (up to 1.4.1 σ_r was an "
+            "envelope 16-19 % wider)  \n"
             "  \n"
             "⚠️ Flat-slab only · first detector · Standard Rock range table"
         )

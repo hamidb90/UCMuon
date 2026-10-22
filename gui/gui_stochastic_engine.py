@@ -126,10 +126,11 @@ def render_stochastic_settings():
             "🔀 Highland MS deflections", value=True,
             key="stochastic_ms_enable",
             help=(
-                "Apply Highland (1975) multiple Coulomb scattering, its variance "
-                "accumulated along the path (Highland up to one X₀, linear in path "
-                "length beyond; independent of the step size).\n\n"
-                "θ₀ = (13.6 MeV / βp) × √(x/X₀) × [1 + 0.038 ln(x/X₀)]\n\n"
+                "Apply Highland multiple Coulomb scattering, its variance "
+                "accumulated along the path (Highland up to 8.4 X₀, then linear in "
+                "path length at 14.7 MeV, the thick-target limit; independent of "
+                "the step size).\n\n"
+                "θ₀ = (13.6 MeV / βp) × √(x/X₀) × [1 + 0.038 ln(min(x/X₀, 8.4))]\n\n"
                 "~5% runtime overhead.  Disable only for sensitivity studies."
             ),
         )

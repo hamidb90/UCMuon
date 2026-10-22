@@ -2742,7 +2742,7 @@ def _transport_material():
 
 
 def _basic_detectors(e_min):
-    """The detectors with Basic's margin: 2σ_r of multiple scattering at the
+    """The detectors with Basic's margin: 2.5σ_r of multiple scattering at the
     deepest point, for the Transport tab's density and radiation length
     (basic_mode.margin_cm; up to 1.3.2 X₀ was standard rock's for every
     material: margins 18 % too large in water, and in iron 11-13 % below the
@@ -2787,7 +2787,7 @@ def _basic_use_recommended():
 
 
 def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
-    """Warn when a detector's safety margin is below 2 sigma_r of multiple
+    """Warn when a detector's safety margin is below 2.5 sigma_r of multiple
     scattering (gui/mcs_margin.py). The filter only keeps muons whose straight
     line crosses the inflated detector, so a small margin loses hits and biases
     rates and live times low."""
@@ -2814,7 +2814,7 @@ def _warn_margin(det, e_min, theta_max_deg, src_z_m=0.0):
         th_txt = (f" At θ = {theta_max_deg:.0f}° it is {rec_th['sigma_r_cm']:.0f} cm."
                   if rec_th["sigma_r_cm"] else "")
         st.warning(
-            f"⚠️ Safety margin {m:.0f} cm is below 2σ_r = {rec['margin_cm']:.0f} cm of "
+            f"⚠️ Safety margin {m:.0f} cm is below 2.5σ_r = {rec['margin_cm']:.0f} cm of "
             f"multiple scattering (vertical, {depth_m:.0f} m of rock at ρ = {rho:.2f}, "
             f"muons of {rec['e_eval_gev']:.0f} GeV).{th_txt} The filter drops muons whose "
             f"straight line misses the inflated detector, so a point-like detector keeps "
@@ -2832,8 +2832,8 @@ def _render_mcs_margin_helper(detectors=None):
 
     st.caption(
         "Lateral displacement of a muon after multiple Coulomb scattering (Highland, "
-        "integrated with CSDA energy loss; an upper envelope of the transport engines' "
-        "scattering; ρ and X₀ from the Transport tab). The detector filter keeps only "
+        "integrated with CSDA energy loss and the transport engines' thick-target limit; "
+        "ρ and X₀ from the Transport tab). The detector filter keeps only "
         "muons whose straight line crosses the "
         "detector inflated by the margin, so the margin must exceed this scatter or hits "
         "are lost. Use the **suggested margin** for the detector *Safety margin* field."
@@ -2888,12 +2888,15 @@ def _render_mcs_margin_helper(detectors=None):
     _hm1, _hm2, _hm3 = st.columns(3)
     _hm1.metric("1σ displacement",  f"{_sig1:.1f} cm",
                 help=f"σ_r at E = {_E_eff:.0f} GeV over the {_slant_m:.0f} m slant path.")
-    _hm2.metric("Suggested margin", f"{2.0 * _sig1:.1f} cm",
-                help="2 × σ_r: a point-like detector keeps ≈98 % of its hits "
-                     "(1.5σ_r keeps 89 %, 3σ_r 99.99 %).")
+    _hm2.metric("Suggested margin", f"{_mm.MARGIN_K * _sig1:.1f} cm",
+                help=f"{_mm.MARGIN_K:g} × σ_r: a point-like detector keeps at least 98.7 % "
+                     "of its hits with Geant4, MUSIC and UCMuon-MC, whose tails are wider "
+                     "than a Gaussian (2σ_r keeps 96-97 %; benchmark/results/"
+                     "mcs_histograms_20261022.csv).")
     _hm3.metric("3σ displacement",  f"{3.0 * _sig1:.1f} cm",
-                help="A point-like detector keeps 99.99 % of its hits within 3σ_r "
-                     "(radial displacement); compare with your detector size.")
+                help="A point-like detector keeps 99.4-99.9 % of its hits within 3σ_r "
+                     "with Geant4, MUSIC and UCMuon-MC (99.99 % for a Gaussian); compare "
+                     "with your detector size.")
 
     if _e_min < _E_thr + 0.10566:
         _stop_m = float(_mm._range_fns(_mat_h)[0](max(_e_min - 0.10566, 1e-3))) / _rho_h / 100.0
@@ -3887,7 +3890,7 @@ with tab_gen:
                 st.markdown("**Derived settings**")
                 _dv3, _dv4 = st.columns(2)
                 _dv3.metric("Safety margin", f"{max(d['margin'] for d in detectors):.0f} cm",
-                            help="2σ_r of multiple scattering at the detector's deepest point, "
+                            help="2.5σ_r of multiple scattering at the detector's deepest point, "
                                  f"ρ = {float(st.session_state.get('music_rho', 2.65) or 2.65):.2f} "
                                  "g/cm³ (Transport tab), muons of E_min or the lowest energy "
                                  "that gets there.")
@@ -5774,9 +5777,10 @@ with tab_music:
                     phitsxs_ms_enable = st.checkbox(
                         "🔀  Multiple scattering (Highland)", value=True,
                         key="phitsxs_ms_enable",
-                        help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(t/X₀)], "
-                             "its variance accumulated along the path (Highland up to one X₀, "
-                             "linear in t beyond; independent of the step size). ~10% CPU overhead.")
+                        help="Highland formula: θ₀=(13.6/βp)·√(t/X₀)·[1+0.038·ln(min(t/X₀, 8.4))], "
+                             "its variance accumulated along the path (Highland up to 8.4 X₀, "
+                             "linear in t beyond at 14.7 MeV, the thick-target limit; independent "
+                             "of the step size). ~10% CPU overhead.")
                 with _px3:
                     st.caption("💡 Bethe-Bloch (PDG) + Groom radiative b·E.\nNo external table files needed.")
     
@@ -5792,9 +5796,10 @@ with tab_music:
     | $a$ = 1.96 MeV cm²/g | ionisation (Bethe-Bloch plateau) | ≈ constant at muography energies |
     | $b$ = 3.64×10⁻⁶ cm²/g | radiative total (brems + pair + photonuclear) | grows linearly with $E$ |
 
-    **Multiple scattering (Highland 1975):** variance accumulated along the path
-    (Highland for the layer up to one $X_0$, linear in path length beyond; independent of the step size).
-    $\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln(x/X_0)\right]$
+    **Multiple scattering (Highland, Lynch and Dahl 1991):** variance accumulated along the path
+    (Highland for the layer up to 8.4 $X_0$, then linear in path length at 14.7 MeV, the thick-target
+    limit; independent of the step size).
+    $\theta_0 = \frac{13.6\,\text{MeV}}{\beta c p}\sqrt{x/X_0}\,\left[1 + 0.038\ln\min(x/X_0,\,8.4)\right]$
 
     **Accuracy:** good for 50 GeV – 3 TeV in rock-like media.
 

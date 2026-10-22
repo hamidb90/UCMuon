@@ -12,25 +12,26 @@ than σ_r silently loses hits and biases every rate and live time low.
 σ_r is the Highland–Lynch–Dahl lateral displacement (PDG, Passage of
 particles through matter, Sec. 34.3), integrated along the path with the
 momentum falling by CSDA energy loss (Groom et al. 2001 range table,
-Standard Rock):
+Standard Rock), with the transport engines' thick-target limit: the log term
+stops growing at T_SAT_X0 = 8.4 X0, where 13.6 MeV·F = 14.7 MeV
+(ucmuon_stochastic_driver._ms_theta0):
 
-    σ_y² = ∫₀ᴸ (L − s)² [13.6 MeV / (β c p(s))]² [1 + 0.038 ln(ρL/X₀)]² ds / (X₀/ρ)
-    σ_r  = √2 σ_y
+    σ_y² = ∫₀ᴸ (L − s)² [13.6 MeV / (β c p(s))]² F² ds / (X₀/ρ),
+    F    = 1 + 0.038 ln(min(ρL/X₀, T_SAT_X0)),    σ_r = √2 σ_y
 
 At constant momentum this is L·θ₀/√3 per projection, the formula the GUI's
 older helper used; with energy loss it grows sharply for muons that arrive
-with little energy left. For a point-like detector, a Gaussian displacement
-keeps a fraction 1 − exp(−m²/σ_r²) of the hits with margin m: 1.5σ_r keeps
-89%, 2σ_r 98%, 3σ_r 99.99%.
+with little energy left.
 
-Taking the log term over the whole path makes σ_r an upper envelope of the
-engines' scattering, on purpose: measured with vertical beams (50 GeV through
-40 m, 86 and 171 GeV through 90.5 m of Standard Rock), σ_r is 8-10 % above
-MUSIC's RMS radial displacement and about 22 % above UCMuon-MC's (whose
-angles are within 4 % of Geant4's; MUSIC's are about 9 % above). So 2σ_r
-keeps at least 98 % of a point-like detector's hits whichever engine
-transports the muons (UCMuon-MC 99.7 %, MUSIC 99 %). A σ_r matched to
-UCMuon-MC would keep only about 95 % with MUSIC.
+The core of this σ_r agrees with the engines' lateral displacement in the
+monoenergetic benchmark (5-300 GeV, 10-200 m of Standard Rock;
+benchmark/results/mcs_widths_20261022.csv): UCMuon-MC within 0.5 %, Geant4
+within 5 % (0.95-1.02), MUSIC 2-4 % above, PROPOSAL 1-10 % above. Their tails are wider than a
+Gaussian's, so the margin is k = 2.5 σ_r: it keeps at least 99.0 % of a
+point-like detector's hits with Geant4, 98.7 % with MUSIC, 99.2 % with
+UCMuon-MC and 97.5 % with PROPOSAL (2σ_r keeps 96.7, 96.1, 97.2 and 93.8 %;
+a Gaussian, 98.2 %). Up to 1.4.1 the log term grew over the whole path, which
+made σ_r an envelope 16-19 % wider at 200 m, used with k = 2.
 """
 from __future__ import annotations
 
@@ -39,9 +40,11 @@ import math
 import numpy as np
 
 import fast_flux_estimator as _ffe
+from ucmuon_stochastic_driver import T_SAT_X0
 
 M_MU = 0.10566
 X0_STANDARD_ROCK = 26.54      # g/cm², PDG Standard Rock
+MARGIN_K = 2.5                # margin = MARGIN_K σ_r (module docstring)
 
 # UCMuon-MC material numbers of the materials with their own PDG 2024 table
 _MAT_KEYS = {"water": 2, "seawater": 3, "iron": 4, "ice": 6}
@@ -98,7 +101,7 @@ def sigma_r_cm(e_surface_total_gev: float, slant_path_cm: float,
     e = t + M_MU
     p = np.sqrt(e * e - M_MU * M_MU)
     beta = p / e
-    corr = 1.0 + 0.038 * math.log(max(rho * slant_path_cm / x0_gcm2, 1e-12))
+    corr = 1.0 + 0.038 * math.log(min(max(rho * slant_path_cm / x0_gcm2, 1e-12), T_SAT_X0))
     theta2_per_cm = (0.0136 / (beta * p)) ** 2 * corr ** 2 / (x0_gcm2 / rho)
     trapz = getattr(np, "trapezoid", None) or np.trapz
     sy2 = float(trapz((slant_path_cm - s) ** 2 * theta2_per_cm, s))
@@ -126,7 +129,7 @@ def sigma_r_cm_many(e_surface_total_gev, slant_path_cm, rho: float = 2.65,
     e = t + M_MU
     p = np.sqrt(e * e - M_MU * M_MU)
     beta = p / e
-    corr = 1.0 + 0.038 * np.log(np.maximum(rho * L[ok] / x0_gcm2, 1e-12))
+    corr = 1.0 + 0.038 * np.log(np.clip(rho * L[ok] / x0_gcm2, 1e-12, T_SAT_X0))
     theta2_per_cm = (0.0136 / (beta * p)) ** 2 * (corr ** 2)[:, None] / (x0_gcm2 / rho)
     f = (L[ok][:, None] - s) ** 2 * theta2_per_cm
     sy2 = np.sum(0.5 * (f[:, 1:] + f[:, :-1]) * np.diff(s, axis=1), axis=1)
@@ -147,13 +150,14 @@ def arriving_energy_floor(slant_path_cm: float, rho: float = 2.65,
 
 def suggested_margin(depth_m: float, rho: float, e_min_total_gev: float,
                      theta_deg: float = 0.0, x0_gcm2: float = X0_STANDARD_ROCK,
-                     k: float = 2.0, material=None) -> dict:
+                     k: float = MARGIN_K, material=None) -> dict:
     """Margin recommendation for a detector at vertical depth depth_m.
 
     The displacement is evaluated for the slowest muon that matters: the
     generated E_min, or, if that cannot cross the slant path, the surface
     energy that arrives with 1 GeV (muons arriving with less scatter even
-    more). k = 2 keeps ~98% of the hits of a point-like detector.
+    more). k = 2.5 keeps 98.7-99.2 % of the hits of a point-like detector
+    with Geant4, MUSIC and UCMuon-MC (module docstring).
     """
     c = max(math.cos(math.radians(theta_deg)), 0.02)
     path_cm = depth_m / c * 100.0

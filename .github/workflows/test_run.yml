@@ -11,6 +11,9 @@ on:
     paths:
       - 'test_run/**'
       - 'gui/ucmuon_stochastic_driver.py'
+      - 'gui/ucmuon_bb_driver.py'
+      - 'gui/mcs_margin.py'
+      - 'benchmark/analysis/mcs_thick_target.py'
       - 'src/generator/**'
       - 'src/transport/**'
       - 'src/common/**'
@@ -25,6 +28,9 @@ on:
     paths:
       - 'test_run/**'
       - 'gui/ucmuon_stochastic_driver.py'
+      - 'gui/ucmuon_bb_driver.py'
+      - 'gui/mcs_margin.py'
+      - 'benchmark/analysis/mcs_thick_target.py'
       - 'src/generator/**'
       - 'src/transport/**'
       - 'src/common/**'
@@ -90,6 +96,8 @@ jobs:
         run: |
           make ucmuon_transport_bb_omp
           python3 tests/transport/test_transport_fixes.py
+      - name: Multiple scattering, thick-target limit (UCMuon-MC, Bethe-Bloch, margin)
+        run: python3 tests/transport/test_mcs_thick_target.py
       - name: Command-line converters (cosmic electrons, muons unchanged)
         run: |
           make ucmuon_to_phits

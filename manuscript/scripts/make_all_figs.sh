@@ -21,7 +21,8 @@ fail=0
 for script in make_fig01_pipeline.py make_fig02_flux_spectra.py \
               make_fig03_zenith_dist.py make_fig05_energy_spectra.py \
               make_fig06.py make_fig07_scaling.py \
-              make_fig08_source_validation.py make_fig10_timing.py; do
+              make_fig08_source_validation.py make_fig10_timing.py \
+              make_fig_bmc_validation.py make_fig_mcs.py; do
   echo "=== $script ==="
   python3 "$script" "$@" || { echo "[FAIL] $script"; fail=1; }
   echo

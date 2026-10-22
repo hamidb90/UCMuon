@@ -32,6 +32,7 @@ echo "Using Geant4 run: $G4"
 
 python3 "$HERE/benchmark_analysis.py" \
     --geant4   "$G4" \
+    --g4-source "$V5/sources/benchmark_surface.dat" \
     --phits    "$BENCH/codes/phits/" \
     --music    "$V5/MUSIC/" \
     --proposal "$V5/PROPOSAL/" \

@@ -80,6 +80,39 @@ elevation model). No simulated result changes.
   given as 2.6x10^-4 m^-2 s^-1 sr^-1, the value with the 2 TeV range table of
   1.3.2 and earlier; mode 1 now gives 3.4x10^-4 and mode 2 4.0x10^-4.
 
+### Multiple scattering: the thick-target limit instead of a cap at 1 X0
+- UCMuon-MC and the Bethe-Bloch engines (Python, OpenMP and MPI Fortran)
+  accumulate Highland's variance along the path with the log term stopping
+  at 8.4 X0 instead of 1 X0: beyond it the width grows like sqrt(x) at
+  E_s = 14.7 MeV (theta0 = E_s/(beta c p) sqrt(x/X0)). That is the
+  thick-target limit: once theta0 is far above the angle hbar/(pR) at which
+  the nuclear size cuts single scatterings off (about 10 X0 of rock), the
+  distribution is Gaussian with the finite second moment of the screened
+  Rutherford cross section with a nuclear form factor, 14.73 MeV for
+  Standard Rock, 14.66 for water, 14.82 for iron
+  (`benchmark/analysis/mcs_thick_target.py`). The cap at 1 X0 (13.6 MeV)
+  was an empirical tuning to the Geant4 reference whose rock was sodium:
+  5 to 9 % below the corrected Geant4. Now, from 10 to 200 m of rock,
+  UCMuon-MC and Bethe-Bloch are within 2.3 % of Geant4 (14.4 to 15.0 MeV),
+  MUSIC 2 to 4 % above it and PROPOSAL up to 9 % (it grows with depth, like
+  the uncapped log, 17.5 MeV at 200 m). Survival and energies are unchanged.
+- Each step's 1/(beta p)^2 is the mean of its start and end values (UCMuon-MC
+  took the start's, the Bethe-Bloch engines the end's): with 13 steps through
+  25 m of rock UCMuon-MC's mean angle was 1.75 % below its value with 1325
+  steps, now 0.2 %. The paper said under 0.2 % already; it was not.
+- `gui/mcs_margin.py`, the GUI's MCS estimator and source optimizer use the
+  same model. Up to 1.4.1 the margin's sigma_r let the log grow over the whole
+  path, an envelope 16 to 19 % wider at 200 m, with a 2 sigma_r margin; the
+  margin is now 2.5 sigma_r, which keeps at least 99.0 % of a point-like
+  detector's hits with Geant4, 98.7 % with MUSIC and 99.2 % with UCMuon-MC
+  (97.5 % with PROPOSAL; 2 sigma_r keeps 96 to 97 %).
+- `benchmark/analysis/mcs_distributions.py` measures every engine's core
+  width, tails and angular and lateral distributions per beam and depth
+  (`benchmark/results/mcs_{widths,histograms}_20261022.csv`, the paper's new
+  `fig_mcs`); the benchmark summary has Geant4's lateral displacement (from
+  its source positions; empty up to 1.4.1). Lynch and Dahl (1991) cited for
+  the Highland form. `tests/transport/test_mcs_thick_target.py`.
+
 ### Density inversion: uncertainties, flag and the Vesuvius example tested
 - `invert_density_map`: sigma_rho is sigma_T over the slope of the
   interpolation that gives rho_hat (ln T linear between the two library

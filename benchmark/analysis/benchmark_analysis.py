@@ -141,13 +141,14 @@ def bethe_bloch_mwe(E_GeV):
 
 def highland_deg(depth_mwe, p_GeV, beta=1.0):
     """
-    Highland / Lynch-Dahl MCS formula: theta_0 in degrees.
+    Highland / Lynch-Dahl MCS formula: theta_0 in degrees, the log term
+    stopping at 8.4 X0 (14.7 MeV, the thick-target limit of the engines).
     depth_mwe : rock thickness in m.w.e.  (= depth_cm * 2.65 / 100)
     p_GeV     : muon momentum in GeV/c
     """
     x_X0  = np.asarray(depth_mwe) * 100.0 / X0_ROCK_GCM2
     p_MeV = np.asarray(p_GeV) * 1000.0
-    t_rad = (13.6 / (beta * p_MeV)) * np.sqrt(x_X0) * (1.0 + 0.038 * np.log(x_X0))
+    t_rad = (13.6 / (beta * p_MeV)) * np.sqrt(x_X0) * (1.0 + 0.038 * np.log(np.minimum(x_X0, 8.4)))
     return np.degrees(t_rad)
 
 # ── Column alias resolver ─────────────────────────────────────────────────────
@@ -277,7 +278,7 @@ def compute_stats(muons, n_input):
 #  CODE LOADERS
 # ═════════════════════════════════════════════════════════════════════════════
 
-def load_geant4(run_dir, n_override=None):
+def load_geant4(run_dir, n_override=None, source=None):
     """
     Load Geant4 MuonRock output.  Accepts three forms:
       1. Flat outputs/ directory  ->  picks the latest *_muons.csv inside it
@@ -349,12 +350,25 @@ def load_geant4(run_dir, n_override=None):
 
     # LatDisp_cm stored by RunAction includes the source-position spread (muons are
     # injected at various (xs, ys) across the surface sampling area, giving values
-    # ~1800 cm even at 1 m depth).  Without surface entry positions in the CSV we
-    # cannot separate MCS transverse spread from geometric drift, so we set LatDisp_cm
-    # to NaN.  Exit (x, y) columns are preserved for the position map (fig11).
+    # ~1800 cm even at 1 m depth): the CSV has no entry positions. With the source
+    # file (source=; run_parallel.py's EventID k is its line k + 1, checked on the
+    # energies) LatDisp_cm is the distance from the straight line of the initial
+    # direction, as for the other codes; without it, NaN (up to 1.4.1 always).
     if "LatDisp_cm" in muons.columns:
         muons["LatDisp_cm"] = float("nan")
-        print("  LatDisp_cm     : set to NaN (source position not in CSV; see fig11)")
+        src = np.loadtxt(source, comments="#", usecols=(0, 1, 2, 10)) if source else None
+        ev = muons["EventID"].to_numpy().astype(int)
+        if src is not None and ev.max() < len(src) and np.mean(np.isclose(
+                src[ev, 3] - M_MU, muons["InitKE_GeV"].to_numpy(), rtol=1e-4, atol=1e-3)) > 0.9999:
+            cx_i = np.sin(np.radians(muons["InitThetaDeg"])) * np.cos(np.radians(muons["InitPhiDeg"]))
+            cy_i = np.sin(np.radians(muons["InitThetaDeg"])) * np.sin(np.radians(muons["InitPhiDeg"]))
+            cz_i = np.cos(np.radians(muons["InitThetaDeg"])).clip(lower=1e-6)
+            path = muons["DepthCm"] / cz_i
+            muons["LatDisp_cm"] = np.hypot(muons["ExitX_cm"] - (src[ev, 1] + cx_i * path),
+                                           muons["ExitY_cm"] - (src[ev, 2] + cy_i * path))
+            print(f"  LatDisp_cm     : from the source positions ({os.path.basename(source)})")
+        else:
+            print("  LatDisp_cm     : set to NaN (source position not in CSV; see fig11)")
 
     # ELoss_Total_GeV from the CSV = sum of GetTotalEnergyDeposit() over muon steps.
     # This captures only local muon-step deposits; energy carried away by secondary
@@ -1964,6 +1978,8 @@ def main():
     parser.add_argument("run_dir",    nargs="?",
                         help="Geant4 run directory (positional, backward-compatible)")
     parser.add_argument("--geant4",   metavar="DIR")
+    parser.add_argument("--g4-source", metavar="FILE", default=None,
+                        help="the Geant4 run's source file, for its lateral displacement")
     parser.add_argument("--phits",    metavar="DIR")
     parser.add_argument("--music",    metavar="DIR")
     parser.add_argument("--proposal", metavar="DIR")
@@ -1992,7 +2008,7 @@ def main():
 
     results = []
 
-    g4 = load_geant4(g4_dir, n_override=args.n)
+    g4 = load_geant4(g4_dir, n_override=args.n, source=args.g4_source)
     if g4 is None:
         sys.exit("[ERROR] Geant4 output required — aborting.")
     results.append(g4)
