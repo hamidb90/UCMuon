@@ -58,7 +58,7 @@ def main() -> int:
         table[spec] = grid
     with open(OUT, "w", newline="") as fh:
         fh.write("# Forward calibration of the backward CSDA flux integrator (mode 2),\n"
-                 "# 2026-10-20: C = mean T_forward / T_mode1 (benchmark/analysis/\n"
+                 "# 2026-10-20 (UCMuon-MC re-run 2026-10-23): C = mean T_forward / T_mode1 (benchmark/analysis/\n"
                  "# validate_backward.py with --engines UCMuon-MC,MUSIC, then\n"
                  "# build_backward_calibration.py). Standard Rock, flux above 1 GeV, 1-2500 GeV;\n"
                  "# 2x10^4 muons per cell and engine. C_stat: binomial; engine_spread:\n"

@@ -97,8 +97,8 @@ def run_engine(engine: str, surf: Path, out: Path, depth_m: float) -> None:
     log = open(str(out) + ".log", "w")
     env = {**os.environ, "OMP_NUM_THREADS": "1", "OPENBLAS_NUM_THREADS": "1"}
     if engine == "UCMuon-MC":
-        stdin = "\n".join(map(str, [surf, out, depth_m, RHO, 10.015, 1, 1, 14, 0, 0.05, 1,
-                                    11, 22, 136.4, 3.475e-6, 1, 2, 42, 1, 1])) + "\n"
+        stdin = "\n".join(map(str, [surf, out, depth_m, RHO, 10.015, 1, 1, 14, 0, 0.01, 1,
+                                    11, 22, 136.4, 3.475e-6, 1, 3, 42, 1, 1])) + "\n"
         subprocess.run([sys.executable, str(REPO / "gui" / "ucmuon_stochastic_driver.py")],
                        input=stdin, text=True, stdout=log, stderr=log, check=True, env=env)
     elif engine == "MUSIC":

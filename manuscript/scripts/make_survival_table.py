@@ -94,8 +94,8 @@ def main():
     up_all = max(abs(v[col["UCMuon"]] - v[col["PROPOSAL"]]) for _, _, v, _ in rows)
     um_rest = max(abs(v[col["UCMuon"]] - v[col["MUSIC"]]) for _, _, v, _ in rest)
     v0, g0 = first[2], first[3]
-    # how far the stochastic engines sit above Geant4 in the other cells
-    above = [min(v[col[x]] for x in ("UCMuon", "MUSIC", "PROPOSAL")) - g for _, _, v, g in rest]
+    # each stochastic engine's largest difference from Geant4 in the other cells
+    vs_g4 = {x: max(abs(v[col[x]] - g) for _, _, v, g in rest) for x in ("UCMuon", "MUSIC", "PROPOSAL")}
     print(r"\begin{table}[ht]")
     print(r"\centering")
     print(r"\caption{Depth-resolved survival fraction (\%) for \geantfour{} and "
@@ -113,10 +113,10 @@ def main():
           r"Bethe--Bloch engine returns $0$ or $100\%$ (no range straggling); "
           f"UCMuon-MC agrees with \\proposal{{}} within ${up_all:.1f}$ percentage "
           f"points in every cell and with \\music{{}} within ${um_rest:.1f}$ in "
-          r"every cell but the first. \geantfour{} (Standard Rock) passes fewer "
-          f"muons than all three stochastic engines in every other cell, by "
-          f"${min(above):.2f}$ to ${max(above):.2f}$ percentage points, which is where "
-          r"the aggregate difference of Table~\ref{tab:survival}.}")
+          r"every cell but the first. Outside that cell the largest difference from "
+          r"\geantfour{} (Standard Rock, a slab $\pm1$\,km wide) is "
+          f"${vs_g4['UCMuon']:.2f}$ percentage points for UCMuon-MC, ${vs_g4['MUSIC']:.2f}$ "
+          f"for \\music{{}} and ${vs_g4['PROPOSAL']:.2f}$ for \\proposal{{}}.}}")
     print(r"\label{tab:survival_matrix}")
     print(r"\begin{tabular}{rrc" + "c" * len(ENGINES) + "c}")
     print(r"\toprule")

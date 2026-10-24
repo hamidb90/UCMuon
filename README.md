@@ -165,7 +165,7 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for the full cluster workflow: MPI 
 bash test_run/run_test.sh
 ```
 
-Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) on a seeded 2000-muon configuration in a few seconds and grades the result against the reference output committed in `test_run/expected/`: 574 of 2000 muons survive 25 m of Standard Rock (28.70 %), with a mean exit kinetic energy of 13.562 GeV. Grading is numerical, since a different compiler can move the last bits of a double without anything being wrong; byte identity is reported as well when it holds. The transport stage is pure Python, so without a Fortran compiler the script falls back to the committed surface file and still checks stage 2.
+Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) on a seeded 2000-muon configuration in a few seconds and grades the result against the reference output committed in `test_run/expected/`: 568 of 2000 muons survive 25 m of Standard Rock (28.40 %), with a mean exit kinetic energy of 13.655 GeV. Grading is numerical, since a different compiler can move the last bits of a double without anything being wrong; byte identity is reported as well when it holds. The transport stage is pure Python, so without a Fortran compiler the script falls back to the committed surface file and still checks stage 2.
 
 ---
 
@@ -432,14 +432,14 @@ The native, self-developed pure-Python stochastic transport engine — the defau
 
 - Loss decomposition from the **PDG 2024 per-process tables** (Groom–Mokhov–Striganov, 2024 electronic revision; embedded): ionisation, bremsstrahlung, pair production, photonuclear `[MeV cm²/g]` vs energy
 - **Native per-material tables** for Standard Rock, water, ice, and iron — no rescaling approximation (the old rock-rescale underestimated iron radiative losses by ~38% at 1 TeV); seawater uses the water table with sub-percent composition rescaling, custom materials rescale the rock table
-- Hard bremsstrahlung and photonuclear events Poisson-sampled **per process** above `v_cut`, each with its own energy-dependent rate and spectrum: brems `(1−v)/v`, photonuclear `1/v`; pair production, whose loss is spread over many small transfers (`1/v³`), stays in the continuous term
-- **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the Rutherford `1/T²` spectrum; the continuous ionisation term is restricted accordingly (ionisation straggling — the dominant fluctuation below ~100 GeV)
-- Multiple scattering: Highland (1975), its variance accumulated along the path (independent of the step size); muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
+- Hard bremsstrahlung, pair-production and photonuclear events Poisson-sampled **per process** above `v_cut` (default 0.01; 0.05 up to 1.4.1), with `v` drawn from the Kelner–Kokoulin–Petrukhin (bremsstrahlung, pair production) and ALLM97 (photonuclear) spectra at the tabulated energy nearest the muon's, tabulated once with PROPOSAL (`gui/ucmuon_radiative_spectra.npz`, `tools/tabulate_radiative_spectra.py`), each at the rate that keeps the PDG mean loss of the process; up to 1.4.1 pair production was continuous
+- **δ-ray straggling**: knock-on electrons with `T > 10 MeV` sampled from the spin-½ close-collision spectrum `k/T² [1 − β²T/T_max + T²/2E²]` (spin-0 up to 1.4.1); the continuous ionisation term is restricted accordingly
+- Multiple scattering: Highland (Lynch and Dahl 1991), its variance accumulated along the path (independent of the step size), the log term stopping at 8.4 X₀, the thick-target limit (14.7 MeV); muon decay: Poisson per step (`p·cτ`, `p = √(E²−m²)`)
 - **Per-muon adaptive stepping**: every muon gets `dx ≈ 20 g/cm²` regardless of zenith angle
 - Deterministic-bound range cut: only muons that cannot survive even with zero stochastic losses are killed instantly (strict upper bound on penetration — does not bias survival)
 - Multiprocess-parallel: muons split across worker processes with independent RNG streams (`0 = auto`, near-linear speedup; reproducible for a fixed seed + worker count)
 
-**Validation:** mean energy loss matches the PDG table integral to < 0.3% (40k-muon monoenergetic beams at 25/50 m); legacy v1 spectra (`1/v`, Bethe–Heitler single-shape) remain selectable for reproducibility.
+**Validation:** the expected loss of a step equals the PDG table at every energy, and the simulated mean loss matches the table integral within the statistical precision of a 10⁶-muon test through 10 m of rock (+0.05 ± 0.07 % at 100 GeV, −0.02 ± 0.27 % at 1 TeV); the 1.4.1 per-process model and the single-shape spectra (`1/v`, `(1−v)/v`) remain selectable for reproducibility.
 
 ---
 

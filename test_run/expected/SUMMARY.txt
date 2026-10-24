@@ -7,6 +7,10 @@ the surface x, y); the survivors and every number below are unchanged.
 Both files regenerated 2026-10-16 (after 1.3.2): the generator's random deviates
 carry 53 bits instead of 24, and multiple scattering accumulates the Highland
 variance along the path; every number below is unchanged.
+muons_underground.dat regenerated 2026-10-23 (after 1.4.1): multiple scattering
+in the thick-target limit, and UCMuon-MC's energy-loss model with tabulated
+radiative spectra, spin-1/2 knock-on electrons and v_cut = 0.01 (574 survivors
+at 13.562 GeV before).
   GNU Fortran (MacPorts gcc14 14.3.0_0+stdlib_flag) 14.3.0
   Python 3.12.12, NumPy 2.2.6
   UCMUON_SEED=20260807, OMP_NUM_THREADS=1, transport seed 42, 1 worker.
@@ -16,21 +20,21 @@ Configuration
   Stage 1  CosmoALEPH spectrum (mode 1), 10–2500 GeV, disk source R = 50 m,
            cos^2(theta) up to theta_max = 70 deg, 2000 muons, no detector cut.
   Stage 2  UCMuon-MC (Engine 1), 25 m of Standard Rock (rho = 2.65 g/cm^3),
-           v_cut = 0.05, Highland MCS on, delta-ray straggling on,
-           PDG-2024 tables, per-process hard spectrum.
+           v_cut = 0.01, Highland MCS on, delta-ray straggling on,
+           PDG-2024 tables, per-process tabulated hard spectra.
 
 Results
 -------
   surface muons generated : 2000
   muons transported       : 2000
-  survived                : 574
-  survival fraction       : 28.70 %   (binomial sigma 1.01 pp)
-  mean exit kinetic energy: 13.562 GeV
+  survived                : 568
+  survival fraction       : 28.40 %   (binomial sigma 1.01 pp)
+  mean exit kinetic energy: 13.655 GeV
 
 SHA-256
 -------
   muons_surface.dat      f862a6e938f7efbc722bdd86900ec2117c384b75defa72967a702eb462895d00
-  muons_underground.dat  a05bb23c69eaf2ebef601690db24f5b984eb1aeafe7872ce854b2ddd29028e41
+  muons_underground.dat  5a50a01d08675f74225d449e57a3676f81814df3122f66372f357b97643fb872
 
 Reproducing
 -----------

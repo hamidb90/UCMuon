@@ -98,6 +98,8 @@ jobs:
           python3 tests/transport/test_transport_fixes.py
       - name: Multiple scattering, thick-target limit (UCMuon-MC, Bethe-Bloch, margin)
         run: python3 tests/transport/test_mcs_thick_target.py
+      - name: UCMuon-MC energy loss (tabulated spectra, mean loss, spin-1/2 knock-ons)
+        run: python3 tests/transport/test_energy_loss_model.py
       - name: Command-line converters (cosmic electrons, muons unchanged)
         run: |
           make ucmuon_to_phits

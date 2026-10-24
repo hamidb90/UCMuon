@@ -89,7 +89,8 @@ def render_stochastic_settings():
     n_steps      : int    — transport steps (0 = auto, per-muon adaptive)
     ms_enable    : bool   — Highland MS on/off
     range_table  : int    — 0=Groom 2001  1=PDG 2024 (legacy; v2 is PDG-anchored)
-    hard_spectrum: int    — 2=per-process (v2)  1=(1-v)/v (BH)  0=1/v (Groom)
+    hard_spectrum: int    — 3=per-process, tabulated spectra  2=per-process 1.4.1
+                            1=(1-v)/v  0=1/v (Groom)
     n_workers    : int    — parallel worker processes (0 = auto, 1 = serial)
     delta_rays   : bool   — explicit δ-ray straggling (T > 10 MeV)
     """
@@ -98,14 +99,16 @@ def render_stochastic_settings():
     with _ps1:
         v_cut = st.number_input(
             "v_cut — catastrophic threshold",
-            min_value=0.005, max_value=0.5, value=0.05, step=0.005,
+            min_value=0.005, max_value=0.5, value=0.01, step=0.005,
             key="stochastic_vcut",
             help=(
                 "Minimum fractional energy loss v = ΔE/E for a radiative event "
                 "to be sampled stochastically (brem + pair + photonuclear).\n\n"
                 "Events below v_cut contribute to the deterministic mean loss.\n\n"
-                "Recommended: **0.02–0.10**.  "
-                "Lower = more accurate at the cost of slower runtime."
+                "Default **0.01** (0.05 up to 1.4.1). Far beyond a beam's mean "
+                "range (1 TeV muons through 3 km w.e.) the survivors' mean energy "
+                "is a third low with 0.05 and 8 % low with 0.01; **0.005** "
+                "converges it at about the same run time, so use it there."
             ),
         )
 
@@ -156,10 +159,11 @@ def render_stochastic_settings():
     with _pb:
         hard_spectrum = st.selectbox(
             "Hard-event spectrum",
-            options=[2, 1, 0],
+            options=[3, 2, 1, 0],
             format_func=lambda x: {
-                2: "Per-process: brems+pair+photonuc (v2)",
-                1: "Bethe-Heitler (1-v)/v",
+                3: "Per-process, KKP/ALLM97 spectra (recommended)",
+                2: "Per-process, analytic shapes (1.4.1)",
+                1: "Single shape (1-v)/v",
                 0: "1/v (Groom)",
             }[x],
             index=0,
@@ -167,11 +171,15 @@ def render_stochastic_settings():
             help=(
                 "Spectral shape for stochastic (catastrophic) radiative events "
                 "above v_cut.\n\n"
-                "**Per-process (v2, recommended)** — bremsstrahlung (1−v)/v, "
-                "pair production 1/v³, photonuclear 1/v, each Poisson-sampled "
-                "with its own energy-dependent rate from the PDG 2024 "
-                "per-process loss tables.\n\n"
-                "**Bethe-Heitler (1-v)/v** — single shape; v1 default.\n\n"
+                "**Per-process, KKP/ALLM97 spectra (recommended)** — "
+                "bremsstrahlung, pair production and photonuclear events above "
+                "v_cut, each Poisson-sampled from its Kelner-Kokoulin-Petrukhin "
+                "or ALLM97 spectrum (tabulated with PROPOSAL) at the rate that "
+                "keeps the PDG 2024 mean loss of the process.\n\n"
+                "**Per-process, analytic shapes (1.4.1)** — bremsstrahlung "
+                "(1−v)/v, photonuclear 1/v, pair production continuous.\n\n"
+                "**Single shape (1-v)/v** — one shape for all radiative losses; "
+                "v1 default (called Bethe-Heitler up to 1.4.1).\n\n"
                 "**1/v (Groom)** — flat log-v spectrum; original behaviour."
             ),
         )
@@ -244,14 +252,14 @@ def build_stochastic_stdin(cfg):
         str(int(cfg.get("transport_all", 0))),
         str(int(cfg.get("ncols", 13))),
         str(cfg.get("stochastic_n_steps", 0)),
-        str(cfg.get("stochastic_v_cut",   0.05)),
+        str(cfg.get("stochastic_v_cut",   0.01)),
         str(int(cfg.get("stochastic_ms_enable", 1))),
         str(Z_eff),                                         # param 12
         str(A_eff),                                         # param 13
         str(I_eV),                                          # param 14
         str(b_cust),                                        # param 15
         str(int(cfg.get("stochastic_range_table",   1))),  # param 16: 0=groom2001 1=pdg2024
-        str(int(cfg.get("stochastic_hard_spectrum", 1))),  # param 17: 0=1/v 1=bh
+        str(int(cfg.get("stochastic_hard_spectrum", 3))),  # param 17: 0=1/v 1=(1-v)/v 2=proc 3=kkp
         str(int(cfg.get("stochastic_seed",         42))),  # param 18: RNG seed
         str(int(cfg.get("stochastic_n_workers",     0))),  # param 19: 0=auto 1=serial
         str(int(cfg.get("stochastic_delta_rays",    1))),  # param 20: δ-ray straggling

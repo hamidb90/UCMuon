@@ -9,24 +9,30 @@ Total energy loss per step dx [g/cm²]:
 
     dE = a_res(E) × dx  +  ΔE_δ  +  soft(E) × dx  +  ΔE_hard
 
-  a_res    : restricted ionisation = a_ion(E) − k_δ·ln(T_max/T_cut)
+  a_res    : restricted ionisation = a_ion(E) − k_δ·[ln(T_max/T_cut)
+             − β²(T_max − T_cut)/T_max + (T_max² − T_cut²)/(4E²)]
   ΔE_δ     : δ-rays (knock-on electrons), Poisson-sampled above T_cut=10 MeV
-             from the Rutherford 1/T² close-collision spectrum
+             from the spin-1/2 close-collision spectrum
+             k_δ/T² [1 − β² T/T_max + T²/(2E²)]
   L_b, L_p, L_n : per-process mean radiative losses (bremsstrahlung, pair,
              photonuclear) from the PDG 2024 evaluated table for Standard
              Rock (embedded; pdg.lbl.gov muE table)
-  soft(E)  : (2v_cut − v_cut²)·L_b + v_cut·L_n + L_p  (hard_spectrum='proc');
-             pair production stays continuous, its loss being spread over
-             many small transfers (φ ∝ 1/v³)
-  ΔE_hard  : catastrophic bremsstrahlung and photonuclear events,
-             Poisson-sampled above v_cut per process: brems φ(v)∝(1−v)/v at
-             λ_b = (1−v_cut)²·L_b/(E_tot·<v>_b), photonuclear φ(v)∝1/v at
-             λ_n = (1−v_cut)·L_n/(E_tot·<v>_n)
+  soft(E)  : Σ_i (1 − s_i(E)) L_i, s_i(E) the share of process i's loss
+             carried by transfers above v_cut (hard_spectrum='kkp', the
+             default; tabulated, see _kkp_tables)
+  ΔE_hard  : catastrophic bremsstrahlung, pair production and photonuclear
+             events, Poisson-sampled above v_cut per process at the rate
+             n_i(E) L_i/E_tot, with v drawn from the Kelner-Kokoulin-
+             Petrukhin (brems, pair) and ALLM97 (photonuclear) spectra at the
+             muon's energy, tabulated with PROPOSAL
 
   Conservation: every stochastic term subtracts its own mean from the
   continuous part, so <dE/dx> equals the evaluated PDG table EXACTLY at
-  all energies, by construction.  Single-process legacy spectra
-  (1/v, Bethe-Heitler) remain selectable for reproducibility.
+  all energies, by construction.  The 1.4.1 per-process model
+  ('proc': brems (1−v)/v, photonuclear 1/v, pair production continuous)
+  and the single-shape spectra (1/v; (1−v)/v) remain selectable for
+  reproducibility. (Up to 1.4.1 (1−v)/v was called Bethe-Heitler; the
+  complete-screening Bethe-Heitler shape is [4/3 (1−v) + v²]/v.)
 
 Additional physics:
   · Multiple scattering  : Highland (Lynch and Dahl 1991) accumulated along
@@ -73,14 +79,16 @@ Stdin input:
     7  transport_all 0=hit_flag only  1=all
     8  ncols         informational (reader auto-detects)
     9  n_steps       transport steps (0 = auto)
-   10  v_cut         catastrophic threshold (default 0.05)
+   10  v_cut         catastrophic threshold (default 0.01; 0.05 up to 1.4.1)
    11  ms_enable     1=Highland MS on  0=off
    12  Z_eff         [custom only]
    13  A_eff         [custom only]
    14  I_eV          [custom only]
    15  b_rad         [custom only, cm²/g]
    16  range_table   0=groom2001  1=pdg2024 (legacy; v2 loss model is PDG-anchored)
-   17  hard_spectrum 0=groom (1/v)  1=bh ((1-v)/v)  2=per-process (default)
+   17  hard_spectrum 0=1/v (Groom)  1=(1-v)/v  2=per-process with analytic shapes
+                     and continuous pair production (1.4.1 default)
+                     3=per-process with tabulated KKP/ALLM97 spectra (default)
    18  seed          RNG seed (int, default 42; reproducible runs by default)
    19  n_workers     parallel worker processes (default 1 = serial;
                      0 = auto: one worker per ~20k muons, up to all cores).
@@ -636,7 +644,7 @@ def _loss_components(E_MeV, mat):
 
 # ─────────────────────────────────────────────────────────────────────────────
 # Hard-event spectral shapes above v_cut (v = ΔE/E_tot)
-#   brems        : Bethe-Heitler  φ(v) ∝ (1-v)/v
+#   brems        : φ(v) ∝ (1-v)/v (called Bethe-Heitler up to 1.4.1)
 #   pair         : steeply falling φ(v) ∝ 1/v³   (asymptotic pair spectrum)
 #   photonuclear : φ(v) ∝ 1/v
 # Each process is sampled with rate λ_i = (1-v_cut)·L_i/(E_tot·<v>_i), which
@@ -666,13 +674,97 @@ def _proc_sampling_tables(v_cut):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
+# Tabulated per-process spectra (hard_spectrum='kkp', the default)
+#   bremsstrahlung and e+e- pair production: Kelner, Kokoulin and Petrukhin;
+#   photonuclear: ALLM97 with Butkevich-Mikheyev shadowing; the muon cross
+#   sections PROPOSAL uses by default, tabulated with it once
+#   (tools/tabulate_radiative_spectra.py -> ucmuon_radiative_spectra.npz) for
+#   Standard Rock, water and iron. The mean loss of each process stays that of
+#   the PDG 2024 tables; the tables give, at each energy, the share of it above
+#   v_cut and the spectrum of those transfers. In Standard Rock from 10 GeV to
+#   10 TeV the share above v_cut = 0.01 (the default) is 97-99 % for
+#   bremsstrahlung, 38-46 % for pair production and 95-100 % for photonuclear
+#   (87-93, 10-11 and 81-86 % above 0.05). Up to 1.4.1 ('proc', still
+#   selectable) bremsstrahlung was (1-v)/v, photonuclear 1/v and pair
+#   production all continuous. (The complete-screening Bethe-Heitler shape is
+#   [4/3 (1-v) + v^2]/v; (1-v)/v was labelled Bethe-Heitler up to 1.4.1.)
+# ─────────────────────────────────────────────────────────────────────────────
+_RAD_FILE     = Path(__file__).with_name("ucmuon_radiative_spectra.npz")
+_RAD_MATERIAL = {"rock": "rock", "water": "water", "ice": "water", "iron": "iron"}
+_RAD_CACHE    = {}
+
+
+def _kkp_tables(proc_key, v_cut):
+    """{process: (ln E grid [ln MeV], share above v_cut, transfers above v_cut
+    per (mean loss/E), v grid from v_cut, CDF[E, v])} for brems, pair, nucl.
+
+    The share is the one the sampler delivers, the number of transfers times
+    the mean v of the inverse CDF (within 0.01 % of the tabulated share), and
+    the transport takes share, rate and spectrum at the same, nearest
+    tabulated energy (_kkp_bin): the soft term plus the mean of the sampled
+    transfers is then the table's mean loss at every energy. (Interpolating
+    the share between energies while sampling v at the nearest one left it up
+    to 0.2 % off between the nodes.)"""
+    mkey = _RAD_MATERIAL.get(proc_key, "rock")
+    key = (mkey, float(v_cut))
+    if key in _RAD_CACHE:
+        return _RAD_CACHE[key]
+    z = np.load(_RAD_FILE)
+    lnv = z["lnv"].astype(float)
+    ln_e = np.log(z["E_GeV"].astype(float) * 1000.0)
+    lvc = np.log(v_cut)
+    if not lnv[0] <= lvc < lnv[-1]:
+        raise ValueError(f"v_cut = {v_cut} is outside the tabulated spectra (1e-3 to 1)")
+    keep = lnv > lvc
+    v_grid = np.exp(np.concatenate(([lvc], lnv[keep])))
+    out = {}
+    for proc in ("brems", "pair", "nucl"):
+        ec = z[f"{mkey}_{proc}_ecum"].astype(float)
+        nc = z[f"{mkey}_{proc}_ncum"].astype(float)
+        e_vc = np.array([np.interp(lvc, lnv, r) for r in ec])
+        n_vc = np.array([np.interp(lvc, lnv, r) for r in nc])
+        n_hard = np.maximum(nc[:, -1] - n_vc, 0.0)
+        cdf = (np.column_stack((n_vc, nc[:, keep])) - n_vc[:, None]) / np.maximum(n_hard[:, None], 1e-300)
+        cdf = np.maximum.accumulate(np.clip(cdf, 0.0, 1.0), axis=1)
+        cdf[:, -1] = 1.0
+        v_mean = np.sum(np.diff(cdf, axis=1) * 0.5 * (v_grid[1:] + v_grid[:-1]), axis=1)
+        share = n_hard * v_mean
+        over = share > 1.0                    # a few 1e-4 where the whole loss is above v_cut
+        n_hard[over] /= share[over]
+        share[over] = 1.0
+        out[proc] = (ln_e, share, n_hard, v_grid, cdf)
+    _RAD_CACHE[key] = out
+    return out
+
+
+def _kkp_bin(ln_e, ln_e_mu):
+    """Index of the nearest tabulated energy (8 per decade)."""
+    return np.clip(np.rint(np.interp(ln_e_mu, ln_e, np.arange(len(ln_e)))).astype(int), 0, len(ln_e) - 1)
+
+
+def _kkp_sample(tab, ln_e_mu, u):
+    """v of transfers above v_cut, from the spectrum at the nearest tabulated
+    energy (8 per decade)."""
+    ln_e, _, _, v_grid, cdf = tab
+    k = _kkp_bin(ln_e, ln_e_mu)
+    v = np.empty(len(u))
+    for kk in np.unique(k):
+        m = k == kk
+        v[m] = np.interp(u[m], cdf[kk], v_grid)
+    return v
+
+
+# ─────────────────────────────────────────────────────────────────────────────
 # δ-ray (knock-on electron) sampling — ionisation straggling
-# Rutherford close-collision spectrum d²N/dT dX = k_δ/T², k_δ = 0.0767·a_scale/β²
-# [MeV cm²/g].  Deltas with T > T_CUT_DELTA are sampled explicitly; their mean
-# k_δ·ln(T_max/T_cut) is subtracted from the continuous ionisation term so the
-# tabulated mean dE/dx is preserved exactly.  (Spin term (1-β²T/T_max) and
-# Landau shape below T_cut neglected; for thick absorbers the explicit deltas
-# carry the dominant variance.)
+# Spin-1/2 close-collision spectrum
+#   d²N/dT dX = (k_δ/T²)·[1 − β²T/T_max + T²/(2E²)],  k_δ = 0.1535·(Z/A)/β²
+# [MeV cm²/g] (E the muon's total energy).  Deltas with T > T_CUT_DELTA are
+# sampled explicitly (1/T² proposal, accepted with the bracket); their mean
+# k_δ·[ln(T_max/T_cut) − β²(T_max−T_cut)/T_max + (T_max²−T_cut²)/(4E²)] is
+# subtracted from the continuous ionisation term so the tabulated mean dE/dx
+# is preserved exactly.  (Up to 1.4.1 the T²/(2E²) term was missing.  The
+# Landau shape below T_cut is neglected; for thick absorbers the explicit
+# deltas carry the dominant variance.)
 # ─────────────────────────────────────────────────────────────────────────────
 T_CUT_DELTA = 10.0          # δ-ray explicit-sampling threshold [MeV]
 M_E         = 0.510999      # electron mass [MeV]
@@ -689,8 +781,8 @@ def _delta_kinematics(E_kin_MeV, ZoverA):
     return k_del, T_max, beta2
 
 # ─────────────────────────────────────────────────────────────────────────────
-# Bethe-Heitler (BH) hard-event inverse CDF
-# dσ/dv ∝ (1-v)/v on [v_cut, 1]
+# Single-shape (1-v)/v hard-event inverse CDF ('bh', called Bethe-Heitler up
+# to 1.4.1); dσ/dv ∝ (1-v)/v on [v_cut, 1]
 # CDF: F(v) = [ln(v/v_cut) − (v − v_cut)] / C  where C = ln(1/v_cut)−(1−v_cut)
 # No closed-form inverse; precomputed as a 2000-point lookup table.
 # Rate: λ_BH = 2·b_total·C/(1−v_cut)  — conserves same b_hard×E as 1/v.
@@ -752,30 +844,42 @@ def _mean_range(E_MeV, mat):
     return np.interp(E, _PROC_T, R_grid)
 
 
-def _det_range(E_MeV, mat, v_cut, delta_rays=False):
+def _det_range(E_MeV, mat, v_cut, delta_rays=False, hard_spectrum='kkp'):
     """
     Deterministic-loss range [g/cm²]: range integrated with only the
-    continuous components a(E) + v_cut·L_rad(E) from the PDG 2024
-    per-process table (the same decomposition the transport loop uses).
-    With delta_rays the continuous ionisation is the *restricted* term
-    a_res (δ-rays are stochastic), keeping the bound strict.
+    continuous part of the loss model the transport loop uses, from the PDG
+    2024 per-process table: the restricted ionisation a_res (with delta_rays;
+    δ-rays are stochastic) plus the soft radiative term of hard_spectrum.
 
     A muon can never lose less than the deterministic component, so this is
     a strict upper bound on penetration depth.  The range cut uses it so
     that only muons that cannot survive even with zero stochastic losses
     are killed outright; the mean-loss CSDA range (which includes the hard
     component) also killed muons that could have survived by avoiding hard
-    events, biasing survival low near threshold.
+    events, biasing survival low near threshold. (Up to 1.4.1 the soft term
+    here was v_cut·L_rad for every model, a looser bound.)
     """
     a_ion, Lb, Lp, Ln = _loss_components(_PROC_T, mat)
     if delta_rays:
-        k_del, T_max, _ = _delta_kinematics(
+        k_del, T_max, beta2 = _delta_kinematics(
             _PROC_T, mat.get("ZoverA", 0.5 * mat["a_scale"]))
+        E2 = (_PROC_T + M_MU) ** 2
         m_del = np.where(T_max > 1.5 * T_CUT_DELTA,
-                         k_del * np.log(np.maximum(T_max / T_CUT_DELTA, 1.0)),
+                         k_del * (np.log(np.maximum(T_max / T_CUT_DELTA, 1.0))
+                                  - beta2 * (T_max - T_CUT_DELTA) / np.maximum(T_max, T_CUT_DELTA)
+                                  + (T_max**2 - T_CUT_DELTA**2) / (4.0 * E2)),
                          0.0)
         a_ion = np.maximum(a_ion - m_del, 0.1 * a_ion)
-    dedx_det = a_ion + v_cut * (Lb + Lp + Ln)
+    if hard_spectrum == 'kkp':
+        tab = _kkp_tables(mat.get("proc", "rock"), v_cut)
+        kb = _kkp_bin(tab["brems"][0], np.log(_PROC_T + M_MU))
+        soft = sum((1.0 - tab[k][1][kb]) * L
+                   for k, L in (("brems", Lb), ("pair", Lp), ("nucl", Ln)))
+    elif hard_spectrum == 'proc':
+        soft = (2.0 * v_cut - v_cut**2) * Lb + v_cut * Ln + Lp
+    else:
+        soft = v_cut * (Lb + Lp + Ln)
+    dedx_det = a_ion + soft
     inv      = 1.0 / np.maximum(dedx_det, 1e-12)
     seg      = 0.5 * (inv[1:] + inv[:-1]) * np.diff(_PROC_T)
     # Offset by the material's PDG CSDA range at the grid floor (radiative
@@ -989,9 +1093,9 @@ def _ms_theta0(S_acc, t_acc, dt, beta_p):
 # Core transport
 # ─────────────────────────────────────────────────────────────────────────────
 
-def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
+def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.01,
               ms_enable=True, rng=None, progress_cb=None,
-              range_table='pdg2024', hard_spectrum='proc', delta_rays=True):
+              range_table='pdg2024', hard_spectrum='kkp', delta_rays=True):
     """
     Forward stochastic muon transport through a uniform slab (v2 physics).
 
@@ -1004,9 +1108,11 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
            + soft(E)·dx                        soft radiative (deterministic)
            + ΔE_hard                           catastrophic events (Poisson)
 
-    with, for hard_spectrum='proc', soft = (2v_cut − v_cut²)·L_brems
-    + v_cut·L_nucl + L_pair and hard bremsstrahlung and photonuclear events
-    sampled per process with shape-specific spectra (pair production is
+    with, for hard_spectrum='kkp', soft = Σ_i (1 − s_i(E))·L_i over brems,
+    pair and photonuclear, s_i the share of the process's mean loss above
+    v_cut in the tabulated spectra (ucmuon_radiative_spectra.npz), and hard
+    events of every process sampled from those spectra; for 'proc' (1.4.1),
+    soft = (2v_cut − v_cut²)·L_brems + v_cut·L_nucl + L_pair (pair production
     continuous); for the legacy single-shape spectra, soft = v_cut·L_rad.
 
     Parameters
@@ -1023,8 +1129,9 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     progress_cb  : callable(n_transported, n_survived, n_total)
     range_table  : retained for CLI compatibility; since v2 the loss model is
                    always anchored to the PDG 2024 per-process table
-    hard_spectrum: 'proc' (per-process: brems (1-v)/v, nucl 1/v, pair
-                   continuous; recommended), 'bh' (single (1-v)/v),
+    hard_spectrum: 'kkp' (default: per-process KKP brems and pair, ALLM97
+                   photonuclear, tabulated), 'proc' (1.4.1: brems (1-v)/v,
+                   nucl 1/v, pair continuous), 'bh' (single (1-v)/v),
                    'groom' (single 1/v)
     delta_rays   : explicit δ-ray sampling above T_CUT_DELTA with restricted
                    continuous ionisation (ionisation straggling)
@@ -1043,7 +1150,9 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
 
     # Hard-event sampling tables.  All shapes conserve the tabulated mean:
     # λ_i·<v>_i·E_tot·dx = (1-v_cut)·L_i·dx  per process (or for the total).
-    if hard_spectrum == 'proc':
+    if hard_spectrum == 'kkp':
+        _kkp = _kkp_tables(mat.get("proc", "rock"), v_cut)
+    elif hard_spectrum == 'proc':
         _shp = _proc_sampling_tables(v_cut)    # {name: (v_grid, cdf, v_mean)}
     elif hard_spectrum == 'bh':
         if abs(v_cut - _BH_DEFAULT_VCUT) < 1e-10:
@@ -1069,7 +1178,8 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
     # penetration): only muons that cannot survive even with zero hard
     # radiative events are killed outright.  Muons between the mean-loss
     # CSDA range and this bound are transported stochastically.
-    R_det   = _det_range(muons["Ekin_MeV"], mat, v_cut, delta_rays=delta_rays)
+    R_det   = _det_range(muons["Ekin_MeV"], mat, v_cut, delta_rays=delta_rays,
+                         hard_spectrum=hard_spectrum)
     range_cut = R_det < slant_gcm2
     alive[range_cut] = False
 
@@ -1144,12 +1254,19 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
 
         # 1. Ionisation: restricted continuous term + explicit δ-rays
         if delta_rays:
+            # Knock-on electrons for a spin-1/2 projectile (PDG, Passage of
+            # particles through matter): d2N/dT dX = k/T^2 [1 - beta^2 T/T_max
+            # + T^2/(2 E^2)]. Up to 1.4.1 the T^2/(2E^2) term was left out (the
+            # spin-0 form), which under-counted the transfers near T_max
+            # (~0.9 E at 100 GeV), where the term reaches 40 % of k/T^2.
             k_del, T_max, beta2 = _delta_kinematics(E_i, ZoverA)
+            E2_2   = 2.0 * (E_i + M_MU) ** 2
             has    = T_max > 1.5 * T_CUT_DELTA
             m_del  = np.where(has,
                               k_del * (np.log(np.maximum(T_max / T_CUT_DELTA, 1.0))
                                        - beta2 * (T_max - T_CUT_DELTA)
-                                         / np.maximum(T_max, T_CUT_DELTA)),
+                                         / np.maximum(T_max, T_CUT_DELTA)
+                                       + (T_max**2 - T_CUT_DELTA**2) / (2.0 * E2_2)),
                               0.0)
             a_res  = np.maximum(a_ion - m_del, 0.1 * a_ion)
             dE_ion = a_res * dx_i
@@ -1162,23 +1279,46 @@ def transport(muons, depth_m, rho, mat, n_steps=0, v_cut=0.05,
             if md1.any():
                 U   = rng.uniform(size=md1.sum())
                 Ts  = T_CUT_DELTA / (1.0 - U * (1.0 - T_CUT_DELTA / T_max[md1]))
-                acc = rng.uniform(size=md1.sum()) < (1.0 - beta2[md1] * Ts / T_max[md1])
+                acc = rng.uniform(size=md1.sum()) < (1.0 - beta2[md1] * Ts / T_max[md1]
+                                                      + Ts**2 / E2_2[md1])
                 dE_ion[md1] += np.where(acc, Ts, 0.0)
             for mi in np.where(n_d >= 2)[0]:
                 U   = rng.uniform(size=int(n_d[mi]))
                 Ts  = T_CUT_DELTA / (1.0 - U * (1.0 - T_CUT_DELTA / T_max[mi]))
-                acc = rng.uniform(size=int(n_d[mi])) < (1.0 - beta2[mi] * Ts / T_max[mi])
+                acc = rng.uniform(size=int(n_d[mi])) < (1.0 - beta2[mi] * Ts / T_max[mi]
+                                                        + Ts**2 / E2_2[mi])
                 dE_ion[mi] += float((Ts * acc).sum())
         else:
             dE_ion = a_ion * dx_i
 
         # 2. Soft radiative (deterministic, v < v_cut)
-        dE_soft = ((v_cut * L_tot * dx_i) if hard_spectrum != 'proc'
-                   else (((2.0*v_cut - v_cut**2)*Lb + v_cut*Ln + Lp) * dx_i))
+        if hard_spectrum == 'kkp':
+            ln_e_mu = np.log(E_tot)
+            kb = _kkp_bin(_kkp["brems"][0], ln_e_mu)        # nearest tabulated energy
+            kkp_now = {k: (t[1][kb], t[2][kb]) for k, t in _kkp.items()}   # share, transfers above v_cut
+            dE_soft = sum((1.0 - kkp_now[k][0]) * L for k, L in
+                          (("brems", Lb), ("pair", Lp), ("nucl", Ln))) * dx_i
+        else:
+            dE_soft = ((v_cut * L_tot * dx_i) if hard_spectrum != 'proc'
+                       else (((2.0*v_cut - v_cut**2)*Lb + v_cut*Ln + Lp) * dx_i))
 
         # 3. Hard radiative (Poisson-sampled, v > v_cut)
         dE_hard = np.zeros(len(idx))
-        if hard_spectrum == 'proc':
+        if hard_spectrum == 'kkp':
+            # Per process, tabulated spectra; pair production too (above
+            # v_cut = 0.01 it carries 38-46 % of its loss). Rate n_hard·L_i/E_tot.
+            for L_proc, key in ((Lb, "brems"), (Lp, "pair"), (Ln, "nucl")):
+                lam_i = kkp_now[key][1] * L_proc / E_tot     # events/(g/cm²)
+                n_ev  = rng.poisson(lam_i * dx_i)
+                m1 = (n_ev == 1)
+                if m1.any():
+                    v_samp = _kkp_sample(_kkp[key], ln_e_mu[m1], rng.uniform(size=m1.sum()))
+                    dE_hard[m1] += v_samp * E_tot[m1]
+                for mi in np.where(n_ev >= 2)[0]:
+                    vs = _kkp_sample(_kkp[key], np.full(int(n_ev[mi]), ln_e_mu[mi]),
+                                     rng.uniform(size=int(n_ev[mi])))
+                    dE_hard[mi] += min(float(vs.sum()), 1.0) * E_tot[mi]
+        elif hard_spectrum == 'proc':
             # Per-process sampling: brems (1-v)/v, photonuclear 1/v (pair
             # production is in the continuous term above)
             for L_proc, key, hf in ((Lb, "brems", (1.0-v_cut)**2), (Ln, "nucl", (1.0-v_cut))):
@@ -1360,9 +1500,9 @@ def _transport_chunk(args):
 
 
 def transport_parallel(muons, depth_m, rho, mat, n_workers, seed=42,
-                       n_steps=0, v_cut=0.05, ms_enable=True,
+                       n_steps=0, v_cut=0.01, ms_enable=True,
                        progress_cb=None, range_table='pdg2024',
-                       hard_spectrum='proc', delta_rays=True):
+                       hard_spectrum='kkp', delta_rays=True):
     """
     Transport split across `n_workers` processes (same physics as transport()).
 
@@ -1466,16 +1606,16 @@ def main():
     transport_all = bool(_rd(6, 0,    int))
     _ncols        = _rd(7,  13,       int)
     n_steps       = _rd(8,  0,        int)
-    v_cut         = _rd(9,  0.05,     float)
+    v_cut         = _rd(9,  0.01,     float)
     ms_enable     = bool(_rd(10, 1,   int))
     Z_eff         = _rd(11, 11.0,     float)
     A_eff         = _rd(12, 22.0,     float)
     I_eV          = _rd(13, 136.4,    float)
     b_rad_cust    = _rd(14, 3.475e-6, float)
     range_table_id = _rd(15, 1,       int)   # 0=groom2001  1=pdg2024 (legacy; v2 loss model is PDG-anchored)
-    hard_spec_id   = _rd(16, 2,       int)   # 0=groom (1/v)  1=bh ((1-v)/v)  2=per-process (default)
+    hard_spec_id   = _rd(16, 3,       int)   # 0=1/v  1=(1-v)/v  2=per-process 1.4.1  3=tabulated (default)
     range_table    = 'pdg2024'  if range_table_id == 1 else 'groom2001'
-    hard_spectrum  = {0: 'groom', 1: 'bh'}.get(hard_spec_id, 'proc')
+    hard_spectrum  = {0: 'groom', 1: 'bh', 2: 'proc'}.get(hard_spec_id, 'kkp')
     seed           = _rd(17, 42, int)
     n_workers      = _rd(18, 1,  int)   # param 19: 1=serial  0=auto  >1 explicit
     delta_rays     = bool(_rd(19, 1, int))   # param 20: δ-ray straggling (default on)

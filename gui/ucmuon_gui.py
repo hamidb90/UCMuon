@@ -5160,11 +5160,11 @@ with tab_music:
         proposal_scatter = 2
         proposal_tables  = ""
         proposal_custom  = {}
-        stochastic_v_cut         = 0.05
+        stochastic_v_cut         = 0.01
         stochastic_n_steps       = 0
         stochastic_ms_enable     = True
         stochastic_range_table   = 1
-        stochastic_hard_spectrum = 2
+        stochastic_hard_spectrum = 3
         stochastic_n_workers     = 0
         stochastic_delta_rays    = True
         stochastic_mat_id    = 1
@@ -5676,7 +5676,7 @@ with tab_music:
                                "Ref: Koehne+ (2013) · Alameddine+ (2024)")
 
                 with st.expander("⚙️  Stochastic energy cuts", expanded=False):
-                    st.caption("Losses > max(e_cut, v_cut·E) are sampled stochastically. "
+                    st.caption("Losses > min(e_cut, v_cut·E) are sampled stochastically. "
                                "Defaults (e_cut = 500 MeV, v_cut = 0.001) are conservative; "
                                "the IceCube standard uses v_cut = 0.05 (faster, slightly coarser).")
                     _ec1, _ec2 = st.columns(2)

@@ -13,6 +13,8 @@ comparison figures and summary tables.
 | `build_backward_calibration.py` | turns a calibration run of `validate_backward.py` into Engine 5's mode-2 table, in `gui/ucmuon_backward_mc.py` and `../results/backward_calibration_20261020.csv` | both |
 | `bmc_density_bias.py` | the Vesuvius example's density bias from Engine 5, with and without the calibration | printed |
 | `mcs_distributions.py` | multiple-scattering core widths (as E_s), tails and angular and lateral distributions of every engine, per beam and depth of the monoenergetic suite | `../results/mcs_widths_20261022.csv`, `../results/mcs_histograms_20261022.csv` |
+| `geant4_survival_by_beam.py` | Geant4 survival per beam and depth of the monoenergetic suite, for the paper's survival table | `../results/geant4_survival_by_beam.csv` |
+| `run_tev_bench.py` | TeV beams (1, 3, 10 TeV) through 1-3 km w.e.: UCMuon-MC, MUSIC and PROPOSAL | `../results/tev_beams_20261023.csv` |
 | `mcs_thick_target.py` | the thick-target limit of multiple scattering (14.7 MeV) from the screened Rutherford cross section with a nuclear form factor, per material | printed |
 
 The depth-resolved survival and exit-KE tables in the paper
@@ -24,14 +26,15 @@ from the scratch tree.
 ```bash
 # From anywhere; the argument is the reference Geant4 run (600 000 muons):
 bash benchmark/analysis/run_benchmark.sh \
-    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_mono
+    ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_xy1km_20261022_mono
 
 # Realistic source: the six-code summary and figures of ../run_realistic_20260614/
 python3 benchmark/analysis/analyze_sixcode.py \
     ~/simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_realistic
 ```
-Both Geant4 runs use Standard Rock (`../codes/geant4/README.md`); up to 1.4.1
-the references were `run_file_20260522_210114` and `run_file_20260614_095725`,
+Both Geant4 runs use Standard Rock (`../codes/geant4/README.md`) and a slab
++-1 km wide (the mono run of 2026-10-19 had the default +-25 m, as wide as its
+source, and lost muons out of the sides); up to 1.4.1 the references were `run_file_20260522_210114` and `run_file_20260614_095725`,
 whose rock was sodium.
 It writes `../figures/v2_six_code/`, whose `benchmark_summary.csv` equals
 `../results/benchmark_summary_v2.csv`.

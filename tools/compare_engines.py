@@ -215,7 +215,7 @@ stochastic_stdin = "\n".join([
     "0",             # transport_all
     str(ncols),      # ncols hint
     "0",             # n_steps (0=auto)
-    "0.05",          # v_cut
+    "0.01",          # v_cut
     "1",             # ms_enable
 ]) + "\n"
 

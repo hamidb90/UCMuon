@@ -39,7 +39,7 @@ import mcs_margin                                       # noqa: E402
 from ucmuon_stochastic_driver import ES_THICK_MEV, T_SAT_X0   # noqa: E402
 
 V5 = REPO / "benchmark" / "geant4_muon_rock_v5"
-G4_DEFAULT = Path.home() / "simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_20261019_mono"
+G4_DEFAULT = Path.home() / "simulations/geant4/geant4_muon_rock_v5/outputs/run_stdrock_xy1km_20261022_mono"
 SOURCE = V5 / "sources" / "benchmark_surface.dat"
 OUT = REPO / "benchmark" / "results"
 DATE = "20261022"

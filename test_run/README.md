@@ -47,8 +47,8 @@ grades the transport stage.
 `cos^2(theta)` up to a 70 degree zenith cut, transported through 25 m of
 Standard Rock (2.65 g/cm^3) with UCMuon-MC.
 
-Expected result: **574 of 2000 muons survive (28.70%)**, with a mean exit
-kinetic energy of **13.562 GeV**. The depth is chosen so that a useful fraction
+Expected result: **568 of 2000 muons survive (28.40%)**, with a mean exit
+kinetic energy of **13.655 GeV**. The depth is chosen so that a useful fraction
 both survives and stops, which makes the survival fraction a meaningful check
 rather than a formality.
 

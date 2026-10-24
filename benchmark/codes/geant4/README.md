@@ -39,10 +39,15 @@ cmake -B build && cmake --build build -j
 # The same on 8 cores: 32 chunks, seeds 20261019 + chunk, merged with the event
 # numbering and files of a single run (the reference of 2026-10-19)
 python3 run_parallel.py --exe build/MuonRock --source <source>.txt \
-    --out outputs --name run_stdrock_20261019_mono --chunks 32 --workers 8 --seed 20261019
+    --out outputs --name run_stdrock_xy1km_20261022_mono --chunks 32 --workers 8 \
+    --seed 20261019 --xy 100000
 
-# Realistic source: its muons start up to 140 m from the axis, so the slab is
-# +-1 km wide (-xy 100000; the default +-25 m suits the vertical beams)
+# The slab must be much wider than the source. The vertical beams start
+# anywhere in +-25 m, the default -xy: in run_stdrock_20261019_mono, with that
+# default, muons starting near the sides scattered out of the slab and were
+# lost, up to 1.1 % of a beam at 100-200 m (100 GeV at 100 m: 96.52 % survival
+# against 97.60 % with +-1 km). The realistic source starts up to 140 m from
+# the axis.
 python3 run_parallel.py --exe build/MuonRock --source source_realistic_g4.txt \
     --out outputs --name run_stdrock_20261019_realistic --chunks 32 --workers 8 \
     --seed 20261119 --xy 100000

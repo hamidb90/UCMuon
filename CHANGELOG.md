@@ -48,7 +48,7 @@ elevation model). No simulated result changes.
   zenith 0/60/80/85 deg, 200 to 3000 m w.e.; `benchmark/results/
   backward_validation_20261019.csv`). The forward engines agree within 3.4 %;
   the integrator was within 2.1 % at 200 m w.e., 1 to 6 % low at 500 and
-  1000 m w.e., 8 to 14 % low at 2000 and 12 to 15 % low at 3000 m w.e.: it
+  1000 m w.e., 8 to 15 % low at 2000 and 13 to 16 % low at 3000 m w.e.: it
   neglects energy-loss fluctuations, which on a steep spectrum add muons at
   depth.
 - **New mode 2, the default** (`ucmuon_backward_mc.py`, the terrain driver,
@@ -59,12 +59,12 @@ elevation model). No simulated result changes.
   backward_calibration_20261020.csv`, built by
   `benchmark/analysis/build_backward_calibration.py`), interpolated in theta
   and ln X, going to 1 below 100 m w.e. and held beyond 5000 m w.e. with a
-  warning. For Guan C is 1.00 to 1.01 at 100 m w.e., 1.13 to 1.18 at 3000
-  and 1.43 to 1.47 at 5000 m w.e. (there it also restores the 7 to 8 % of the
+  warning. For Guan C is 1.00 to 1.01 at 100 m w.e., 1.14 to 1.19 at 3000
+  and 1.43 to 1.50 at 5000 m w.e. (there it also restores the 7 to 8 % of the
   flux beyond the range table). Tested where the calibration has no node
   (zenith 40/70/75/82 deg, 350 to 4500 m w.e., all three engines;
-  `backward_validation_offnode_20261020.csv`): within 2.4 % of the engines'
-  mean in every cell, where mode 1 was up to 26 % low. Standard Rock only:
+  `backward_validation_offnode_20261020.csv`): within 2.3 % of the engines'
+  mean in every cell, where mode 1 was up to 27 % low. Standard Rock only:
   other materials get mode 1, with a warning. Modes 0 and 1 are unchanged and
   still selectable. `tests/flux/test_backward_calibration.py`.
 - The Vesuvius library (`examples/vesuvius/tsim_library/`) and figures are
@@ -74,7 +74,7 @@ elevation model). No simulated result changes.
   mode 1 (once the per-pixel uncertainty) and +0.010 with mode 2 (0.4 times).
 - The terrain driver writes transmission maps with seven significant digits
   (`%.6e`). Up to 1.4.1 it wrote six decimals, so a transmission near 1e-6
-  was rounded by up to 40 %: in the Vesuvius library 57 to 299 rock pixels per
+  was rounded by up to 40 %: in the Vesuvius library 41 to 61 rock pixels per
   density are below 1e-4.
 - `docs/ENGINE6_USAGE_GUIDE.md`: the vertical flux under 1000 m of rock was
   given as 2.6x10^-4 m^-2 s^-1 sr^-1, the value with the 2 TeV range table of
@@ -93,7 +93,7 @@ elevation model). No simulated result changes.
   (`benchmark/analysis/mcs_thick_target.py`). The cap at 1 X0 (13.6 MeV)
   was an empirical tuning to the Geant4 reference whose rock was sodium:
   5 to 9 % below the corrected Geant4. Now, from 10 to 200 m of rock,
-  UCMuon-MC and Bethe-Bloch are within 2.3 % of Geant4 (14.4 to 15.0 MeV),
+  UCMuon-MC and Bethe-Bloch are within 2.1 % of Geant4 (14.4 to 15.0 MeV),
   MUSIC 2 to 4 % above it and PROPOSAL up to 9 % (it grows with depth, like
   the uncapped log, 17.5 MeV at 200 m). Survival and energies are unchanged.
 - Each step's 1/(beta p)^2 is the mean of its start and end values (UCMuon-MC
@@ -104,14 +104,88 @@ elevation model). No simulated result changes.
   same model. Up to 1.4.1 the margin's sigma_r let the log grow over the whole
   path, an envelope 16 to 19 % wider at 200 m, with a 2 sigma_r margin; the
   margin is now 2.5 sigma_r, which keeps at least 99.0 % of a point-like
-  detector's hits with Geant4, 98.7 % with MUSIC and 99.2 % with UCMuon-MC
-  (97.5 % with PROPOSAL; 2 sigma_r keeps 96 to 97 %).
+  detector's hits with Geant4, 98.7 % with MUSIC and 99.3 % with UCMuon-MC
+  (97.5 % with PROPOSAL; 2 sigma_r keeps 96 to 98 % of the first three).
 - `benchmark/analysis/mcs_distributions.py` measures every engine's core
   width, tails and angular and lateral distributions per beam and depth
   (`benchmark/results/mcs_{widths,histograms}_20261022.csv`, the paper's new
   `fig_mcs`); the benchmark summary has Geant4's lateral displacement (from
   its source positions; empty up to 1.4.1). Lynch and Dahl (1991) cited for
   the Highland form. `tests/transport/test_mcs_thick_target.py`.
+
+### UCMuon-MC: tabulated radiative spectra, spin-1/2 knock-ons, v_cut = 0.01
+- **Hard radiative losses from tabulated spectra** (new default
+  `hard_spectrum = 'kkp'`, standard-input item 17 = 3). Bremsstrahlung and
+  pair production follow Kelner, Kokoulin and Petrukhin, photonuclear
+  interactions ALLM97 with Butkevich-Mikheyev shadowing, the cross sections
+  PROPOSAL uses for muons, tabulated once with PROPOSAL 7.6.2 for Standard
+  Rock, water and iron (`tools/tabulate_radiative_spectra.py` writes
+  `gui/ucmuon_radiative_spectra.npz`, 723 kB, read with NumPy alone; ice and
+  seawater use water's, custom materials rock's). Each process keeps the mean
+  loss of the PDG 2024 table; the tables give the share of it above v_cut and
+  the spectrum of those transfers, taken at the tabulated energy nearest the
+  muon's (8 per decade) for the rate, the share and the spectrum alike, so the
+  expected loss of a step equals the table exactly. Pair production is now
+  stochastic too: above v_cut = 0.01 it carries 38 to 46 % of its loss
+  (bremsstrahlung 97 to 99 %, photonuclear 95 to 100 %, 10 GeV to 10 TeV).
+  Up to 1.4.1 bremsstrahlung was (1-v)/v, labelled Bethe-Heitler (whose
+  complete-screening shape is [4/3 (1-v) + v^2]/v), photonuclear 1/v and pair
+  production continuous; that model (`'proc'`, 2) and the single shapes stay
+  selectable.
+- **Knock-on electrons of a spin-1/2 projectile.** The close-collision
+  spectrum lacked its T^2/(2E^2) term (the spin-0 form), which under-counted
+  the transfers near T_max (0.9 E at 100 GeV, where the term is 40 % of
+  k/T^2): the variance of the ionisation loss of 100 GeV muons was 21 % too
+  small. The paper called the correction sub-percent; it is the change that
+  matters most for the benchmark.
+- **v_cut = 0.01** (was 0.05) in the driver, the GUI (UCMuon-MC, Terrain and
+  the CSG transport), the benchmark scripts and the test run. Beyond a
+  beam's mean range it matters: 1 TeV muons through 3 km w.e. of rock leave
+  with a mean energy of 13.9 +- 0.4 GeV at 0.05, 19.0 +- 0.3 GeV at 0.01 and
+  20.7 +- 0.3 GeV at 0.005 and 0.002 (MUSIC 20.9, PROPOSAL 21.3), 0.005 at
+  about the run time of 0.01 and 0.002 at 25 times it; the paper and the GUI
+  recommend 0.005 there. The benchmarks are insensitive to it.
+- Effect of each change, 10^5 muons per beam (stopped fraction; RMS of the
+  exit energy): 100 GeV through 100 m of rock, 1.4.1 1.97 % (7.92 GeV),
+  tabulated spectra 1.95 % (7.92), spin term 2.23 % (8.11), v_cut 0.01
+  2.28 % (8.27), against Geant4 2.40 % (8.38), MUSIC 2.19 % (8.29), PROPOSAL
+  2.77 % (8.62); 300 GeV through 200 m, 1.77 % (32.70), 1.93 % (32.57),
+  2.08 % (33.04), 2.16 % (33.48), against 2.18 % (33.82), 2.12 % (34.00),
+  2.38 % (34.70). The mock review's "UCMuon-MC stops fewer muons than
+  Geant4" came mostly from the Geant4 reference, which lost muons through the
+  sides of its slab (see the benchmark section), and for the rest from the
+  missing spin term.
+- Monoenergetic benchmark against the new Geant4 reference: survival within
+  0.1 % (0.02 pp) and mean exit energy within 0.3 % of Geant4 from 25 to
+  200 m; in the transition cells within
+  0.09 pp of Geant4 except the 5 GeV beam at 10 m. Realistic source at 200 m:
+  +0.45 pp. The mean loss matches the table integral within a 10^6-muon
+  test's precision (+0.05 +- 0.07 % at 100 GeV, -0.02 +- 0.27 % at 1 TeV,
+  10 m of rock).
+- **TeV beams** (`benchmark/analysis/run_tev_bench.py`,
+  `benchmark/results/tev_beams_20261023.csv`): 1, 3 and 10 TeV through 1, 2
+  and 3 km w.e. of Standard Rock, 10^4 muons per cell, UCMuon-MC, MUSIC and
+  PROPOSAL. UCMuon-MC's survival is within 1.4 pp of MUSIC's and 0.9 pp of
+  PROPOSAL's in every cell, its mean exit energy within 4 % of both except at
+  1 TeV and 3 km w.e., beyond the mean range (7.5 % pass, MUSIC 7.0, PROPOSAL
+  8.3; mean exit energy 19.6 +- 0.6 GeV, 6 % below MUSIC's). The paper's
+  validity domain (1 TeV, 2 km w.e.) is replaced by these results.
+- Engine 5's forward calibration, which uses UCMuon-MC as one of its two
+  references, re-measured with it (`backward_calibration{,_run}_20261020.csv`
+  and both validation files rewritten): C changes by under 0.2 % on average
+  down to 2000 m w.e. and by about 1 % (up to 3.3 %) at 3000 to 5000 m w.e.,
+  where UCMuon-MC now passes 2 to 4 % more of a steep spectrum than MUSIC, as
+  PROPOSAL does (at 3500 and 4500 m w.e. both are 1 to 6 % above MUSIC and
+  within 3.2 % of each other). Between the nodes the calibrated integrator is
+  within 2.3 % of the three engines' mean. The Vesuvius library, figures and
+  numbers are regenerated: 697 pixels invert, 12 are flagged, density bias
+  with forward-engine data +0.010 g/cm^3.
+- `test_run/expected/muons_underground.dat` regenerated: 568 of 2000 muons
+  survive (28.40 %) at 13.655 GeV (574, 28.70 %, 13.562 GeV before; it had not
+  been regenerated after the multiple-scattering change either).
+- `tests/transport/test_energy_loss_model.py` (and CI): defaults, the tables,
+  the mean loss of a step in three materials, the spin-1/2 variance, the
+  range-cut bound.
 
 ### Density inversion: uncertainties, flag and the Vesuvius example tested
 - `invert_density_map`: sigma_rho is sigma_T over the slope of the
@@ -132,9 +206,9 @@ elevation model). No simulated result changes.
   the end of its calibration; the end of the range table otherwise), and the
   inversion skips them (status 1, "Open sky / no T_sim" in the GUI). Up to
   1.4.1 they were kept as lower bounds and under the thickest rock were 0.
-- Vesuvius synthetic test: 695 pixels invert (468), 14 are flagged (591), 350
-  have no library value; mean density 2.002 g/cm^3, scatter 0.039, mean
-  sigma_rho 0.032, double ratio 2.00.
+- Vesuvius synthetic test: 697 pixels invert (468), 12 are flagged (591), 350
+  have no library value; mean density 2.004 g/cm^3, scatter 0.038, mean
+  sigma_rho 0.033, double ratio 2.01.
 - `examples/vesuvius/inversion_tests.py` tests what the closure test cannot
   show: pulls at and between library densities; the interpolation bias
   between them (+0.5 % at 1.75 and +0.4 % at 2.25 g/cm^3, +2.9 and +3.0 %
@@ -190,12 +264,18 @@ elevation model). No simulated result changes.
   they were 0.9 / 1.4 / 2.5 / 4.1 to 4.6 %. `benchmark/codes/geant4` now builds
   Standard Rock from one A = 22 isotope with PDG's I and density-effect
   parameters (within 0.3 % of PDG ionisation, 0.6 % in total).
-- Geant4 re-run with it, both suites (`run_stdrock_20261019_mono`,
-  `..._realistic`, 8 cores via the new `run_parallel.py`; output identical to a
-  single-core run of the same events). Exit energies of UCMuon-MC, MUSIC and
-  PROPOSAL are now within 0.5 % of Geant4 from 25 to 200 m; survival 0.1 to
-  0.3 pp above it; realistic source at 200 m: engines +0.1 to +0.5 pp (were
-  -2.8 to -3.2 pp). Figures, summaries, tables regenerated.
+- Geant4 re-run with it, both suites (`run_stdrock_20261019_realistic` and,
+  for the monoenergetic one, `run_stdrock_xy1km_20261022_mono`; 8 cores via the
+  new `run_parallel.py`, output identical to a single-core run of the same
+  events). The monoenergetic run uses a slab +-1 km wide: with the default
+  +-25 m, as wide as the source, muons that started near its sides scattered
+  out of it and were lost, up to 1.1 % of a beam at 100 to 200 m (100 GeV at
+  100 m: 96.52 % survival against 97.60 %), which made the engines look 0.1 to
+  0.3 pp too transparent. MUSIC and PROPOSAL are now within 0.2 % of Geant4's
+  survival and 0.15 % of its mean exit energy from 25 to 200 m; realistic
+  source at 200 m: engines +0.1 to +0.5 pp (were -2.8 to -3.2 pp). Figures,
+  summaries, tables regenerated (`benchmark/analysis/geant4_survival_by_beam.py`
+  writes the per-beam survival the paper's table reads).
 - The 10 m plane, excluded since May because Geant4 passed half the 5 GeV beam
   there, is back for every code: the cause was the Geant4 rock. UCMuon-MC and
   PROPOSAL agree with Geant4 there within 0.4 pp; MUSIC passes 24 % of the

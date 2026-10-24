@@ -2138,11 +2138,11 @@ def render_terrain_tab(script_dir, project_dir,
         if terrain_engine == "UCMuon Stochastic":
             with st.expander("⚙️  UCMuon-MC settings", expanded=False):
                 _ps1, _ps2 = st.columns(2)
-                t_vcut = _ps1.number_input("v_cut", 0.01, 0.5, 0.05, 0.01, key="terrain_vcut",
+                t_vcut = _ps1.number_input("v_cut", 0.01, 0.5, 0.01, 0.01, key="terrain_vcut",
                                             help="Catastrophic event threshold (fraction of E). Lower = more accurate, slower.")
                 t_ms   = _ps2.checkbox("Highland MS deflections", value=True, key="terrain_ms")
         else:
-            t_vcut = 0.05
+            t_vcut = 0.01
             t_ms   = True
 
         # Engine availability warnings
@@ -2314,7 +2314,7 @@ def render_terrain_tab(script_dir, project_dir,
         _run_underground = bool(st.session_state.get("terrain_underground", False))
         _run_engine_label = st.session_state.get("terrain_engine_choice", _ENGINE_OPTIONS[0])
         _run_engine     = _ENGINE_INTERNAL.get(_run_engine_label, "UCMuon Stochastic")
-        _run_vcut       = _sf(st.session_state.get("terrain_vcut", 0.05), 0.05)
+        _run_vcut       = _sf(st.session_state.get("terrain_vcut", 0.01), 0.01)
         _run_ms         = bool(st.session_state.get("terrain_ms", True))
         _run_outfile    = st.session_state.get("terrain_outfile", "muons_terrain_ug.dat")
         _run_is_csg     = (_run_csg_geom is not None)

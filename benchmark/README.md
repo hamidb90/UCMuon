@@ -18,12 +18,14 @@ two independent external Monte Carlo references.
 25, 50, 100, 200 m. Every code receives the **identical** source population
 (`benchmark_surface.dat`, converted per code).
 
-> **Authoritative data:** Geant4 run `run_stdrock_20261019_mono` (Standard Rock;
-> up to 1.4.1 `run_file_20260522_210114`, whose rock was sodium, see
-> `codes/geant4/README.md`) and PHITS
-> (May 2026, `reports/BENCHMARK_FEEDBACK.md`); MUSIC and PROPOSAL from the July
-> 2026 run, Bethe-Bloch and UCMuon-MC re-run on 2026-10-16 with the multiple
-> scattering accumulated along the path (survival and energies unchanged).
+> **Authoritative data:** Geant4 run `run_stdrock_xy1km_20261022_mono` (Standard
+> Rock, slab +-1 km wide; `run_stdrock_20261019_mono` had the default +-25 m,
+> as wide as the source, and lost up to 1.1 % of the muons out of its sides at
+> depth; up to 1.4.1 `run_file_20260522_210114`, whose rock was sodium, see
+> `codes/geant4/README.md`) and PHITS (May 2026,
+> `reports/BENCHMARK_FEEDBACK.md`); MUSIC and PROPOSAL from the July 2026 run,
+> Bethe-Bloch re-run on 2026-10-22 (thick-target scattering), UCMuon-MC on
+> 2026-10-23 (tabulated radiative spectra, spin-1/2 knock-on electrons).
 > Summary: `results/benchmark_summary_v2.csv`; figures: `figures/v2_six_code/`.
 > 100 m (265 MWE) transmissions: G4 32.7 %, PHITS 32.6 %, MUSIC 32.9 %,
 > PROPOSAL 32.8 %, BB 33.3 %, UCMuon-MC 33.0 %.
