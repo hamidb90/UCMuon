@@ -1,27 +1,31 @@
 # Realistic-source benchmark timing (10^5 realistic cosmic-ray muons, Standard
 # Rock, depths 1/10/25/50/100/200 m). Single-core-equivalent.
 # Engines: sum of the six per-depth runs, one process each, OMP_NUM_THREADS=1
-#          (wall = CPU). Re-measured in one session on 2026-10-18 with the code
-#          after 1.4.1 (new random-number routines, MUSIC faster with identical
-#          output):
+#          (wall = CPU). Re-measured in one session on 2026-10-27 (with the
+#          monoenergetic times of benchmark/results/engine_timing_20261027.csv)
+#          with the code after mock-review item 8 (UCMuon-MC's new model):
 #            OUTDIR=... UCMUON_WORKERS=1 bash benchmark/analysis/run_realistic_bench.sh
 #          Bethe-Bloch, MUSIC and PROPOSAL reproduce their archived outputs bit
-#          for bit; UCMuon-MC in one process uses another random sequence and
-#          agrees with the archived run within 0.8 sigma at every depth.
-#          UCMuon-MC in its default automatic mode (5 worker processes here, as
-#          the archived outputs were made) takes 56.39 s of wall time.
-#          Up to 2026-10-16 the UCMuon value (56 s) was that automatic mode,
-#          and MUSIC took 32 s with the old routines.
+#          for bit and their times of 2026-10-18 (14.67, 22.95 and 191.21 s)
+#          within 7 %; UCMuon-MC in one process uses another random sequence
+#          and agrees with the archived run (2026-10-23) within 0.8 sigma at
+#          every depth. UCMuon-MC in its default automatic mode (5 worker
+#          processes here, as the archived outputs were made) takes 60.48 s of
+#          wall time and reproduces the archive bit for bit.
+#          Up to 2026-10-24: UCMuon 165.53 s (model of 1.4.1).
 # Geant4 : Standard Rock (run_stdrock_20261019_realistic, slab +-1 km); one
 #          core, timed on 1/32 of the population (every 32nd muon, 3 125
-#          muons, 272.27 s) and scaled by 32. Up to 2026-10-18: 10 851.95 s,
-#          the single run of 2026-06-14 with the sodium rock.
-# PHITS  : single run over all depths, total CPU summed over 10 OpenMP threads
-#          (Case A, full default physics; from phits.out total cpu time).
+#          muons, 272.27 s, 2026-10-19) and scaled by 32. Up to 2026-10-18:
+#          10 851.95 s, the single run of 2026-06-14 with the sodium rock.
+# PHITS  : PHITS 3.37, its single-thread macOS binary, deck
+#          benchmark/codes/phits/muon_rock_realistic.inp; one core, timed on
+#          the same 3 125 muons as Geant4 (577.63 s, 2026-10-25) and scaled by
+#          32. Up to 2026-10-24: 198 855.84 s, the CPU time summed over the 10
+#          OpenMP threads of a PHITS 3.36 run.
 code,seconds
 Geant4,8712.64
-PHITS,198855.84
-PROPOSAL,191.21
-UCMuon,165.53
-MUSIC,22.95
-BB,14.67
+PHITS,18484.16
+PROPOSAL,189.84
+UCMuon,179.76
+MUSIC,22.52
+BB,13.69

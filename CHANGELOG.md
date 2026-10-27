@@ -284,16 +284,51 @@ elevation model). No simulated result changes.
   in the shipped code (the default is +-25 m, which its inclined muons leave
   through the sides). `MuonRock` takes `-xy <cm>` and `-s <seed>`.
 - Geant4 timing: the paper's 12.5 h was an older run on another source; the
-  Standard Rock reference takes 5.3 h on one core (timed on every 32nd muon and
-  scaled). Speed-ups against Geant4, one process each: Bethe-Bloch 401x, MUSIC
-  134x, UCMuon-MC 52x, PROPOSAL 11x. The Geant4 version is 11.4.1, not 11.2.
+  Standard Rock reference takes 5.4 h on one core with the +-1 km slab (timed
+  on every 32nd muon and scaled; speed-ups under "PHITS 3.37" below). The
+  Geant4 version is 11.4.1, not 11.2.
 - `analyze_sixcode.py` takes the Geant4 run as an argument instead of the most
   recent file in a folder; `make_fig06.py` reads the shipped summary;
   `make_tab_exitke.py` (new) writes the exit-energy table from it.
 
+### Benchmark: PHITS 3.37, a Standard-Rock-like rock, one-core timing
+- PHITS re-run (3.37, was 3.36) on both suites with its rock as near Standard
+  Rock as PHITS allows: the single nuclide 22Na, Standard Rock's Z/A = 0.5 and
+  Z^2/A, but sodium's I = 149 eV, because PHITS sets the mean excitation energy
+  only for water (about 0.7 % less ionisation loss); it was Mg/O 75:25 by mass
+  (Z/A = 0.495). Slab +-1 km wide, as in Geant4 (was +-25 m). The realistic
+  deck is now shipped (`benchmark/codes/phits/muon_rock_realistic.inp`), with
+  a Slurm script for MPI runs (`run_phits_mpi.sh`). Both decks set
+  `idmpmode = 0`, every dump record an independent muon: the 3.37 binary
+  defaults to 1 (its echo of the input says so; its manual says 0).
+- The realistic deck's tallies stopped at 1 TeV while the source reaches
+  2.5 TeV, which dropped the muons above 1 TeV at every depth: the "PHITS loss
+  at 1 m" (99.5 % survival), and its mean exit energy 4 % low at 1 m and 10 %
+  low at 200 m. Its tallies now run to 10 TeV; PHITS passes 100.0 % at 1 m.
+- Results: monoenergetic survival within 0.2 pp of Geant4 from 25 to 200 m
+  (-0.1 % at 100 m, was -0.9 %), 1.9 pp fewer at 10 m; mean exit energy
+  -3.0 % at 100 m and -4.9 % at 200 m (were -3.9 and -8.3 %). Realistic source
+  at 200 m: -3.4 pp (was -4.9 pp).
+- PHITS timing: one core of the M4, PHITS's single-thread binary, on the same
+  every-32nd muons as Geant4, scaled by 32: 12.6 h for the monoenergetic suite
+  (2.3 times Geant4) and 5.1 h for the realistic one (2.1 times). The paper said
+  19 and 23 times Geant4's CPU time: the CPU time summed over the 10 OpenMP
+  threads of the 3.36 runs. CPU times from a cluster are not PHITS's speed:
+  PHITS reads its CPU clock about 10^5 times per muon, and on Lemaitre4 each
+  read costs several system calls, 6 to 24 times slower per muon than on the
+  M4 (`benchmark/codes/phits/README.md`).
+- Engine timings re-measured in one session after the UCMuon-MC changes above
+  (`benchmark/results/engine_timing_20261027.csv`, `realistic_timing.csv`):
+  UCMuon-MC 18.4 s per 10^5 muons at 100 m in one process (15.8 s), 4.2 s in
+  its automatic mode (3.5 s); Bethe-Bloch, MUSIC and PROPOSAL unchanged within
+  1 % and bit for bit. Speed-ups against Geant4, one process each: Bethe-Bloch
+  399x, MUSIC 134x, UCMuon-MC 46x, PROPOSAL 11x (realistic source: 636x, 387x,
+  48x, 46x).
+
 ### Fixed
 - Engine timings re-measured with one process per engine
-  (`benchmark/results/engine_timing_20261018.csv`, and the realistic suite's
+  (`benchmark/results/engine_timing_20261018.csv`, since superseded by
+  `engine_timing_20261027.csv`, and the realistic suite's
   `realistic_timing.csv`). The earlier records and the paper gave UCMuon-MC's
   time in its automatic mode (10 worker processes for the 6x10^5-muon suite,
   5 for the realistic one) as a single-thread time: 3.6 s per 10^5 muons at

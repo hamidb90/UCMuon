@@ -6,8 +6,9 @@ horizontal log-scale bar chart. Companion of make_fig10_timing.py
 (monoenergetic 6x10^5 source); same styling and CPU-time convention.
 
 Reads benchmark/run_realistic_20260614/realistic_timing.csv (code, seconds).
-For the single-thread codes seconds = wall-clock; for PHITS it is the total CPU
-summed over its 10 OpenMP threads (Case A, full physics).
+Every code runs on one core, so seconds = wall-clock = CPU time; Geant4 and
+PHITS are timed on 1/32 of the muons and scaled (see the file's header). Up to
+2026-10-24 the PHITS value was the total CPU time of a 10-thread OpenMP run.
 
 Output: manuscript/figs/fig_timing_realistic.pdf
 """
@@ -25,7 +26,7 @@ OUT_PDF   = Path(__file__).resolve().parent.parent / "figs" / "fig_timing_realis
 
 CODE_STYLE = {
     "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",      "color": "#1565C0"},
-    "PHITS":    {"label": "PHITS 3.36",                   "color": "#C62828"},
+    "PHITS":    {"label": "PHITS 3.37",                   "color": "#C62828"},
     "MUSIC":    {"label": "MUSIC (Engine 2)",             "color": "#FF8F00"},
     "PROPOSAL": {"label": "PROPOSAL (Engine 4)",          "color": "#2E7D32"},
     "BB":       {"label": "Bethe–Bloch CSDA (Engine 3)", "color": "#7B1FA2"},
@@ -88,7 +89,7 @@ def main() -> None:
     ax.xaxis.set_minor_locator(ticker.NullLocator())
     ax.tick_params(axis="x", labelsize=9, labelrotation=25, pad=3)
     ax.grid(True, axis="x", which="major", alpha=0.25, linestyle="--")
-    ax.set_title("Simulation speed (realistic source, $10^{5}$ muons)",
+    ax.set_title("Realistic source ($10^{5}$ muons)",
                  fontsize=12, pad=8, loc="left")
 
     ax.text(1.04, 1.02, "Time", transform=ax.transAxes, ha="left", va="bottom",
@@ -104,8 +105,8 @@ def main() -> None:
         ax.text(1.28, y, fmt_speedup(timings[c], geant4_t), transform=trans,
                 ha="left", va="center", fontsize=9, color="0.30", clip_on=False)
 
-    ax.text(0.0, -0.22, "PHITS value is total CPU time over 10 OpenMP threads; "
-            "all other codes single-thread (wall = CPU).",
+    ax.text(0.0, -0.22, "All codes on one core (wall = CPU); Geant4 and PHITS "
+            "timed on 1/32 of the muons and scaled.",
             transform=ax.transAxes, ha="left", va="top",
             fontsize=7.5, color="0.45", style="italic")
 

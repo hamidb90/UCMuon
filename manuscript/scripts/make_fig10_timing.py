@@ -4,21 +4,17 @@ make_fig10_timing.py — CPU time (single-core-equivalent) of the six benchmark
 codes on the common 6x10^5-muon Standard-Rock source, rendered as a
 horizontal log-scale bar chart (fig10_timing.pdf).
 
-For the single-thread codes this equals wall-clock time; the PHITS value is its
-total CPU time summed over 10 OpenMP threads (the parser reads PHITS's
-"total cpu time" into phits_timing.txt). The comparison is therefore a fair
-single-core-equivalent CPU-time comparison, not a wall-clock one.
+Every code runs on one core of the same machine, so wall time equals CPU
+time.
 
 All times are read from the shipped record benchmark/results/
-engine_timing_20261018.csv: the TOTAL row of each UCMuon engine (sum over the
-six depths, one process each) and the two reference rows, Geant4 (one core,
-Standard Rock, scaled from 1/32 of the population; see the record's header)
-and PHITS (total CPU time from its phits.out). Up to 1.4.1 the script read
-per-engine timing files from the unshipped benchmark/geant4_muon_rock_v5/.
-
-Geant4 (SerialOnly) and the four fast engines are timed on a single core
-(wall = CPU); PHITS ran with 10 OpenMP threads and its value is its total CPU
-time, so the comparison is CPU against CPU.
+engine_timing_20261027.csv: the TOTAL row of each UCMuon engine (sum over the
+six depths, one process each) and the two reference rows, Geant4 and PHITS
+(one core each, timed on 1/32 of the population and scaled; see the record's
+header). Up to 1.4.1 the script read per-engine timing files from the
+unshipped benchmark/geant4_muon_rock_v5/, and up to 2026-10-24 the PHITS
+value was the CPU time summed over the 10 threads of an OpenMP run of
+PHITS 3.36 (371 146 s).
 
 Usage:  python3 manuscript/scripts/make_fig10_timing.py
 """
@@ -37,7 +33,7 @@ import matplotlib.ticker as ticker
 SCRIPT_DIR = Path(__file__).resolve().parent
 OUT_PDF    = SCRIPT_DIR.parent / "figs" / "fig10_timing.pdf"
 TIMING_CSV = (SCRIPT_DIR.parent.parent / "benchmark" / "results"
-              / "engine_timing_20261018.csv")
+              / "engine_timing_20261027.csv")
 # CSV engine name -> key used below
 CSV_KEYS = {"UCMuon-MC": "UCMuon", "MUSIC": "MUSIC", "BetheBloch": "BB",
             "PROPOSAL": "PROPOSAL", "Geant4": "Geant4", "PHITS": "PHITS"}
@@ -45,7 +41,7 @@ CSV_KEYS = {"UCMuon-MC": "UCMuon", "MUSIC": "MUSIC", "BetheBloch": "BB",
 # Colours match CODE_STYLE in make_fig06.py so the two figures read as a set.
 CODE_STYLE = {
     "Geant4":   {"label": "Geant4 11.4 (FTFP_BERT)",      "color": "#1565C0"},
-    "PHITS":    {"label": "PHITS 3.36",                   "color": "#C62828"},
+    "PHITS":    {"label": "PHITS 3.37",                   "color": "#C62828"},
     "MUSIC":    {"label": "MUSIC (Engine 2)",             "color": "#FF8F00"},
     "PROPOSAL": {"label": "PROPOSAL (Engine 4)",          "color": "#2E7D32"},
     "BB":       {"label": "Bethe–Bloch CSDA (Engine 3)", "color": "#7B1FA2"},
@@ -150,8 +146,8 @@ def make_fig10(timings: dict[str, float], out_pdf: Path) -> None:
         ax.text(1.28, y, fmt_speedup(timings[c], geant4_t), transform=trans,
                 ha="left", va="center", fontsize=9, color="0.30", clip_on=False)
 
-    ax.text(0.0, -0.22, "PHITS value is total CPU time over 10 OpenMP threads; "
-            "all other codes single-thread (wall = CPU).",
+    ax.text(0.0, -0.22, "All codes on one core (wall = CPU); Geant4 and PHITS "
+            "timed on 1/32 of the muons and scaled.",
             transform=ax.transAxes, ha="left", va="top",
             fontsize=7.5, color="0.45", style="italic")
 

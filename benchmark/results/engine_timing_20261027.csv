@@ -1,0 +1,81 @@
+# UCMuon engine timing, re-measured 2026-10-27 with the code after mock-review
+# item 8 (UCMuon-MC: tabulated radiative spectra, spin-1/2 knock-ons, v_cut =
+# 0.01), which makes UCMuon-MC about 13 % slower per muon. Supersedes
+# engine_timing_20261018.csv.
+#
+# Monoenergetic benchmark source (6 vertical beams, 5/10/20/50/100/300 GeV, 100k
+# muons each = 6e5 total), Standard Rock rho = 2.65 g/cm^3, Apple M4 Mac (1-min load
+# average 2.0 to 4.5, median 2.8, outside UCMuon-MC's automatic mode). One
+# session:
+#   OUTDIR=... UCMUON_WORKERS=1 bash benchmark/analysis/run_mono_bench.sh
+#   OUTDIR=... UCMUON_WORKERS=0 ENGINES=UCMuon bash benchmark/analysis/run_mono_bench.sh
+# after a discarded warm-up at 1 m. Every engine runs as one process with
+# OMP_NUM_THREADS=OPENBLAS_NUM_THREADS=MKL_NUM_THREADS=1, so wall time = CPU time.
+# UCMuon-MC-auto is UCMuon-MC's default (stdin item 19 = 0): one worker process
+# per 2x10^4 muons up to the core count, here 10 processes; its seconds are wall
+# time, not CPU time.
+#
+# Outputs, compared with the archive in benchmark/geant4_muon_rock_v5/: Bethe-Bloch,
+# MUSIC, PROPOSAL and UCMuon-MC-auto reproduce their archived files bit for bit
+# (the archived UCMuon-MC outputs were made in the automatic mode, 2026-10-23).
+# The one-process UCMuon-MC uses another random sequence; its survival fraction,
+# mean exit energy and mean angle agree with the archive within 1.2 sigma at
+# every depth.
+#
+# CONTROLS (code unchanged since 2026-10-18): Bethe-Bloch 48.80 s against 48.03 s,
+# MUSIC 145.70 s against 144.16 s, PROPOSAL 1760.88 s against 1756.09 s.
+# Two earlier attempts on 2026-10-25 and 2026-10-27 timed MUSIC and PROPOSAL while
+# other work loaded the machine (load average up to 8) and took up to 38 % longer;
+# they are not used.
+#
+# Reference rows, one core of the same machine, timed on 1/32 of the population
+# (every 32nd muon, 18 750 muons, the same muons in both codes) and scaled by 32:
+#   Geant4 11.4.1 (FTFP_BERT), Standard Rock, slab +-1 km (as run
+#     run_stdrock_xy1km_20261022_mono, benchmark/codes/geant4): 608.33 s,
+#     2026-10-25. Up to 2026-10-24: 19 245.44 s, the same on a slab +-25 m.
+#   PHITS 3.37, its single-thread macOS binary, deck benchmark/codes/phits/
+#     muon_rock.inp (22Na rock, slab +-1 km): 1419.17 s, 2026-10-25. Up to
+#     2026-10-24 this row held 371 145.63 s, the CPU time summed over the 10
+#     OpenMP threads of a PHITS 3.36 run with a magnesium-oxygen rock. Cluster
+#     CPU times of PHITS are not its speed (benchmark/codes/phits/README.md).
+#
+# seconds_per_1e5 = seconds_6e5 / 6, the unit used in the paper's tables.
+# make_fig10_timing.py reads the TOTAL rows of this file.
+engine,depth_m,seconds_6e5,seconds_per_1e5,processes
+UCMuon-MC,1,42.06,7.01,1
+UCMuon-MC,10,40.63,6.77,1
+UCMuon-MC,25,40.13,6.69,1
+UCMuon-MC,50,56.14,9.36,1
+UCMuon-MC,100,110.20,18.37,1
+UCMuon-MC,200,133.06,22.18,1
+UCMuon-MC,TOTAL,422.22,,1
+BetheBloch,1,8.27,1.38,1
+BetheBloch,10,7.60,1.27,1
+BetheBloch,25,6.95,1.16,1
+BetheBloch,50,8.08,1.35,1
+BetheBloch,100,8.90,1.48,1
+BetheBloch,200,9.00,1.50,1
+BetheBloch,TOTAL,48.80,,1
+MUSIC,1,6.04,1.01,1
+MUSIC,10,12.83,2.14,1
+MUSIC,25,19.94,3.32,1
+MUSIC,50,26.18,4.36,1
+MUSIC,100,35.44,5.91,1
+MUSIC,200,45.27,7.55,1
+MUSIC,TOTAL,145.70,,1
+PROPOSAL,1,16.32,2.72,1
+PROPOSAL,10,121.91,20.32,1
+PROPOSAL,25,232.84,38.81,1
+PROPOSAL,50,335.33,55.89,1
+PROPOSAL,100,462.30,77.05,1
+PROPOSAL,200,592.18,98.70,1
+PROPOSAL,TOTAL,1760.88,,1
+UCMuon-MC-auto,1,11.68,1.95,10
+UCMuon-MC-auto,10,12.72,2.12,10
+UCMuon-MC-auto,25,11.64,1.94,10
+UCMuon-MC-auto,50,15.02,2.50,10
+UCMuon-MC-auto,100,25.22,4.20,10
+UCMuon-MC-auto,200,34.57,5.76,10
+UCMuon-MC-auto,TOTAL,110.85,,10
+Geant4,TOTAL,19466.56,,1
+PHITS,TOTAL,45413.44,,1

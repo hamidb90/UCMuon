@@ -1,3 +1,6 @@
 Events  : 600000
-Elapsed : 371145.63 s
-Rate    : 1.6 evt/s
+Elapsed : 45413.44 s
+Rate    : 13.2 evt/s
+# One core of the Apple M4, PHITS 3.37 single-thread binary, every 32nd muon
+# (18 750) timed (1419.17 s, 2026-10-25) and scaled by 32. Up to 2026-10-24 this
+# file held 371145.63 s, the CPU time of the 10 OpenMP threads of a PHITS 3.36 run.

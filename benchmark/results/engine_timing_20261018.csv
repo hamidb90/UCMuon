@@ -1,3 +1,8 @@
+# SUPERSEDED by engine_timing_20261027.csv. The BetheBloch, MUSIC and PROPOSAL
+# times below still hold (within 1 %, identical output). UCMuon-MC is about 13 %
+# slower since its energy-loss changes of 2026-10-23, Geant4 now runs on a slab
+# +-1 km wide, and the PHITS value below is the CPU time summed over the 10
+# threads of an OpenMP run of PHITS 3.36, not one core.
 # UCMuon engine timing, re-measured 2026-10-18 with the code after 1.4.1 (CERNLIB
 # random-number routines replaced by src/common/ucmuon_rng.f90, which makes MUSIC
 # about 30 % faster with identical output). Supersedes engine_timing_20261016.csv,

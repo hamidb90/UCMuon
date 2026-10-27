@@ -1,10 +1,10 @@
 $====================================================================
 $  muon_rock.inp — PHITS Benchmark: Cosmic Muon Propagation in Rock
-$  Companion to Geant4_MuonRock_v5  |  PHITS 3.24+ (3.36 recommended)
+$  Companion to Geant4_MuonRock_v5  |  PHITS 3.37
 $====================================================================
 $
-$  Geometry   : 50 m × 50 m × 200 m standard rock  ρ = 2.65 g/cm³
-$               Z_eff = 11, A_eff = 22  (identical to Geant4 G4_STANDARD_ROCK)
+$  Geometry   : 2 km × 2 km × 200 m standard rock  ρ = 2.65 g/cm³
+$               Z = 11, A = 22 (22Na), as the Geant4 benchmark's Standard Rock
 $  Scoring    : 6 planes at 100, 1000, 2500, 5000, 10000, 20000 cm depth
 $  Physics    : muon ionisation (always on) + ibad=1 (brem + pair prod)
 $               + iphot=1 (photo-nuclear) — mirrors Geant4 FTFP_BERT
@@ -16,7 +16,7 @@ $  z = 0       : rock entry surface (top face)
 $  z < 0       : increasing depth into rock (z = -20000 cm = bottom, 200 m)
 $  Muons travel in the -z direction (direction cosine w < 0)
 $  Same convention as Geant4 (−z downward). Dump file col 7 (w) < 0.
-$  x, y : ±2500 cm (±25 m) — same as Geant4.
+$  x, y : rock ±100000 cm (±1 km), as Geant4 (-xy 100000); source ±25 m.
 $
 $  ── QUICK START ──────────────────────────────────────────────────────
 $  Step 1 — convert the Geant4 source file:
@@ -37,7 +37,7 @@ $      python3 benchmark_analysis.py outputs/ --phits phits/ --outdir phits_vs_g
 $====================================================================
 $OMP=10
 [ Title ]
- Cosmic Muon in Standard Rock 50x50x200 m — Geant4 MuonRock_v5 benchmark
+ Cosmic Muon in Standard Rock 2x2 km x 200 m — Geant4 MuonRock_v5 benchmark
 
    [ Parameters ]
     $ ===========================================================================
@@ -45,7 +45,7 @@ $OMP=10
     $ ===========================================================================
     icntl   = 0              $ Normal transport calculation
     maxcas  = 60000          $ Particles per batch (reads dump file sequentially)
-    maxbch  = 10             $ 10 batches × 10000 = 100000 total muons from dump
+    maxbch  = 10             $ 10 batches × 60000 = 600000 total muons from dump
     istdev  = 1              $ Statistical uncertainty from batch variance
     itall   = 1              $ Write tally after every batch
     italsh  = 0              $ Do not share tally variables (single-threaded safe)
@@ -140,6 +140,8 @@ $OMP=10
     [Source]
     s-type = 17
     file   = benchmark_phits.dat
+    idmpmode = 0             $ every record an independent muon (3.37 defaults to 1)
+    dmpmulti = 0.0           $ one pass: maxcas*maxbch equals the record count
     dump   = -10
     1 2 3 4 5 6 7 8 9 10
 
@@ -253,17 +255,23 @@ $ wgt     = 0.560
 
 
 [ Material ]
-    MAT[1]  Mg    -0.750   O     -0.250  
+$  Standard Rock as near as PHITS allows: one nuclide 22Na gives Z/A = 0.5
+$  and Standard Rock's Z^2/A (radiative losses); ATIMA then uses sodium's
+$  I = 149 eV (PHITS sets I only for water), about 0.7 % less ionisation
+$  than I = 136.4 eV. Up to UCMuon 1.4.1 this was Mg -0.75 O -0.25
+$  (mass fractions, Z/A = 0.495).
+    MAT[1]  22Na  1.0
 
 
 $====================================================================
 [ Surface ]
 $====================================================================
-$  Lateral walls of the rock slab (same ±25 m as Geant4)
-  1    px  -2500.0        $ left face   x = −25 m
-  2    px   2500.0        $ right face  x = +25 m
-  3    py  -2500.0        $ front face  y = −25 m
-  4    py   2500.0        $ back face   y = +25 m
+$  Lateral walls of the rock slab (widened to ±1000 m to match Geant4 — avoids
+$  side-wall leakage of wide-angle muons before they reach deep scoring planes)
+  1    px  -100000.0      $ left face   x = −1000 m
+  2    px   100000.0      $ right face  x = +1000 m
+  3    py  -100000.0      $ front face  y = −1000 m
+  4    py   100000.0      $ back face   y = +1000 m
 $
 $  Depth planes — z = 0 is entry; z < 0 is deeper (Geant4 convention: -z downward)
   5    pz      0.0        $ rock entry surface  z =       0 cm  ( 0.00 m.w.e.)
@@ -275,7 +283,7 @@ $  Depth planes — z = 0 is entry; z < 0 is deeper (Geant4 convention: -z downw
   6    pz -20000.0        $ rock bottom / sp 6  z =  -20000 cm  (530.0 m.w.e.)
 $
 $  World boundary (must surround all geometry)
-  99   so   50000.0       $ sphere R = 500 m; particles exiting here are killed
+  99   so   200000.0      $ sphere R = 2000 m; contains widened ±1000 m × 200 m slab
 
 $====================================================================
 [ Cell ]
@@ -289,7 +297,7 @@ $    −surface_n → region on the "more negative" side of the plane
 $  For pz d: +s means z > d, −s means z < d.
 $  For px d: +s means x > d, −s means x < d.
 $
-$  Rock boundaries (all layers): +1(x>-2500) -2(x<2500) +3(y>-2500) -4(y<2500)
+$  Rock boundaries (all layers): +1(x>-1e5) -2(x<1e5) +3(y>-1e5) -4(y<1e5)
 $
 $  Layer 1:   -100 < z < 0 cm   (0–1 m)
   1   1 -2.65    +1 -2 +3 -4  -5  +11
@@ -387,7 +395,7 @@ $──────────────────────────�
   mesh   = r-z
   r-type = 1
   nr     = 1
-  0.  2500.
+  0.  100000.
   z-type = 1
   nz     = 6
   -20000.  -10000.  -5000.  -2500.  -1000.  -100.  0.
@@ -482,12 +490,12 @@ $──────────────────────────�
   mesh   = xyz
   x-type = 2
   nx     = 100
-  xmin   = -2500.
-  xmax   = 2500.
+  xmin   = -100000.
+  xmax   = 100000.
   y-type = 2
   ny     = 100
-  ymin   = -2500.
-  ymax   = 2500.
+  ymin   = -100000.
+  ymax   = 100000.
   z-type = 1
   nz     = 1
   -20000.  -19999.
@@ -508,12 +516,12 @@ $──────────────────────────�
   mesh   = xyz
   x-type = 2
   nx     = 50
-  xmin   = -2500.
-  xmax   = 2500.
+  xmin   = -100000.
+  xmax   = 100000.
   y-type = 2
   ny     = 50
-  ymin   = -2500.
-  ymax   = 2500.
+  ymin   = -100000.
+  ymax   = 100000.
   z-type = 1
   nz     = 1
   -100.  -99.
