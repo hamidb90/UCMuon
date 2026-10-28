@@ -4,8 +4,7 @@
 #  MIT License 2026
 #
 #  Targets:
-#    make / make all                  build everything available
-#    make local                       OMP-only binaries  (macOS / Linux GUI)
+#    make / make all / make local     OMP-only binaries  (macOS / Linux / Windows GUI)
 #    make hpc                         MPI+OMP binaries   (Lemaitre4 / CECI)
 #    make data-links                  create MUSIC table symlinks in bin/
 #    make clean                       remove build/
@@ -81,6 +80,7 @@ $(shell mkdir -p $(BUILD) $(BIN))
 #  Object lists
 # ---------------------------------------------------------------------------
 COMMON_OBJS = \
+    $(BUILD)/input_module.o         \
     $(BUILD)/geom_module_omp.o      \
     $(BUILD)/phits_module_omp.o     \
     $(BUILD)/rng_parallel.o         \
@@ -122,7 +122,9 @@ endif
 .PHONY: ucmuon_gen ucmuon_transport_music ucmuon_transport_bb ucmuon_to_phits
 .PHONY: ucmuon_transport_pumas
 
-all: local hpc
+# The default needs no MPI compiler (up to 1.4.1 it also built hpc, so a plain
+# `make` failed without mpif90).
+all: local
 
 local: data-links $(LOCAL_TARGETS)
 	@$(MAKE) --no-print-directory music-status
@@ -231,6 +233,9 @@ endif
 # ---------------------------------------------------------------------------
 #  Object compilation (unchanged)
 # ---------------------------------------------------------------------------
+$(BUILD)/input_module.o: input_module.f90
+	$(FC) $(FFLAGS_OMP) -c $< -o $@
+
 $(BUILD)/geom_module_omp.o: geom_module.f90
 	$(FC) $(FFLAGS_OMP) -c $< -o $@
 
@@ -252,7 +257,7 @@ $(BUILD)/parma_subroutines.o: parma_subroutines.f90 $(BUILD)/parma_path_module.o
 $(BUILD)/parma_stub.o: parma_stub.f90
 	$(FC) $(FFLAGS_PARMA) -c $< -o $@
 
-$(BUILD)/ucmuon_gen_omp.o: ucmuon_gen_omp.f90 \
+$(BUILD)/ucmuon_gen_omp.o: ucmuon_gen_omp.f90 $(BUILD)/input_module.o \
     $(BUILD)/geom_module_omp.o $(BUILD)/phits_module_omp.o \
     $(BUILD)/rng_parallel.o    $(BUILD)/ucmuon_source_module.o \
     $(BUILD)/parma_path_module.o
@@ -261,7 +266,7 @@ $(BUILD)/ucmuon_gen_omp.o: ucmuon_gen_omp.f90 \
 $(BUILD)/ucmuon_transport_bb_omp.o: ucmuon_transport_bb_omp.f90
 	$(FC) $(FFLAGS_OMP) -c $< -o $@
 
-$(BUILD)/ucmuon_gen.o: ucmuon_gen.f90 \
+$(BUILD)/ucmuon_gen.o: ucmuon_gen.f90 $(BUILD)/input_module.o \
     $(BUILD)/geom_module_omp.o $(BUILD)/phits_module_omp.o \
     $(BUILD)/rng_parallel.o    $(BUILD)/ucmuon_source_module.o \
     $(BUILD)/parma_path_module.o

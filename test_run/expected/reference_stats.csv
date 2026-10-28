@@ -1,0 +1,8 @@
+# Reference statistics of the test run: written by test_run/grade.py --write-reference from the run made by test_run/make_reference.sh.
+statistic,value,error
+mean_log10_E,1.0614434,0.0006669
+charge_ratio,1.2525313,0.005637
+mean_cos_theta,0.76020179,0.0003355
+live_time_ms,1.2237705,0.002733
+survival_pct,20.5155,0.0903
+mean_exit_KE_GeV,20.394054,0.2079

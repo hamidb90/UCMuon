@@ -165,7 +165,7 @@ See [`hpc/README_HPC.md`](hpc/README_HPC.md) for the full cluster workflow: MPI 
 bash test_run/run_test.sh
 ```
 
-Runs the full two-stage pipeline (surface generator, then UCMuon-MC transport) on a seeded 2000-muon configuration in a few seconds and grades the result against the reference output committed in `test_run/expected/`: 568 of 2000 muons survive 25 m of Standard Rock (28.40 %), with a mean exit kinetic energy of 13.655 GeV. Grading is numerical, since a different compiler can move the last bits of a double without anything being wrong; byte identity is reported as well when it holds. The transport stage is pure Python, so without a Fortran compiler the script falls back to the committed surface file and still checks stage 2.
+Runs the full two-stage pipeline in about 15 seconds: the surface generator with joint sampling (angular mode 6) and a detector acceptance cut keeps 10⁴ muons aimed at a detector 25 m underground and reports their live time, and UCMuon-MC transports them through 25 m of Standard Rock (about 20 % survive). Six statistics (mean log E, μ⁺/μ⁻, mean cos θ, live time per muon, survival fraction, mean exit energy) must lie within 4σ of a reference run 20 times larger (`test_run/expected/reference_stats.csv`), so the test passes on any platform and random stream that is statistically equivalent; byte identity with the reference platform's output is reported as well. The transport stage is pure Python, so without a Fortran compiler the script uses the committed selected muons and still checks stage 2. See `test_run/README.md`.
 
 ---
 

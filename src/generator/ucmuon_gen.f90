@@ -49,6 +49,7 @@ program ucmuon_gen
   use rng_parallel
   use omp_lib
   use parma_path          ! configurable PARMA data directory
+  use input_module        ! named reads and range checks of the input
   implicit none
 
   !---------------------------------------------------------------------------
@@ -214,6 +215,7 @@ program ucmuon_gen
   call MPI_Init(ierr)
   call MPI_Comm_rank(MPI_COMM_WORLD, my_rank, ierr)
   call MPI_Comm_size(MPI_COMM_WORLD, nranks, ierr)
+  input_abort => abort_all_ranks   ! an input error on rank 0 stops every rank
 
   !===========================================================================
   ! BANNER  (rank 0 only)
@@ -241,7 +243,9 @@ program ucmuon_gen
     write(*,*) '   Defaults: E=100-2500 GeV, R=800 m, N=100000'
     write(*,*) '             Angular: cos^2(theta), theta_max=85 deg'
     write(*,*) '             No detector filter, no PHITS output'
-    read(*,*) use_defaults
+    call get_int('use_defaults', use_defaults)
+    call need(use_defaults == 0 .or. use_defaults == 1, &
+                'use_defaults must be 0 or 1, not ' // i2s(use_defaults))
     write(*,*)
 
     if (use_defaults == 1) then
@@ -272,9 +276,12 @@ program ucmuon_gen
 
       write(*,*) ' --- [1/7] Energy Range ---'
       write(*,*) ' Min muon energy [GeV]  (e.g. 100):'
-      read(*,*) e_min
+      call get_real('e_min', e_min)
+      call need(e_min > 0.0d0, 'e_min must be positive, not ' // r2s(e_min))
       write(*,*) ' Max muon energy [GeV]  (e.g. 2500):'
-      read(*,*) e_max
+      call get_real('e_max', e_max)
+      call need(e_max > e_min, 'e_max (' // r2s(e_max) // ' GeV) must be above e_min (' // &
+                    r2s(e_min) // ' GeV)')
       write(*,*)
 
       write(*,*) ' --- [2/7] Spectrum Model ---'
@@ -286,31 +293,39 @@ program ucmuon_gen
       write(*,*) '   6 = Gaisser (1990), Guan Eq. 3 with a = 0, b = 1'
       write(*,*) '   7 = Reyna (2006)  cos^3(theta) I_V(p cos(theta))'
       write(*,*) '   8 = Cosmic electrons  dN/dE ~ E^-3.0 (no absolute normalisation)'
-      read(*,*) spectrum_mode_in
-      if (spectrum_mode_in < 1 .or. spectrum_mode_in > 8) spectrum_mode_in = 1
+      call get_int('spectrum_mode', spectrum_mode_in)
+      call need(spectrum_mode_in >= 1 .and. spectrum_mode_in <= 8, &
+                    'spectrum_mode must be 1 to 8, not ' // i2s(spectrum_mode_in))
       write(*,*)
 
       if (spectrum_mode_in == 3) then
         write(*,*) ' --- [2b/7] PARMA Location & Date ---'
         write(*,*) ' Latitude  [deg, -90 to +90]:'
-        read(*,*) parma_lat
+        call get_real('parma_lat', parma_lat)
+        call need(abs(parma_lat) <= 90.0d0, 'the PARMA latitude must be -90 to 90 deg, not ' // r2s(parma_lat))
         write(*,*) ' Longitude [deg, -180 to +180]:'
-        read(*,*) parma_lon
+        call get_real('parma_lon', parma_lon)
+        call need(abs(parma_lon) <= 360.0d0, 'the PARMA longitude must be -360 to 360 deg, not ' // r2s(parma_lon))
         write(*,*) ' Altitude  [km, 0 = sea level]:'
-        read(*,*) parma_alt_km
+        call get_real('parma_alt_km', parma_alt_km)
         write(*,*) ' Year  (e.g. 2026):'
-        read(*,*) parma_year
+        call get_int('parma_year', parma_year)
         write(*,*) ' Month (1-12):'
-        read(*,*) parma_month
+        call get_int('parma_month', parma_month)
+        call need(parma_month >= 1 .and. parma_month <= 12, 'the PARMA month must be 1 to 12, not ' // &
+                        i2s(parma_month))
         write(*,*) ' Day   (1-31):'
-        read(*,*) parma_day
+        call get_int('parma_day', parma_day)
+        call need(parma_day >= 1 .and. parma_day <= 31, 'the PARMA day must be 1 to 31, not ' // i2s(parma_day))
         write(*,*) ' Muon charge selection:  0=both   1=mu+ only   -1=mu- only'
-        read(*,*) parma_charge_mode
+        call get_int('parma_charge_mode', parma_charge_mode)
+        call need(abs(parma_charge_mode) <= 1, &
+                        'the PARMA charge selection must be -1, 0 or 1, not ' // i2s(parma_charge_mode))
         write(*,*) ' Path to PARMA data directory:'
-        read(*,'(A)') parma_datapath
+        call get_str('parma_datapath', parma_datapath)
         if (len_trim(parma_datapath) == 0) parma_datapath = '.'
         write(*,*) ' W index (0=solar min, ~150=solar max; <= -999 = from the date):'
-        read(*,*) parma_s_W
+        call get_real('parma_s_W', parma_s_W)
         write(*,*)
       end if
 
@@ -318,8 +333,9 @@ program ucmuon_gen
       write(*,*) '   1 = Circular disk  (center + radius)'
       write(*,*) '   2 = Rectangle      (bounding box)'
       write(*,*) '   3 = Hemisphere     (radius R, XY plane only)'
-      read(*,*) source_mode
-      if (source_mode < 1 .or. source_mode > 3) source_mode = 1
+      call get_int('source_mode', source_mode)
+      call need(source_mode >= 1 .and. source_mode <= 3, &
+                    'source_mode must be 1 to 3, not ' // i2s(source_mode))
       write(*,*)
 
       source_plane    = 1
@@ -332,75 +348,83 @@ program ucmuon_gen
         write(*,*) '   1 = XY  (horizontal, z=const, muons travel in -Z)'
         write(*,*) '   2 = XZ  (vertical,   y=const, muons travel in -Y)'
         write(*,*) '   3 = YZ  (vertical,   x=const, muons travel in -X)'
-        read(*,*) source_plane
-        if (source_plane < 1 .or. source_plane > 3) source_plane = 1
+        call get_int('source_plane', source_plane)
+        call need(source_plane >= 1 .and. source_plane <= 3, &
+                      'source_plane must be 1 to 3, not ' // i2s(source_plane))
         write(*,*)
 
         if (source_mode == 1) then
           ! Disk: center + radius
           write(*,*) ' Disk center U [m]  (0 = centred):'
-          read(*,*) src_disk_cx_m
+          call get_real('src_disk_cx_m', src_disk_cx_m)
           write(*,*) ' Disk center V [m]  (0 = centred):'
-          read(*,*) src_disk_cy_m
+          call get_real('src_disk_cy_m', src_disk_cy_m)
           write(*,*) ' Disk radius [m]:'
-          read(*,*) src_disk_r_m
-          if (src_disk_r_m <= 0.0d0) src_disk_r_m = 1.0d0
+          call get_real('src_disk_r_m', src_disk_r_m)
+          call need(src_disk_r_m > 0.0d0, 'the disk radius must be positive, not ' // r2s(src_disk_r_m))
           write(*,*) ' Fixed W [m]  (0 = surface):'
-          read(*,*) src_w_m
+          call get_real('src_w_m', src_w_m)
           write(*,*) ' Tilt angle from plane normal [deg]  (0 = no tilt):'
-          read(*,*) src_tilt_deg
+          call get_real('src_tilt_deg', src_tilt_deg)
+          call need(src_tilt_deg >= 0.0d0 .and. src_tilt_deg < 90.0d0, &
+                          'the tilt angle must be 0 to below 90 deg, not ' // r2s(src_tilt_deg))
           write(*,*) ' Tilt azimuth [deg]  (0 = toward U axis):'
-          read(*,*) src_tilt_az_deg
+          call get_real('src_tilt_az_deg', src_tilt_az_deg)
         else
           ! Rectangle: bounding box
           if (source_plane == 1) then
             write(*,*) ' X range: Xmin [m]:'
-            read(*,*) src_u1_m
+            call get_real('src_u1_m', src_u1_m)
             write(*,*) ' X range: Xmax [m]:'
-            read(*,*) src_u2_m
+            call get_real('src_u2_m', src_u2_m)
             write(*,*) ' Y range: Ymin [m]:'
-            read(*,*) src_v1_m
+            call get_real('src_v1_m', src_v1_m)
             write(*,*) ' Y range: Ymax [m]:'
-            read(*,*) src_v2_m
+            call get_real('src_v2_m', src_v2_m)
             write(*,*) ' Fixed Z [m]  (0 = surface):'
-            read(*,*) src_w_m
+            call get_real('src_w_m', src_w_m)
           else if (source_plane == 2) then
             write(*,*) ' X range: Xmin [m]:'
-            read(*,*) src_u1_m
+            call get_real('src_u1_m', src_u1_m)
             write(*,*) ' X range: Xmax [m]:'
-            read(*,*) src_u2_m
+            call get_real('src_u2_m', src_u2_m)
             write(*,*) ' Z range: Zmin [m]:'
-            read(*,*) src_v1_m
+            call get_real('src_v1_m', src_v1_m)
             write(*,*) ' Z range: Zmax [m]:'
-            read(*,*) src_v2_m
+            call get_real('src_v2_m', src_v2_m)
             write(*,*) ' Fixed Y [m]:'
-            read(*,*) src_w_m
+            call get_real('src_w_m', src_w_m)
           else
             write(*,*) ' Y range: Ymin [m]:'
-            read(*,*) src_u1_m
+            call get_real('src_u1_m', src_u1_m)
             write(*,*) ' Y range: Ymax [m]:'
-            read(*,*) src_u2_m
+            call get_real('src_u2_m', src_u2_m)
             write(*,*) ' Z range: Zmin [m]:'
-            read(*,*) src_v1_m
+            call get_real('src_v1_m', src_v1_m)
             write(*,*) ' Z range: Zmax [m]:'
-            read(*,*) src_v2_m
+            call get_real('src_v2_m', src_v2_m)
             write(*,*) ' Fixed X [m]:'
-            read(*,*) src_w_m
+            call get_real('src_w_m', src_w_m)
           end if
-          if (src_u2_m <= src_u1_m) src_u2_m = src_u1_m + 1.0d0
-          if (src_v2_m <= src_v1_m) src_v2_m = src_v1_m + 1.0d0
+          call need(src_u2_m > src_u1_m, 'the rectangle''s first range is empty: ' // &
+                         r2s(src_u1_m) // ' to ' // r2s(src_u2_m))
+          call need(src_v2_m > src_v1_m, 'the rectangle''s second range is empty: ' // &
+                         r2s(src_v1_m) // ' to ' // r2s(src_v2_m))
           write(*,*) ' Tilt angle from plane normal [deg]  (0 = no tilt):'
-          read(*,*) src_tilt_deg
+          call get_real('src_tilt_deg', src_tilt_deg)
+          call need(src_tilt_deg >= 0.0d0 .and. src_tilt_deg < 90.0d0, &
+                          'the tilt angle must be 0 to below 90 deg, not ' // r2s(src_tilt_deg))
           write(*,*) ' Tilt azimuth [deg]  (0 = toward U axis):'
-          read(*,*) src_tilt_az_deg
+          call get_real('src_tilt_az_deg', src_tilt_az_deg)
         end if
 
       else
         ! Hemisphere — radius + centre z
         write(*,*) ' Hemisphere radius [meters]:'
-        read(*,*) hemi_radius_m
+        call get_real('hemi_radius_m', hemi_radius_m)
+        call need(hemi_radius_m > 0.0d0, 'the hemisphere radius must be positive, not ' // r2s(hemi_radius_m))
         write(*,*) ' Hemisphere centre Z [meters]  (0 = surface):'
-        read(*,*) hemi_cz_m
+        call get_real('hemi_cz_m', hemi_cz_m)
         src_u1_m = 0.0d0;  src_u2_m = 0.0d0
         src_v1_m = 0.0d0;  src_v2_m = 0.0d0
         src_w_m  = hemi_cz_m
@@ -414,25 +438,31 @@ program ucmuon_gen
       write(*,*) '   4 = Guan/Frosin self-consistent P(theta|E)'
       write(*,*) '   5 = cos^3(theta)  Reyna-Bugaev / cosmic electrons'
       write(*,*) '   6 = Joint J(p,theta) x surface projection  [recommended]'
-      read(*,*) angular_mode
+      call get_int('angular_mode', angular_mode)
       ! Modes 5 and 6 were missing here before the 2026-09 audit: mode 5 was
       ! silently replaced by 2 in MPI runs.
-      if (angular_mode < 1 .or. angular_mode > 6) angular_mode = 2
+      call need(angular_mode >= 1 .and. angular_mode <= 6, &
+                    'angular_mode must be 1 to 6, not ' // i2s(angular_mode))
       theta_max = 0d0
       if (angular_mode >= 2) then
         write(*,*) ' Max zenith angle [degrees]  (e.g. 85):'
-        read(*,*) theta_max_deg
+        call get_real('theta_max', theta_max_deg)
+        call need(theta_max_deg > 0.0d0 .and. theta_max_deg <= 90.0d0, &
+                        'theta_max must be above 0 and at most 90 deg, not ' // r2s(theta_max_deg))
         theta_max = theta_max_deg * PI / 180d0
       end if
       write(*,*)
 
       write(*,*) ' --- [5/7] Number of Muons ---'
-      read(*,*) nmuons
+      call get_int('nmuons', nmuons)
+      call need(nmuons >= 1, 'nmuons must be at least 1, not ' // i2s(nmuons))
       write(*,*)
 
       write(*,*) ' --- [6/7] Detector Filter ---'
       write(*,*) ' Enable detector filter? (1=Yes, 0=No)'
-      read(*,*) use_detector
+      call get_int('use_detector', use_detector)
+      call need(use_detector == 0 .or. use_detector == 1, &
+                    'use_detector must be 0 or 1, not ' // i2s(use_detector))
       write(*,*)
 
       ndet          = 0
@@ -441,31 +471,53 @@ program ucmuon_gen
 
       if (use_detector == 1) then
         write(*,'(A,I2,A)') ' How many detectors? (1 to ', MAX_DET, ')'
-        read(*,*) ndet
-        if (ndet < 1)       ndet = 1
-        if (ndet > MAX_DET) ndet = MAX_DET
+        call get_int('ndet', ndet)
+        call need(ndet >= 1 .and. ndet <= MAX_DET, &
+                      'the number of detectors must be 1 to ' // i2s(MAX_DET) // ', not ' // i2s(ndet))
         do i_det = 1, ndet
           write(*,'(A,I2,A,I2,A)') ' --- Detector [', i_det, '/', ndet, '] ---'
           write(*,*) ' Shape:  1=Cylinder   2=Box (AABB)'
-          read(*,*) det_shape_arr(i_det)
+          call get_int('detector shape', det_shape_arr(i_det))
+          call need(det_shape_arr(i_det) == 1 .or. det_shape_arr(i_det) == 2, &
+                          'detector ' // i2s(i_det) // ': the shape must be 1 or 2, not ' // &
+                          i2s(det_shape_arr(i_det)))
           write(*,*) ' Safety margin [cm]  (0=exact):'
-          read(*,*) safety_margin
+          call get_real('detector safety margin', safety_margin)
+          call need(safety_margin >= 0.0d0, 'detector ' // i2s(i_det) // &
+                          ': the safety margin cannot be negative, not ' // r2s(safety_margin))
           if (det_shape_arr(i_det) == 1) then
             write(*,*) ' Bottom axis Ax Ay Az [cm]:'
-            read(*,*) det_cyl_arr(i_det)%ax, det_cyl_arr(i_det)%ay, det_cyl_arr(i_det)%az
+            call get_real3('detector cylinder bottom axis point Ax Ay Az', &
+                           det_cyl_arr(i_det)%ax, det_cyl_arr(i_det)%ay, det_cyl_arr(i_det)%az)
             write(*,*) ' Top axis Bx By Bz [cm]:'
-            read(*,*) det_cyl_arr(i_det)%bx, det_cyl_arr(i_det)%by, det_cyl_arr(i_det)%bz
+            call get_real3('detector cylinder top axis point Bx By Bz', &
+                           det_cyl_arr(i_det)%bx, det_cyl_arr(i_det)%by, det_cyl_arr(i_det)%bz)
             write(*,*) ' Radius [cm]:'
-            read(*,*) det_cyl_arr(i_det)%r
+            call get_real('detector cylinder radius', det_cyl_arr(i_det)%r)
+            call need(det_cyl_arr(i_det)%r > 0.0d0, 'detector ' // i2s(i_det) // &
+                              ': the cylinder radius must be positive, not ' // r2s(det_cyl_arr(i_det)%r))
+            call need(det_cyl_arr(i_det)%ax /= det_cyl_arr(i_det)%bx .or. &
+                              det_cyl_arr(i_det)%ay /= det_cyl_arr(i_det)%by .or. &
+                              det_cyl_arr(i_det)%az /= det_cyl_arr(i_det)%bz, &
+                              'detector ' // i2s(i_det) // ': the cylinder axis has zero length')
             det_cyl_arr(i_det)%margin = safety_margin
             det_cyl_arr(i_det)%caps   = .true.
           else
             write(*,*) ' Xmin Xmax [cm]:'
-            read(*,*) det_box_arr(i_det)%xmin, det_box_arr(i_det)%xmax
+            call get_real2('detector box xmin xmax', &
+                           det_box_arr(i_det)%xmin, det_box_arr(i_det)%xmax)
+            call need(det_box_arr(i_det)%xmax > det_box_arr(i_det)%xmin, &
+                      'detector ' // i2s(i_det) // ': the box''s x range is empty')
             write(*,*) ' Ymin Ymax [cm]:'
-            read(*,*) det_box_arr(i_det)%ymin, det_box_arr(i_det)%ymax
+            call get_real2('detector box ymin ymax', &
+                           det_box_arr(i_det)%ymin, det_box_arr(i_det)%ymax)
+            call need(det_box_arr(i_det)%ymax > det_box_arr(i_det)%ymin, &
+                      'detector ' // i2s(i_det) // ': the box''s y range is empty')
             write(*,*) ' Zmin Zmax [cm]:'
-            read(*,*) det_box_arr(i_det)%zmin, det_box_arr(i_det)%zmax
+            call get_real2('detector box zmin zmax', &
+                           det_box_arr(i_det)%zmin, det_box_arr(i_det)%zmax)
+            call need(det_box_arr(i_det)%zmax > det_box_arr(i_det)%zmin, &
+                      'detector ' // i2s(i_det) // ': the box''s z range is empty')
             det_box_arr(i_det)%margin = safety_margin
           end if
         end do
@@ -473,14 +525,17 @@ program ucmuon_gen
 
       write(*,*) ' --- [7/7] Output ---'
       write(*,*) ' Save ALL muons? (1=Yes, 0=No)'
-      read(*,*) save_all
+      call get_int('save_all', save_all)
+      call need(save_all == 0 .or. save_all == 1, 'save_all must be 0 or 1, not ' // i2s(save_all))
+      call need(save_all == 1 .or. use_detector == 1, &
+                    'nothing to write: save_all = 0 and no detector filter')
       save_phits = 0   ! PHITS output removed from hot loop — use ucmuon_to_phits
       write(*,*) ' Output filename for surface muons (Enter = ucmuon_surface.dat):'
-      read(*,'(A)') output_all
+      call get_str('output_all', output_all)
       if (len_trim(output_all) == 0) output_all = 'ucmuon_surface.dat'
       if (use_detector == 1) then
         write(*,*) ' Selected muons filename (Enter = ucmuon_selected.dat):'
-        read(*,'(A)') output_sel
+        call get_str('output_sel', output_sel)
         if (len_trim(output_sel) == 0) output_sel = 'ucmuon_selected.dat'
       end if
       output_phits = 'ucmuon_phits.dat'   ! unused — converter handles this
@@ -1393,6 +1448,13 @@ program ucmuon_gen
 
   !=============================================================================
 contains
+
+  ! Called by input_module when rank 0 finds an input error: the other ranks
+  ! are waiting in MPI_Bcast and would otherwise hang.
+  subroutine abort_all_ranks()
+    integer :: ierr_abort
+    call MPI_Abort(MPI_COMM_WORLD, 2, ierr_abort)
+  end subroutine abort_all_ranks
 
   !---------------------------------------------------------------------------
   ! sample_position — thread-safe position sampler (uses par_ranlux)

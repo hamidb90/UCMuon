@@ -15,6 +15,8 @@ on:
       - 'gui/mcs_margin.py'
       - 'benchmark/analysis/mcs_thick_target.py'
       - 'src/generator/**'
+      - 'tests/flux/test_input_validation.py'
+      - 'hpc/input_params.dat'
       - 'src/transport/**'
       - 'src/common/**'
       - 'tests/transport/**'
@@ -32,6 +34,8 @@ on:
       - 'gui/mcs_margin.py'
       - 'benchmark/analysis/mcs_thick_target.py'
       - 'src/generator/**'
+      - 'tests/flux/test_input_validation.py'
+      - 'hpc/input_params.dat'
       - 'src/transport/**'
       - 'src/common/**'
       - 'tests/transport/**'
@@ -67,7 +71,7 @@ jobs:
       - name: Stage 1 is reported as skipped, not as a pass
         run: |
           bash test_run/run_test.sh | tee out.txt
-          grep -q "not checked: muons_surface.dat" out.txt
+          grep -q "not checked: muons_selected.dat" out.txt
       - name: Consistency checks
         run: python3 tools/check_consistency.py --fast --public .
 
@@ -91,7 +95,9 @@ jobs:
         run: |
           bash test_run/run_test.sh | tee out.txt
           grep -q "RESULT: PASS" out.txt
-          grep -q "wrote test_run/output/muons_surface.dat" out.txt
+          grep -q "wrote test_run/output/muons_selected.dat" out.txt
+      - name: The generator rejects invalid input (exit status 2, a message)
+        run: python3 tests/flux/test_input_validation.py
       - name: Transport engine fixes after 1.3.2 (Bethe-Bloch water, pencil beams)
         run: |
           make ucmuon_transport_bb_omp
@@ -110,3 +116,29 @@ jobs:
         run: |
           python3 -m pip install pytest
           python3 -m pytest tests/rng -q -p no:cacheprovider
+
+  mpi:
+    name: ubuntu-latest / MPI generator, 2 ranks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install gfortran and Open MPI
+        run: sudo apt-get update && sudo apt-get install -y gfortran libopenmpi-dev openmpi-bin
+      - name: Build the MPI generator
+        run: |
+          make ucmuon_gen
+          test -x bin/ucmuon_gen
+      - name: hpc/input_params.dat on 2 ranks (2000 muons), and an invalid input stops both
+        run: |
+          mkdir run && cd run
+          strip() { sed 's/#.*//' "$1" | sed 's/[[:space:]]*$//' | grep -v '^$'; }
+          strip ../hpc/input_params.dat | sed 's/^100000$/2000/' > ok.txt
+          UCMUON_SEED=5 OMP_NUM_THREADS=1 mpirun -n 2 --oversubscribe ../bin/ucmuon_gen < ok.txt > ok.log
+          for f in ucmuon_selected_00000.dat ucmuon_selected_00001.dat; do
+            test "$(grep -vc '^#' "$f")" -eq 1000
+          done
+          sed '13s/.*/9/' ok.txt > bad.txt          # angular_mode 9
+          if mpirun -n 2 --oversubscribe ../bin/ucmuon_gen < bad.txt > bad.log 2>&1; then
+            echo "invalid input was accepted"; exit 1
+          fi
+          grep -q "INPUT ERROR: angular_mode must be 1 to 6" bad.log

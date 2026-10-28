@@ -1,0 +1,3 @@
+# SHA-256 of the test run's output on the reference platform (make_reference.sh)
+983faa21f3c15dc5876e1ebd57eb46ddba8df62b6f723936c0bc25df8111aa97 muons_selected.dat
+b6ac829d6d11b13230488e74062c116c80a1558fc275950caeec90473896aa6a muons_underground.dat

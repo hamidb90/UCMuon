@@ -198,7 +198,7 @@ echo "[5/6] Checking source files..."
 
 MISS_GEN=0; MISS_BB=0; MISS_MUSIC=0
 
-for f in geom_module.f90 phits_module.f90 rng_parallel.f90 \
+for f in input_module.f90 geom_module.f90 phits_module.f90 rng_parallel.f90 \
           ucmuon_source_module.f90 ucmuon_gen_omp.f90; do
     [ -f "src/generator/$f" ] \
         && echo "  OK  src/generator/$f" \

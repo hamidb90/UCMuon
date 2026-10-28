@@ -3,17 +3,20 @@
 #
 #  Read by  bin/ucmuon_gen_omp  on standard input.  Comment and blank lines are
 #  stripped by run_test.sh before the file is piped in; the generator itself
-#  expects one bare value per line, in exactly this order.
+#  expects one bare value per line, in exactly this order (docs/GENERATOR_INPUT.md
+#  lists every parameter and its valid range).
 #
-#  Small on purpose: 2000 muons runs in about a second and still exercises the
-#  full sampling path.  Set UCMUON_SEED to make the run reproducible (run_test.sh
-#  sets it to 20260807).
+#  Joint sampling of momentum and direction through the source surface (angular
+#  mode 6) with a detector acceptance cut: only muons whose line passes within
+#  1 m of a cylindrical detector 25 m below the surface are kept, and the run
+#  reports the live time it represents.  10^4 selected muons out of about
+#  3.8 million tried, a few seconds.  run_test.sh sets UCMUON_SEED=20260807.
 # =============================================================================
 
 0                # use_defaults      0 = read the parameters below
-10.0             # e_min   [GeV]
+5.0              # e_min   [GeV]
 2500.0           # e_max   [GeV]
-1                # spectrum_mode     1 = CosmoALEPH (default model)
+4                # spectrum_mode     4 = Guan et al. (2015)
 1                # source_mode       1 = circular disk
 1                # source_plane      1 = XY, muons travel in -Z
 0.0              # disk centre U [m]
@@ -22,11 +25,17 @@
 0.0              # W fixed      [m]  (surface at z = 0)
 0.0              # tilt angle   [deg]
 0.0              # tilt azimuth [deg]
-2                # angular_mode      2 = cos^2(theta)
+6                # angular_mode      6 = joint J(p, theta) through the surface
 70.0             # theta_max    [deg]
-2000             # nmuons
-0                # use_detector      0 = no detector acceptance cut
-1                # save_all          1 = write every generated muon
+10000            # nmuons            muons to keep (selected by the detector cut)
+1                # use_detector      1 = detector acceptance cut on
+1                # ndet              one detector
+1                # shape             1 = cylinder
+100.0            # safety margin [cm] around the detector
+0.0 0.0 -2600.0  # cylinder bottom axis point Ax Ay Az [cm]
+0.0 0.0 -2500.0  # cylinder top axis point    Bx By Bz [cm]
+100.0            # cylinder radius [cm]
+0                # save_all          0 = write only the selected muons
 0                # save_phits        0 = no PHITS export
-test_run/output/muons_surface.dat        # surface output file
-
+test_run/output/muons_surface.dat        # surface output file (not written: save_all = 0)
+test_run/output/muons_selected.dat       # selected muons

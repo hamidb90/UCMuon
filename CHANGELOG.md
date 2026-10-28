@@ -325,6 +325,39 @@ elevation model). No simulated result changes.
   399x, MUSIC 134x, UCMuon-MC 46x, PROPOSAL 11x (realistic source: 636x, 387x,
   48x, 46x).
 
+### Test run and generator input
+- The surface generators check their input (`src/generator/input_module.f90`).
+  Every value is read with its name, so a missing or unreadable line stops the
+  run with a message naming the parameter, and a value out of range stops it
+  with a message and exit status 2; the MPI generator stops all its ranks. Up
+  to 1.4.1 bad values were replaced or accepted silently, with status 0: an
+  angular mode of 9 became 2, a spectrum mode out of range became 1, a disk
+  radius of 0 or less became 1 m, an empty rectangle range became 1 m wide,
+  e_min above e_max wrote every muon at e_min, a negative muon count wrote an
+  empty file, and a truncated input ended in a gfortran runtime error. Valid
+  input gives byte-identical output. Every parameter, in order, with its valid
+  range: `docs/GENERATOR_INPUT.md`; test: `tests/flux/test_input_validation.py`.
+- The test run is graded statistically and covers joint sampling, the detector
+  acceptance cut and the live time. Stage 1 now samples the Guan spectrum in
+  angular mode 6 and keeps the 10^4 muons aimed at a detector 25 m down (was
+  2000 muons in the legacy cos^2 mode, no detector); Stage 2 transports them
+  through 25 m. Six statistics (mean log E, mu+/mu- ratio, mean cos theta and
+  live time per muon of the selected muons, survival fraction and mean exit
+  energy) must lie within 4 sigma of a reference 20 times larger with other
+  seeds (`test_run/grade.py`, `make_reference.sh`); the old tolerances, a
+  quarter of a sigma, passed only on an identical random stream. Five runs
+  with other seeds pass (largest deviation 2.0 sigma), and rock 10 % denser
+  fails by 8.5 sigma. Byte identity with the reference platform's output is
+  still reported, not required. The committed reference keeps only the
+  selected muons, compressed (for running Stage 2 without a compiler), and the
+  SHA-256 of both outputs.
+- Continuous integration builds the MPI generator and runs it on 2 ranks, with
+  a valid input and an invalid one that must stop both; the generator's input
+  checks are tested on every change.
+- `make` (and `make all`) builds the OpenMP programs only, as `make local`;
+  it also built the MPI ones, so without `mpif90` a plain `make` failed. The
+  MPI programs: `make hpc`.
+
 ### Fixed
 - Engine timings re-measured with one process per engine
   (`benchmark/results/engine_timing_20261018.csv`, since superseded by
