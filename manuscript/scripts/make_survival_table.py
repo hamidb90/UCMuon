@@ -44,11 +44,29 @@ def geant4_survival():
     return out
 
 
+# Per-beam survival of every engine, shipped (the vertical runs are the theta = 0
+# rows of the inclined-beam record, benchmark/analysis/inclined_summary.py): read
+# when the raw .dat files are not there, which gives the same table.
+SHIPPED = Path(__file__).resolve().parent.parent.parent / "benchmark" / "results" / "inclined_beams_20261027.csv"
+CODE = {"BB": "Bethe-Bloch", "UCMuon": "UCMuon-MC", "MUSIC": "MUSIC", "PROPOSAL": "PROPOSAL"}
+
+
+def shipped_survival(engine, depth):
+    import csv
+    out = {}
+    with open(SHIPPED) as fh:
+        for r in csv.DictReader(line for line in fh if not line.startswith("#")):
+            if (r["code"] == CODE[engine] and float(r["theta_deg"]) == 0.0
+                    and int(r["L_m"]) == depth and r["beam_GeV"] != "all"):
+                out[float(r["beam_GeV"])] = float(r["survival_pct"])
+    return out or None
+
+
 def survival(engine, depth):
     """Return {E_GeV: survival_percent} for one engine/depth file, or None."""
     f = BENCH / engine / f"{engine}_bench_{depth}m.dat"
     if not f.exists():
-        return None
+        return shipped_survival(engine, depth) if SHIPPED.exists() else None
     n = defaultdict(int)
     a = defaultdict(int)
     with open(f) as fh:
@@ -116,7 +134,10 @@ def main():
           r"every cell but the first. Outside that cell the largest difference from "
           r"\geantfour{} (Standard Rock, a slab $\pm1$\,km wide) is "
           f"${vs_g4['UCMuon']:.2f}$ percentage points for UCMuon-MC, ${vs_g4['MUSIC']:.2f}$ "
-          f"for \\music{{}} and ${vs_g4['PROPOSAL']:.2f}$ for \\proposal{{}}.}}")
+          f"for \\music{{}} and ${vs_g4['PROPOSAL']:.2f}$ for \\proposal{{}}. "
+          r"The muons that do not pass stop or decay in the rock (none leaves the "
+          r"slab), and \phits{} has no column because its tallies sum over the "
+          r"six beams.}")
     print(r"\label{tab:survival_matrix}")
     print(r"\begin{tabular}{rrc" + "c" * len(ENGINES) + "c}")
     print(r"\toprule")

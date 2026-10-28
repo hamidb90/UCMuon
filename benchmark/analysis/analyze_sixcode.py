@@ -9,7 +9,7 @@ Combines:
     (prefix of its _muons.csv), e.g. run_stdrock_20261019_realistic; up to
     UCMuon 1.4.1 the script took the most recent run_file_*_muons.csv in
     benchmark/geant4_muon_rock_v5/outputs/
-  - PHITS  (tally summary):          phits/phits_summary.csv
+  - PHITS  (tally summary):          benchmark/codes/phits/phits_summary_realistic.csv
 
 Geant4 is the external reference column (deltas computed vs it).
 Produces benchmark_sixcode_summary.csv + survival/exit-KE figures.
@@ -27,7 +27,7 @@ import matplotlib.pyplot as plt
 REPO    = Path(__file__).resolve().parents[2]
 OUTDIR  = REPO / "benchmark" / "run_realistic_20260614"
 G4OUT   = REPO / "benchmark" / "geant4_muon_rock_v5" / "outputs"
-PHSUM   = REPO / "benchmark" / "geant4_muon_rock_v5" / "phits" / "phits_summary.csv"
+PHSUM   = REPO / "benchmark" / "codes" / "phits" / "phits_summary_realistic.csv"
 FIGDIR  = OUTDIR / "figures"; FIGDIR.mkdir(exist_ok=True)
 N_SRC   = 100000
 RHO     = 2.65

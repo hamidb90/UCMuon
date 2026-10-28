@@ -6,8 +6,8 @@ two independent external Monte Carlo references.
 
 | Code | Role | `codes/` folder |
 |------|------|-----------------|
-| **Geant4** 11.2 | external reference | `codes/geant4/` |
-| **PHITS** 3.36 | external reference | `codes/phits/` |
+| **Geant4** 11.4 | external reference | `codes/geant4/` |
+| **PHITS** 3.37 | external reference | `codes/phits/` |
 | **UCMuon-MC** (Engine 1, flagship) | UCMuon | `codes/ucmuon_stochastic/` |
 | **MUSIC** (Engine 2) | UCMuon | `codes/music/` |
 | **Bethe–Bloch** (Engine 3) | UCMuon | `codes/bethe_bloch/` |
@@ -22,13 +22,14 @@ two independent external Monte Carlo references.
 > Rock, slab +-1 km wide; `run_stdrock_20261019_mono` had the default +-25 m,
 > as wide as the source, and lost up to 1.1 % of the muons out of its sides at
 > depth; up to 1.4.1 `run_file_20260522_210114`, whose rock was sodium, see
-> `codes/geant4/README.md`) and PHITS (May 2026,
-> `reports/BENCHMARK_FEEDBACK.md`); MUSIC and PROPOSAL from the July 2026 run,
+> `codes/geant4/README.md`) and PHITS 3.37 (2026-10-25, its rock as near
+> Standard Rock as PHITS allows, `codes/phits/README.md`); MUSIC and PROPOSAL
+> from the July 2026 run,
 > Bethe-Bloch re-run on 2026-10-22 (thick-target scattering), UCMuon-MC on
 > 2026-10-23 (tabulated radiative spectra, spin-1/2 knock-on electrons).
 > Summary: `results/benchmark_summary_v2.csv`; figures: `figures/v2_six_code/`.
-> 100 m (265 MWE) transmissions: G4 32.7 %, PHITS 32.6 %, MUSIC 32.9 %,
-> PROPOSAL 32.8 %, BB 33.3 %, UCMuon-MC 33.0 %.
+> 100 m (265 MWE) transmissions: G4 32.88 %, PHITS 32.84 %, MUSIC 32.92 %,
+> PROPOSAL 32.82 %, BB 33.33 %, UCMuon-MC 32.90 %.
 > Raw `.dat` files live in the git-ignored scratch directory
 > `benchmark/geant4_muon_rock_v5/` (≈8 GB, never tracked).
 
@@ -61,10 +62,24 @@ benchmark/
 
 ## Roadmap — reproducing the benchmark end to end
 
-1. **Common source.** Generate `benchmark_surface.dat` (6 monoenergetic beams,
-   600 k muons) with the UCMuon generator, then convert it per code
-   (`codes/phits/convert_source_to_phits.py`; the Geant4 converter in the
-   scratch tree).
+1. **Common source.** The two source files every code was run on are on
+   Zenodo, [10.5281/zenodo.23722916](https://doi.org/10.5281/zenodo.23722916):
+   `benchmark_surface.dat` (6 monoenergetic beams, 600 k muons) and
+   `muons_surface_real100.dat` (the realistic source). From the repository root:
+   ```bash
+   Z=https://zenodo.org/records/23722916/files
+   curl -L -O "$Z/benchmark_surface.dat.xz" -L -O "$Z/muons_surface_real100.dat.xz"
+   printf '%s  %s\n' \
+     7c9882b3c34003c0aedf86aa14ba7c37e64993e2799672129672bc88e4d3d6c5 benchmark_surface.dat.xz \
+     7c7a8402728a9d24d9752aae82e2bbb014aaad4ab88237609ea809ae525fd25e muons_surface_real100.dat.xz \
+     | shasum -a 256 -c
+   mkdir -p benchmark/geant4_muon_rock_v5/sources
+   xz -dc benchmark_surface.dat.xz > benchmark/geant4_muon_rock_v5/sources/benchmark_surface.dat
+   xz -dc muons_surface_real100.dat.xz > benchmark/sources/muons_surface_real100.dat
+   ```
+   Then convert them per code (`codes/phits/convert_source_to_phits.py`;
+   Geant4: `src/converters/ucmuon_to_geant4.py --mode gen`, see
+   `codes/geant4/README.md`).
 2. **Run each code** using its `codes/<engine>/README.md`:
    - external: `codes/geant4/`, `codes/phits/`
    - UCMuon engines: `bash analysis/run_mono_bench.sh "1 10 25 50 100 200"` runs
@@ -78,6 +93,40 @@ benchmark/
    files from `benchmark/geant4_muon_rock_v5/`, so step 2 has to have been run).
    `manuscript/scripts/` holds one script per figure of the paper; the paper
    itself is not part of this repository.
+
+## Inclined beams
+
+The same six beams tilted to 60, 80 and 85 degrees (travelling towards +x) and
+scored at the slant lengths L, on planes at the depth L cos(theta).
+`analysis/make_inclined_inputs.py` writes every code's source and the PHITS
+decks into `geant4_muon_rock_v5/inclined/`; Geant4 runs with `--incl`
+(`codes/geant4/README.md`), the engines with `SOURCE_FILE` and `INCL_DEG` set
+for `analysis/run_mono_bench.sh`, PHITS with `codes/phits/run_phits_chunks.sh`.
+`analysis/inclined_summary.py` writes `results/inclined_beams_20261027.csv`
+(per code, angle, L and beam, the vertical runs as theta = 0). The engines
+transport each muon along the fixed path L, so they reproduce their vertical
+results; Geant4 and PHITS follow it to the plane, which near the horizon makes
+the path of muons near the end of their range depend on their scattering.
+`analysis/range_probe_50gev.py` scores the 50 GeV beam alone every 6 m from
+70 to 100 m, vertical and at 85 degrees, in PHITS, and compares it with
+Geant4's stopped muons (`results/range_probe_50GeV_20261027.csv`): both codes
+spread the end of the range at 85 degrees, but PHITS's ranges are about 5 %
+shorter (median 79 m against 84 m), so at 100 m PHITS passes 0.7 % of that
+beam at 85 degrees and Geant4 4.6 %. PHITS's tallies count every crossing and
+Geant4 every muon once; the probe's dump of every crossing shows that at most
+0.3 % of the muons that cross a plane cross it twice.
+
+## Realistic source
+
+10^5 muons from the surface generator (CosmoALEPH, 100-2500 GeV, cos^2(theta)
+up to 85 degrees, starting points on a disk of radius 200 m;
+`sources/muons_surface_real100.dat`, from Zenodo: Roadmap, step 1), run through the same slab, +-1 km wide,
+which holds every survivor (none ends more than 895 m from the axis). The
+engines: `analysis/run_realistic_bench.sh`; Geant4: `run_stdrock_20261019_realistic`
+(`codes/geant4/README.md`); PHITS: `codes/phits/muon_rock_realistic.inp`.
+`analysis/analyze_sixcode.py` writes `run_realistic_20260614/benchmark_sixcode_summary.csv`.
+`analysis/phits_energy_loss_check.py` shows that PHITS's 12 % fewer survivors
+at 200 m follow from its larger energy loss.
 
 The PHITS exit-energy disagreement that the roadmap once listed as an open item
 is not a defect to be fixed here: it is reported as a result, in Section 8 of the

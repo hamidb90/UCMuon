@@ -6,8 +6,9 @@ each stage (surface energy spectrum, survival-vs-depth curve, GUI screenshot).
 
 Thumbnail data sources (all already in the repo):
   Stage 1  surface vertical intensity from ucmuon_flux_models.reyna_flux
-  Stage 2  survival vs. depth from
-           benchmark/geant4_muon_rock_v5/figures_benchmark/benchmark_summary.csv
+  Stage 2  survival vs. depth from benchmark/results/benchmark_summary_v2.csv
+           (up to 1.4.1 an untracked June 2026 summary, from before the
+           Geant4 reference was Standard Rock)
   Stage 3  top band of manuscript/figs/gui_screenshot.png, the Fig. 4 capture
            of the GUI (up to v1.3.2 an untracked June 2026 capture that
            predated the Basic/Advanced modes)
@@ -31,8 +32,8 @@ from matplotlib.patches import FancyArrowPatch, FancyBboxPatch
 SCRIPT_DIR = Path(__file__).resolve().parent
 FIGS_DIR = SCRIPT_DIR.parent / "figs"
 OUT_PDF = FIGS_DIR / "fig01_pipeline.pdf"
-SURVIVAL_CSV = (SCRIPT_DIR.parent.parent / "benchmark" / "geant4_muon_rock_v5"
-                / "figures_benchmark" / "benchmark_summary.csv")
+SURVIVAL_CSV = (SCRIPT_DIR.parent.parent / "benchmark" / "results"
+                / "benchmark_summary_v2.csv")
 GUI_PNG = FIGS_DIR / "gui_screenshot.png"
 GUI_ASPECT = 1.7          # width / height of the band shown as the thumbnail
 

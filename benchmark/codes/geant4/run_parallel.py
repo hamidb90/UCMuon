@@ -118,6 +118,8 @@ def main() -> int:
     ap.add_argument("--seed", type=int, default=20261019)
     ap.add_argument("--keep-chunks", action="store_true")
     ap.add_argument("--xy", type=float, help="slab half-width in cm (MuonRock -xy)")
+    ap.add_argument("--incl", type=float, default=0.0,
+                    help="beam inclination in degrees (MuonRock -incl): planes at L cos(incl)")
     a = ap.parse_args()
 
     a.out.mkdir(parents=True, exist_ok=True)
@@ -127,7 +129,7 @@ def main() -> int:
     print(f"{a.name}: {a.source} in {a.chunks} chunks, {a.workers} at a time, seeds {a.seed}..{a.seed + a.chunks - 1}")
     sources, n_total = split_source(a.source, a.chunks, chunk_root)
     t0 = time.perf_counter()
-    extra = ["-xy", str(a.xy)] if a.xy else []
+    extra = (["-xy", str(a.xy)] if a.xy else []) + (["-incl", str(a.incl)] if a.incl else [])
     jobs = run_chunks(a.exe.resolve(), sources, a.workers, a.seed, extra)
     wall = time.perf_counter() - t0
     counts = merge(chunk_root, a.chunks, a.out, a.name)
@@ -147,7 +149,8 @@ def main() -> int:
                  f"  Events     : {n_total}\n"
                  f"  Seed       : {a.seed} + chunk index, {a.chunks} chunks\n"
                  f"  Slab half-XY: {a.xy or 2500:g} cm\n"
-                 f"  Muon plane crossings : {counts['muons']}\n"
+                 + (f"  Inclination: {a.incl:g} deg (depths are slant lengths)\n" if a.incl else "")
+                 + f"  Muon plane crossings : {counts['muons']}\n"
                  f"  Sec hits             : {counts['secondaries']}\n"
                  f"  Stopped muons        : {counts['stopped']}\n"
                  f"  KE min     : {min(s.get('KE min', 1e30) for s in ke):.1f} GeV\n"

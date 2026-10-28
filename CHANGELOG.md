@@ -106,6 +106,12 @@ elevation model). No simulated result changes.
   margin is now 2.5 sigma_r, which keeps at least 99.0 % of a point-like
   detector's hits with Geant4, 98.7 % with MUSIC and 99.3 % with UCMuon-MC
   (97.5 % with PROPOSAL; 2 sigma_r keeps 96 to 98 % of the first three).
+  The paper's underground rate example was re-run with it (2.5 m instead of
+  2.3 m: 4.7 +- 0.3 muons per minute, 4.4 +- 0.2 before), and its Basic-mode
+  and margin-warning sentences now say 2.5 sigma_r. The example is now a
+  script, `examples/underground_rate/ucmuon_underground_rate.py` (generator,
+  MUSIC and the GUI's hit count); with one OpenMP thread and its default seed
+  it reproduces the paper's numbers exactly.
 - `benchmark/analysis/mcs_distributions.py` measures every engine's core
   width, tails and angular and lateral distributions per beam and depth
   (`benchmark/results/mcs_{widths,histograms}_20261022.csv`, the paper's new
@@ -324,6 +330,56 @@ elevation model). No simulated result changes.
   1 % and bit for bit. Speed-ups against Geant4, one process each: Bethe-Bloch
   399x, MUSIC 134x, UCMuon-MC 46x, PROPOSAL 11x (realistic source: 636x, 387x,
   48x, 46x).
+
+### Benchmark: inclined beams, the realistic source, the accuracy claim
+- Inclined beams: the six monoenergetic beams tilted to 60, 80 and 85 deg (the
+  same muons, travelling towards +x), scored at the slant lengths L = 1 to
+  200 m on planes at the depth L cos(theta) (`benchmark/analysis/
+  make_inclined_inputs.py` writes every code's input, `inclined_summary.py`
+  compares them: `benchmark/results/inclined_beams_20261027.csv`;
+  `manuscript/scripts/make_tab_inclined.py`). Geant4 has an option `-incl`
+  (and `run_parallel.py --incl`) that places the planes so and keeps their
+  names; without it the output is byte-identical. `run_mono_bench.sh` takes
+  `SOURCE_FILE` and `INCL_DEG`. PHITS runs on one machine with the new
+  `benchmark/codes/phits/run_phits_chunks.sh` and `merge_chunks.py`
+  (which writes nan for a plane no muon reaches instead of failing).
+  `benchmark/analysis/range_probe_50gev.py` follows the 50 GeV beam to the end
+  of its range, vertical and at 85 deg, in Geant4 and PHITS
+  (`benchmark/results/range_probe_50GeV_20261027.csv`).
+- Results: the engines transport each muon along a fixed slant path, so an
+  inclined beam gives them their vertical result at the same L (MUSIC,
+  PROPOSAL and Bethe-Bloch exactly, UCMuon-MC within 0.1 %). From 25 to 200 m
+  UCMuon-MC agrees with Geant4 at 60 and 80 deg as for vertical beams (within
+  0.1 % in survival, 0.3 % in mean exit energy). Geant4 and PHITS follow each
+  muon to the plane, which near the horizon lies nearly along the track, so
+  scattering spreads the path of the muons near the end of their range: at
+  10 m (the 5 GeV beam's range) UCMuon-MC passes 1.7, 4.4 and 5.5 % fewer muons
+  than Geant4 at 60, 80 and 85 deg, and at 85 deg about 2 % fewer at 100 m
+  (the 50 GeV beam's). PHITS shows the same spread (at 10 m 0.9, 4.3 and 6.2
+  percentage points more than vertical, Geant4 1.8, 4.3 and 5.3), but its
+  ranges are about 5 % shorter, so at 85 deg and 100 m it agrees with the
+  engines. PHITS counts crossings and Geant4 muons; at most 0.3 % of the
+  muons that cross a plane cross it twice. Independent PHITS runs on
+  Lemaitre4 (`run_phits_mpi.sh`, other seeds) agree with the Apple M4 runs
+  within 0.04 percentage points in survival and 0.2 % in mean exit energy.
+- Realistic source: relative differences instead of percentage points (text
+  and figure); the Geant4 and PHITS setups documented (slab +-1 km, which holds
+  every survivor: none ends more than 895 m from the axis). PHITS's 12 % fewer
+  survivors at 200 m come from its larger energy loss: it takes 3.9 % more
+  energy than Geant4 from the 300 GeV beam over 200 m, and letting every muon
+  of Geant4's realistic run lose 3.9 % more removes 11.9 % of its survivors and
+  raises their mean energy by 5.3 % (PHITS: 12.1 % and 6.7 %;
+  `benchmark/analysis/phits_energy_loss_check.py`).
+- The paper no longer recommends the spread between the engines as the
+  transport systematic: the engines and Geant4 share their cross-section
+  parametrisations, so their agreement tests the implementations, not the
+  cross-sections. The transition-cell table says why PHITS has no column.
+- The two source files every code was run on (the monoenergetic beams and
+  the realistic source) are archived on Zenodo,
+  [10.5281/zenodo.23722916](https://doi.org/10.5281/zenodo.23722916);
+  `benchmark/README.md` gives the download, checksum and unpacking steps
+  (step 1 of the roadmap, which named a Geant4 converter that was never
+  shipped: the shipped one is `src/converters/ucmuon_to_geant4.py --mode gen`).
 
 ### Test run and generator input
 - The surface generators check their input (`src/generator/input_module.f90`).

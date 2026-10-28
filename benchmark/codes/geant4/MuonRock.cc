@@ -35,6 +35,8 @@ static void PrintUsage(const char* prog)
         << "  -o <dir>      Output directory  [default: outputs]\n"
         << "  -s <seed>     Random seed (default: Geant4's own)\n"
         << "  -xy <cm>      Half-width of the rock slab  [default: 2500]\n"
+        << "  -incl <deg>   Beam inclination: scoring plane L at depth L cos(deg),\n"
+        << "                output depths stay L (slant)  [default: 0]\n"
         << "  -g            GUI mode — open Qt window (vis.mac must be in build dir)\n"
         << "  -q            Quiet mode — redirect Geant4 log to outputs/geant4.log\n"
         << "  -n <events>   Number of events  (same as positional arg)\n\n"
@@ -119,6 +121,9 @@ int main(int argc, char** argv)
         else if (std::strcmp(argv[i],"-o")==0 && i+1<argc) { outDir = argv[++i]; }
         else if (std::strcmp(argv[i],"-s")==0 && i+1<argc) { SimConfig::RANDOM_SEED = std::stol(argv[++i]); }
         else if (std::strcmp(argv[i],"-xy")==0 && i+1<argc) { SimConfig::SLAB_HALF_XY_CM = std::stod(argv[++i]); }
+        else if (std::strcmp(argv[i],"-incl")==0 && i+1<argc) {
+            SimConfig::PLANE_COS = std::cos(std::stod(argv[++i]) * M_PI / 180.0);
+        }
         else if (std::strcmp(argv[i],"-g")==0)              { guiMode  = true; }
         else if (std::strcmp(argv[i],"-q")==0)              { quietMode = true; }
         else if (std::strcmp(argv[i],"-n")==0 && i+1<argc) { nEvents = std::stoi(argv[++i]); }

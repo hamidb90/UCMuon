@@ -61,7 +61,8 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
     // -----------------------------------------------------------------------
 
     const auto& depths   = SimConfig::SCORING_DEPTHS_CM;
-    double maxDepth_cm   = depths.back();
+    const double cosInc  = SimConfig::PLANE_COS; // planes at L cos(incl), see SimConfig
+    double maxDepth_cm   = depths.back() * cosInc;
     double rockDepth_cm  = maxDepth_cm + 5.0;    // 5 cm margin below deepest plane
     double rockHalfZ_cm  = rockDepth_cm / 2.0;
     double rockHalfZ     = rockHalfZ_cm * cm;
@@ -104,6 +105,7 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
            << "  Rock bottom      : z = " << -rockDepth_cm << " cm (world)\n"
            << "  Rock half-Z      : " << rockHalfZ_cm    << " cm\n"
            << "  Rock half-XY     : " << SimConfig::SLAB_HALF_XY_CM << " cm\n"
+           << "  Plane depth scale: " << cosInc << " (cos of the beam inclination)\n"
            << "  Rock density     : " << SimConfig::ROCK_DENSITY << " g/cm3\n\n";
 
     // -----------------------------------------------------------------------
@@ -128,10 +130,10 @@ G4VPhysicalVolume* DetectorConstruction::Construct()
            << "  ----+----------+-----------+------------+----------\n";
 
     for (int i = 0; i < (int)depths.size(); ++i) {
-        double d_cm      = depths[i];
+        double d_cm      = depths[i];                                  // nominal (slant) depth
         double mwe       = d_cm * SimConfig::ROCK_DENSITY / 100.0;   // g/cm2 -> m.w.e.
-        double z_world   = -d_cm;                                      // cm, world frame
-        double z_rock_cm = rockHalfZ_cm - d_cm;                       // cm, rock frame
+        double z_world   = -d_cm * cosInc;                             // cm, world frame
+        double z_rock_cm = rockHalfZ_cm - d_cm * cosInc;              // cm, rock frame
 
         std::ostringstream nm;
         nm << "Score_" << (int)std::round(d_cm) << "cm";

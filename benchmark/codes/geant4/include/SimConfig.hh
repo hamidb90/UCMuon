@@ -67,6 +67,10 @@ inline double SLAB_HALF_XY_CM = 2500.0;              // 25 m
 inline const std::vector<double> SCORING_DEPTHS_CM = {
     100.0, 1000.0, 2500.0, 5000.0, 10000.0, 20000.0  // 1m 10m 25m 50m 100m 200m
 };
+// -incl <deg> is for beams inclined at that zenith angle: the plane of nominal
+// depth L is placed at the vertical depth L cos(incl) and keeps its name
+// (Score_<L>cm), so every depth in the output is the slant length L.
+inline double PLANE_COS = 1.0;
 
 // ============================================================================
 // ROCK MATERIAL

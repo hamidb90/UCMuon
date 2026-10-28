@@ -51,14 +51,27 @@ python3 run_parallel.py --exe build/MuonRock --source <source>.txt \
 python3 run_parallel.py --exe build/MuonRock --source source_realistic_g4.txt \
     --out outputs --name run_stdrock_20261019_realistic --chunks 32 --workers 8 \
     --seed 20261119 --xy 100000
+
+# Inclined beams (the six beams tilted to 60, 80 and 85 deg by
+# ../../analysis/make_inclined_inputs.py): the scoring plane of slant length L
+# is placed at the depth L cos(theta) and keeps its name, so every depth in the
+# output is the slant length L; the slab ends 5 cm below the deepest plane
+for TH in 85 80 60; do
+  python3 run_parallel.py --exe build/MuonRock --source benchmark_geant4_th${TH}.txt \
+      --out outputs --name run_stdrock_xy1km_20261027_incl${TH} --chunks 32 --workers 8 \
+      --seed 20261019 --xy 100000 --incl ${TH}
+done
 ```
 Options added after 1.4.1: `-s <seed>` (Geant4's default seed otherwise; recorded
-in the run summary) and `-xy <cm>` (slab half-width). The merged summary's
+in the run summary), `-xy <cm>` (slab half-width) and `-incl <deg>` (planes at
+L cos(incl); without it the output is byte-identical to the build without the
+option). The merged summary's
 `Elapsed` is the CPU time summed over the chunks; its wall time is stated
 separately.
 The Geant4 source file is produced from the common `benchmark_surface.dat` by
-`../../codes/phits` conventions / the converter in the scratch tree
-(`sources/convert_surface_to_geant4.py`). Output is a `*_muons.csv` per-event
+`src/converters/ucmuon_to_geant4.py --mode gen`, which reproduces the reference
+runs' source to the last printed digit of the kinetic energy (10^-9 relative;
+the scratch tree's `sources/convert_surface_to_geant4.py` wrote it). Output is a `*_muons.csv` per-event
 file consumed by `../../analysis/benchmark_analysis.py` (`--geant4 <prefix>`).
 
 > Per-event CSV and build artifacts are large and live only in the scratch tree

@@ -23,12 +23,14 @@ muon leaves through its sides (the beams start within ±25 m; with a slab only
 | `convert_source_to_phits.py` | converts the common source → PHITS s-type=17 dump |
 | `read_phits_output.py` | parses the raw tally `.out` files → `phits_summary.csv` |
 | `run_phits_mpi.sh` | runs a deck under MPI on a Slurm cluster (one master, N−1 workers) |
+| `run_phits_chunks.sh`, `merge_chunks.py` | run a deck on one machine as K independent single-thread chunks (every K-th muon, its own seed), P at a time, and merge their summaries |
 | `phits_summary.csv`, `phits_timing.txt` | parsed monoenergetic results + timing |
+| `phits_summary_realistic.csv` | parsed realistic-source results, read by `../../analysis/analyze_sixcode.py` |
 | `batch.out`, `muon_source_phits_info.txt` | run metadata |
 
-The realistic-source summary is not kept here; `benchmark/analysis/analyze_sixcode.py`
-reads it from `benchmark/geant4_muon_rock_v5/phits/phits_summary.csv`, and its
-numbers are in `benchmark/run_realistic_20260614/benchmark_sixcode_summary.csv`.
+Up to 1.4.1 the realistic-source summary was not shipped
+(`analyze_sixcode.py` read it from the scratch tree); its numbers are also in
+`benchmark/run_realistic_20260614/benchmark_sixcode_summary.csv`.
 
 Both summaries are from runs of 2026-10-25 on Lemaitre4 with `run_phits_mpi.sh`:
 the monoenergetic deck with `maxcas = 1000`, `maxbch = 600` on 60 workers, the
@@ -47,9 +49,23 @@ phits muon_rock.inp        # or: /path/to/phits/bin/phits.sh muon_rock.inp
 sbatch --ntasks=61 --export=ALL,PHITSPATH=/path/to/phits \
        run_phits_mpi.sh muon_rock.inp muons_for_phits.dat RUN_DIR
 
+# 2c. or on one machine: 32 single-thread chunks, 8 at a time, parsed and merged
+#     into RUN_DIR/phits_summary.csv (no step 3 needed)
+PHITSPATH=/path/to/phits bash run_phits_chunks.sh muon_rock.inp muons_for_phits.dat RUN_DIR 32 8
+
 # 3. Parse the tallies into a summary CSV (in the run directory)
 python3 read_phits_output.py --n 600000
 ```
+
+The inclined-beam decks (`muon_rock_th60.inp`, `_th80`, `_th85`: the planes at
+L cos(theta)) and their dumps are written by
+`../../analysis/make_inclined_inputs.py`; their summaries of 2026-10-27 were made
+with `run_phits_chunks.sh` on an Apple M4 (32 chunks, 8 at a time). Runs of
+the same decks with `run_phits_mpi.sh` on Lemaitre4 (other seeds) agree with
+them within 0.04 percentage points in survival and 0.2 % in mean exit energy.
+PHITS's T-Cross counts every crossing, so near the horizon a muon that
+crosses a plane twice counts twice; `../../analysis/range_probe_50gev.py`
+dumps every crossing and finds that at most 0.3 % of the muons do.
 
 ## Timing
 The paper's PHITS time is one core of the Apple M4, PHITS's own single-thread

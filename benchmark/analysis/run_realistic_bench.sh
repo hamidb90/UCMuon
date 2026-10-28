@@ -3,14 +3,17 @@
 #  UCMuon 4-engine benchmark on a REALISTIC generated source
 #  Runs BB, MUSIC, PROPOSAL, UCMuon-MC through Standard Rock at several depths.
 #
-#  Differs from the canonical monoenergetic benchmark: the source here is a
-#  realistic cosmic-ray distribution (output/muons_surface.dat), so Geant4/PHITS
-#  references (made on the monoenergetic grid) are NOT comparable and excluded.
+#  Differs from the canonical monoenergetic benchmark: the source is a realistic
+#  cosmic-ray population (benchmark/sources/muons_surface_real100.dat). Geant4
+#  and PHITS were run on the same muons (benchmark/README.md, "Realistic
+#  source"); analyze_sixcode.py compares all six codes.
 #
 #  Usage:
 #    bash run_realistic_bench.sh "1 10 25 50 100 200"     # depths (m), space-sep
 #    bash run_realistic_bench.sh 1                        # smoke test, 1 m only
 #    ENGINES="BB UCMuon" bash run_realistic_bench.sh "1 10 25 50 100 200"
+#    ENGINES="BBF" bash run_realistic_bench.sh "1 10 25 50 100 200"
+#                       # the Fortran Bethe-Bloch build (run_realistic_20260614/BB_fortran)
 #                                                         # only those engines
 #    OUTDIR=/tmp/t UCMUON_WORKERS=1 bash run_realistic_bench.sh
 #                       # timing run: outputs elsewhere, UCMuon-MC in one process
@@ -83,6 +86,23 @@ ${DEPTH}
 1
 EOF
   lap BB "$t0" 1
+  fi
+
+  # ── BBF: the Fortran build of the Bethe-Bloch engine, the same input
+  #    (ENGINES must name it: it is not in the default list)
+  if want BBF; then
+  mkdir -p "${OUTDIR}/BB_fortran"
+  echo -n "  [BBF]      "; t0=$(now)
+  "${BIN_DIR}/ucmuon_transport_bb_omp" > /dev/null 2>"${OUTDIR}/BB_fortran/BB_fortran_${DEPTH}m.log" <<EOF
+${SOURCE_FILE}
+${OUTDIR}/BB_fortran/BB_fortran_bench_${DEPTH}m.dat
+1
+14
+${DEPTH}
+1
+1
+EOF
+  lap BBF "$t0" 1
   fi
 
   # ── MUSIC (Fortran, run from bin/ for table files)

@@ -14,6 +14,9 @@
 #                                                   # only those engines
 #    OUTDIR=/tmp/t UCMUON_WORKERS=1 bash run_mono_bench.sh
 #                       # timing run: outputs elsewhere, UCMuon-MC in one process
+#    SOURCE_FILE=.../benchmark_surface_th85.dat INCL_DEG=85 OUTDIR=.../th85 \
+#      bash run_mono_bench.sh   # inclined beams (make_inclined_inputs.py): the
+#                       # depths are slant lengths L, the engines get L cos(85 deg)
 #
 #  Every run's wall time goes to ${OUTDIR}/timing.csv (engine, depth_m,
 #  seconds, processes). UCMUON_WORKERS is UCMuon-MC's process count (stdin
@@ -26,7 +29,8 @@ set -uo pipefail
 REPO_ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
 GUI_DIR="${REPO_ROOT}/gui"
 BIN_DIR="${REPO_ROOT}/bin"
-SOURCE_FILE="${REPO_ROOT}/benchmark/geant4_muon_rock_v5/sources/benchmark_surface.dat"
+SOURCE_FILE="${SOURCE_FILE:-${REPO_ROOT}/benchmark/geant4_muon_rock_v5/sources/benchmark_surface.dat}"
+INCL_DEG="${INCL_DEG:-0}"
 OUTDIR="${OUTDIR:-${REPO_ROOT}/benchmark/geant4_muon_rock_v5}"
 UCMUON_WORKERS="${UCMUON_WORKERS:-0}"
 
@@ -54,7 +58,7 @@ mkdir -p "${OUTDIR}/BB" "${OUTDIR}/MUSIC" "${OUTDIR}/PROPOSAL" "${OUTDIR}/UCMuon
 echo "============================================================"
 echo "  Source : ${SOURCE_FILE}"
 echo "  Outdir : ${OUTDIR}"
-echo "  Depths : ${DEPTHS[*]} m"
+echo "  Depths : ${DEPTHS[*]} m$( [[ "$INCL_DEG" != 0 ]] && echo " (slant; beams inclined at ${INCL_DEG} deg)")"
 echo "  Engines: ${ENGINES}"
 echo "  Started: $(date)"
 echo "============================================================"
@@ -62,6 +66,10 @@ echo "============================================================"
 for DEPTH in "${DEPTHS[@]}"; do
   echo ""
   echo "######################## depth = ${DEPTH} m ########################"
+  # The engines take the vertical depth; DEPTH (file names, timing.csv) is the
+  # length along the beam, the same for vertical beams.
+  if [[ "$INCL_DEG" == 0 ]]; then VDEPTH="$DEPTH"
+  else VDEPTH=$(perl -e "printf '%.6f', ${DEPTH} * cos(${INCL_DEG} * atan2(1, 1) / 45)"); fi
 
   if want BB; then
   echo -n "  [BB]       "; t0=$(now)
@@ -70,7 +78,7 @@ ${SOURCE_FILE}
 ${OUTDIR}/BB/BB_bench_${DEPTH}m.dat
 1
 14
-${DEPTH}
+${VDEPTH}
 1
 1
 EOF
@@ -84,7 +92,7 @@ ${SOURCE_FILE}
 ${OUTDIR}/MUSIC/MUSIC_bench_${DEPTH}m.dat
 2.65
 26.48
-${DEPTH}
+${VDEPTH}
 1
 1
 -30
@@ -102,7 +110,7 @@ EOF
   "${PROP_PY}" "${GUI_DIR}/proposal_driver.py" > /dev/null 2>"${OUTDIR}/PROPOSAL/PROPOSAL_${DEPTH}m.log" <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/PROPOSAL/PROPOSAL_bench_${DEPTH}m.dat
-${DEPTH}
+${VDEPTH}
 1
 1
 500
@@ -118,7 +126,7 @@ EOF
   python3 "${GUI_DIR}/ucmuon_stochastic_driver.py" > "${OUTDIR}/UCMuon/UCMuon_${DEPTH}m.log" 2>&1 <<EOF
 ${SOURCE_FILE}
 ${OUTDIR}/UCMuon/UCMuon_bench_${DEPTH}m.dat
-${DEPTH}
+${VDEPTH}
 2.65
 10.015
 1

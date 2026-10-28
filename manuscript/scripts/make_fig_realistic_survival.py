@@ -84,9 +84,9 @@ def main() -> None:
             ref = np.interp(mwe, g4["mwe"], g4["surv"], left=np.nan, right=np.nan)
             m = (ref > 1e-4) & ~np.isnan(ref)
             if m.any():
-                # Percentage points (matches the prose and the six-code
-                # table); relative % blows past any sane axis at 530 mwe.
-                ax_bot.plot(mwe[m], 100 * (surv[m] - ref[m]),
+                # Relative difference, as in make_fig06.py (up to 2026-10-24
+                # percentage points: PHITS's old -26 % did not fit the axis).
+                ax_bot.plot(mwe[m], 100 * (surv[m] - ref[m]) / ref[m],
                             f"{style['marker']}{style['ls']}", color=style["color"],
                             lw=style["lw"], ms=style["ms"])
 
@@ -100,8 +100,8 @@ def main() -> None:
     ax_bot.axhspan(-3, 3, color="orange", alpha=0.07)
     ax_bot.axhline(+1, color="green", lw=0.8, ls=":")
     ax_bot.axhline(-1, color="green", lw=0.8, ls=":")
-    ax_bot.set_ylabel("Δ vs Geant4 [pp]")
-    ax_bot.set_ylim(-9.5, 3)
+    ax_bot.set_ylabel("Δ vs Geant4 [%]")
+    ax_bot.set_ylim(-14, 4)
     ax_bot.set_xlabel("Overburden [m.w.e.]")
     ax_bot.set_xticks(mwe_ticks)
     ax_bot.set_xticklabels([f"{m:.0f}" for m in mwe_ticks])

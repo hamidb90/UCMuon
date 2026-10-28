@@ -1,5 +1,6 @@
 #include "SteppingAction.hh"
 #include "EventAction.hh"
+#include "SimConfig.hh"
 
 #include "G4Step.hh"
 #include "G4Track.hh"
@@ -70,7 +71,8 @@ void SteppingAction::UserSteppingAction(const G4Step* step)
                           (vn.size() >= 6 && vn.substr(0, 6) == "Score_");
             if (inRock) {
                 G4ThreeVector stopPos = track->GetPosition();
-                double stopDepth_cm = -stopPos.z() / 10.0;  // G4 mm → cm
+                // G4 mm → cm, along the beam for -incl (as the planes' depths)
+                double stopDepth_cm = -stopPos.z() / 10.0 / SimConfig::PLANE_COS;
                 if (stopDepth_cm >= 0.0)
                     fEventAction->SetStopInfo(stopDepth_cm);
             }

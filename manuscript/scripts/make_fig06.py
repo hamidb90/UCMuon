@@ -353,6 +353,13 @@ def main() -> None:
                 all_codes[code] = refs[code]
 
     engines = load_ucmuon_engines(indir)
+    if not engines and args.ref_summary:
+        # The raw engine outputs (about 3 GB, run_mono_bench.sh) are not in the
+        # archive: take the engines from the shipped summary too, which draws
+        # the same figure (up to 1.4.1 they were dropped without a word).
+        print(f"  no engine outputs in {indir}: engines from {args.ref_summary}")
+        refs = load_from_summary(args.ref_summary)
+        engines = {k: v for k, v in refs.items() if k not in ("Geant4", "PHITS")}
     all_codes.update(engines)
 
     if not all_codes:
