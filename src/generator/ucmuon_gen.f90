@@ -281,7 +281,8 @@ program ucmuon_gen
       call need(e_min > 0.0d0, 'e_min must be positive, not ' // r2s(e_min))
       write(*,*) ' Max muon energy [GeV]  (e.g. 2500):'
       call get_real('e_max', e_max)
-      call need(e_max > e_min, 'e_max (' // r2s(e_max) // ' GeV) must be above e_min (' // &
+      ! e_max = e_min is a mono-energetic beam (the GUI's "Mono-energetic beam")
+      call need(e_max >= e_min, 'e_max (' // r2s(e_max) // ' GeV) must not be below e_min (' // &
                     r2s(e_min) // ' GeV)')
       write(*,*)
 
@@ -528,8 +529,6 @@ program ucmuon_gen
       write(*,*) ' Save ALL muons? (1=Yes, 0=No)'
       call get_int('save_all', save_all)
       call need(save_all == 0 .or. save_all == 1, 'save_all must be 0 or 1, not ' // i2s(save_all))
-      call need(save_all == 1 .or. use_detector == 1, &
-                    'nothing to write: save_all = 0 and no detector filter')
       save_phits = 0   ! PHITS output removed from hot loop — use ucmuon_to_phits
       write(*,*) ' Output filename for surface muons (Enter = ucmuon_surface.dat):'
       call get_str('output_all', output_all)

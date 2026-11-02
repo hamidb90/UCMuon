@@ -19,7 +19,7 @@ replaced silently.
 |---|---|---|---|---|
 | 1 | `use_defaults` | | 0 = read the parameters below; 1 = built-in defaults (100–2500 GeV, CosmoALEPH, disk R = 800 m, cos²θ to 85°, 10⁵ muons, no detector), and nothing more is read | always |
 | 2 | `e_min` | GeV | > 0 (muon spectra: above the muon mass) | `use_defaults` = 0 |
-| 3 | `e_max` | GeV | > `e_min` | |
+| 3 | `e_max` | GeV | ≥ `e_min` (equal: a mono-energetic beam at `e_min`) | |
 | 4 | `spectrum_mode` | | 1 CosmoALEPH, 2 power law E⁻³·⁷, 3 PARMA/EXPACS, 4 Guan 2015, 5 Frosin 2025, 6 Gaisser 1990, 7 Reyna 2006, 8 cosmic e± | |
 | 4a | `parma_lat`, `parma_lon` | deg | −90…90, −360…360 | `spectrum_mode` = 3 |
 | 4b | `parma_alt_km` | km | altitude of the site | |
@@ -40,7 +40,7 @@ replaced silently.
 | 13 | per detector: `shape`, `safety margin` | —, cm | 1 cylinder, 2 box; margin ≥ 0 | |
 | 13a | cylinder: `Ax Ay Az` (one line), `Bx By Bz` (one line), radius | cm | radius > 0; A ≠ B | `shape` = 1 |
 | 13b | box: `xmin xmax`, `ymin ymax`, `zmin zmax` (one line each) | cm | min < max | `shape` = 2 |
-| 14 | `save_all` | | 1 write every generated muon; 0 only the selected ones (needs a detector) | |
+| 14 | `save_all` | | with a detector: 1 also write every generated muon, 0 only the selected ones; without one every muon is written either way | |
 | 15 | `save_phits` | | 0 / 1 (OpenMP program only) | |
 | 16 | surface output file | | empty line = `muons_surface.dat` | |
 | 17 | selected-muon file | | empty line = `muons_selected.dat` | `use_detector` = 1 |

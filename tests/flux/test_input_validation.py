@@ -35,7 +35,7 @@ def base_input(out: Path) -> list[str]:
 #  the input there, text the message must contain)
 CASES = [
     ("angular mode 9",          12, "9",     "angular_mode must be 1 to 6"),
-    ("e_max below e_min",        2, "4.0",   "e_max (4.00000 GeV) must be above e_min"),
+    ("e_max below e_min",        2, "4.0",   "e_max (4.00000 GeV) must not be below e_min"),
     ("negative muon count",     14, "-5",    "nmuons must be at least 1"),
     ("input cut before use_detector", 15, None, "the input ends before use_detector"),
     ("spectrum mode 11",         3, "11",    "spectrum_mode must be 1 to 8"),
@@ -44,7 +44,6 @@ CASES = [
     ("theta_max above 90",      13, "95",    "theta_max must be above 0 and at most 90"),
     ("negative safety margin",  18, "-1",    "the safety margin cannot be negative"),
     ("zero cylinder radius",    21, "0",     "the cylinder radius must be positive"),
-    ("nothing to write",        15, "0",     "nothing to write"),
 ]
 
 
@@ -65,8 +64,6 @@ def main() -> int:
         base = base_input(tmp)
         for name, i, value, expect in CASES:
             lines = base[:i] if value is None else base[:i] + [value] + base[i + 1:]
-            if name == "nothing to write":          # no detector and save_all = 0
-                lines = base[:15] + ["0", "0", "0", base[-2]]
             code, err = run(lines, tmp)
             ok = code == 2 and "INPUT ERROR" in err and expect in err
             print(f"  [{'ok  ' if ok else 'FAIL'}] {name:30s} exit {code}: {err.strip().splitlines()[0] if err.strip() else '(no message)'}")
@@ -80,6 +77,22 @@ def main() -> int:
         print(f"  [{'ok  ' if ok else 'FAIL'}] {'valid input':30s} exit {code}, {n} muons selected")
         if not ok:
             failed.append("valid input")
+        mono = list(base_small)
+        mono[2] = mono[1]                           # e_max = e_min: a mono-energetic beam
+        code, err = run(mono, tmp)
+        e = {line.split()[10] for line in open(tmp / "muons_selected.dat")
+             if not line.startswith("#")} if code == 0 else set()
+        ok = code == 0 and len(e) == 1
+        print(f"  [{'ok  ' if ok else 'FAIL'}] {'mono-energetic (e_max = e_min)':30s} exit {code}, energies {sorted(e)}")
+        if not ok:
+            failed.append("mono-energetic")
+        nodet = base_small[:15] + ["0", "0", "0", str(tmp / "all.dat"), ""]
+        code, err = run(nodet, tmp)                 # no detector, save_all = 0, as the GUI sends
+        n = sum(1 for line in open(tmp / "all.dat") if not line.startswith("#")) if code == 0 else 0
+        ok = code == 0 and n == 200
+        print(f"  [{'ok  ' if ok else 'FAIL'}] {'no detector, save_all = 0':30s} exit {code}, {n} muons written")
+        if not ok:
+            failed.append("no detector")
     print("\nALL PASS" if not failed else f"\n{len(failed)} FAILED: {failed}")
     return 1 if failed else 0
 

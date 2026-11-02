@@ -389,7 +389,8 @@ elevation model). No simulated result changes.
   to 1.4.1 bad values were replaced or accepted silently, with status 0: an
   angular mode of 9 became 2, a spectrum mode out of range became 1, a disk
   radius of 0 or less became 1 m, an empty rectangle range became 1 m wide,
-  e_min above e_max wrote every muon at e_min, a negative muon count wrote an
+  e_min above e_max wrote every muon at e_min (e_max = e_min is still a
+  mono-energetic beam), a negative muon count wrote an
   empty file, and a truncated input ended in a gfortran runtime error. Valid
   input gives byte-identical output. Every parameter, in order, with its valid
   range: `docs/GENERATOR_INPUT.md`; test: `tests/flux/test_input_validation.py`.
