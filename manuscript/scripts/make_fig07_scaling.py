@@ -13,10 +13,11 @@ file I/O, not parallel sampling):
   generator — detector-filtered configuration of hpc/input_params.dat
     (two 4 cm cylinder detectors at 35-90 m depth, disk source R = 500 m,
     CosmoALEPH 19-1500 GeV, cos^2-theta, theta_max = 85 deg);
-    2000 *selected* muons, i.e. ~4e6 sampled trajectories;
+    2000 *selected* muons, i.e. ~1.1e8 sampled trajectories;
   MUSIC — 1e6 muons, CosmoALEPH 10-2500 GeV, Standard Rock, d = 150 m.
 
-Thread counts k = 1, 2, 4, 8.
+Thread counts k = 1, 2, 4, 8; each point is timed REPEATS = 3 times and the
+median kept, as in run_scaling_hpc.sh.
 
 Measured timings are written to manuscript/scripts/scaling_laptop.csv
 (columns: program,threads,seconds).  Existing CSVs are reused unless
@@ -54,6 +55,7 @@ GEN_NSEL = 2_000           # selected muons (detector-filtered config)
 MUSIC_N = 1_000_000        # muons in the MUSIC input file
 DEPTH_M = 150.0
 THREADS = [1, 2, 4, 8]
+REPEATS = 3                # each point timed 3 times, the median kept
 
 GEN_STDIN = None  # built in measure()
 
@@ -77,15 +79,17 @@ def measure() -> None:
     rh.run_binary(rh.MUSIC_EXE, rh.music_stdin(depth_m=DEPTH_M), WORKDIR,
                   threads=2)
     for k in THREADS:
-        t_gen = rh.run_binary(rh.GEN_EXE, gen_stdin, WORKDIR, threads=k)
-        print(f"  [GEN]   k={k:2d}  {t_gen:7.2f} s")
-        rows.append(("generator", k, t_gen))
-        t_mus = rh.run_binary(rh.MUSIC_EXE, rh.music_stdin(depth_m=DEPTH_M),
-                              WORKDIR, threads=k)
-        print(f"  [MUSIC] k={k:2d}  {t_mus:7.2f} s")
-        rows.append(("music", k, t_mus))
+        for prog, exe, stdin in (
+                ("generator", rh.GEN_EXE, gen_stdin),
+                ("music", rh.MUSIC_EXE, rh.music_stdin(depth_m=DEPTH_M))):
+            times = [rh.run_binary(exe, stdin, WORKDIR, threads=k)
+                     for _ in range(REPEATS)]
+            t = float(np.median(times))
+            print(f"  [{prog}] k={k:2d}  {t:7.2f} s  (median of: "
+                  + " ".join(f"{x:.2f}" for x in times) + ")")
+            rows.append((prog, k, t))
     with open(LAPTOP_CSV, "w", newline="") as f:
-        w = csv.writer(f)
+        w = csv.writer(f, lineterminator="\n")
         w.writerow(["program", "threads", "seconds"])
         w.writerows(rows)
     print(f"  [OK] wrote {LAPTOP_CSV}")

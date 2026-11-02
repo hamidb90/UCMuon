@@ -632,8 +632,9 @@ fraction 1 − exp(−m²/σ_r²) of its hits: a 3 cm margin at 40 m keeps under
 The GUI now warns below 2σ_r (98% kept) and the Helpers calculator suggests
 2σ_r with energy loss included.
 
-**Tried count.** Every attempt increments `ntry` once, by `!$OMP ATOMIC
-CAPTURE`, before the only `cycle`, so no trial is lost. After the target is
+**Tried count.** Every attempt increments `ntry` once (a per-thread count
+summed by an OpenMP reduction; up to 1.4.1 one shared `!$OMP ATOMIC CAPTURE`),
+before the only `cycle`, so no trial is lost. After the target is
 reached each thread can add at most one more attempt, an overcount below
 N_threads per rank (negligible against N_tried). Without the filter the OpenMP
 generator resets `ntry = i`. The MPI generator sums the per-rank counts with

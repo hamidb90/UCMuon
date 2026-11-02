@@ -10,13 +10,20 @@
 #
 # Produces manuscript/scripts/scaling_hpc.csv, which
 # make_fig07_scaling.py picks up automatically.
+#
+# The threads are pinned to consecutive physical cores, and each point is
+# timed REPEATS times (default 3); the CSV keeps the median, the log every
+# time. Unpinned, on a 256-CPU node, the generator's short runs gained nothing
+# from 2 to 16 threads (job 7966031, 2026-10-23).
 # =============================================================================
 #SBATCH --job-name=ucmuon_scaling
 #SBATCH --ntasks=1
 #SBATCH --cpus-per-task=32
-#SBATCH --time=00:30:00
+#SBATCH --time=01:30:00
 
 set -euo pipefail
+export OMP_PROC_BIND="${OMP_PROC_BIND:-close}" OMP_PLACES="${OMP_PLACES:-cores}"
+REPEATS="${REPEATS:-3}"
 
 # Under `sbatch`, Slurm stages a copy of this script into its spool directory,
 # so $0 no longer points into the repo; prefer SLURM_SUBMIT_DIR (the directory
@@ -68,12 +75,16 @@ for k in $THREADS; do
     else
       exe="$REPO_ROOT/bin/ucmuon_transport_music_omp"; input="$MUS_IN"
     fi
-    start=$(date +%s.%N)
-    OMP_NUM_THREADS=$k "$exe" <<< "$input" > /dev/null
-    end=$(date +%s.%N)
-    secs=$(echo "$end - $start" | bc)
+    times=()
+    for r in $(seq "$REPEATS"); do
+      start=$(date +%s.%N)
+      OMP_NUM_THREADS=$k "$exe" <<< "$input" > /dev/null
+      end=$(date +%s.%N)
+      times+=("$(echo "$end - $start" | bc)")
+    done
+    secs=$(printf '%s\n' "${times[@]}" | sort -g | sed -n "$(( (REPEATS + 1) / 2 ))p")
     echo "$prog,$k,$secs" >> "$CSV"
-    echo "  $prog k=$k  ${secs}s"
+    echo "  $prog k=$k  ${secs}s  (median of: ${times[*]})"
   done
 done
 

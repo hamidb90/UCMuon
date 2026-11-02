@@ -176,7 +176,7 @@ program ucmuon_gen
   ! Misc — serial section
   !---------------------------------------------------------------------------
   integer  :: j, id, kk
-  integer(8)  :: ntry           ! per-rank attempts
+  integer(8)  :: ntry           ! per-rank attempts (counted per thread, summed: REDUCTION)
   integer(8)  :: i              ! per-rank accepted count
   integer(8)  :: id_offset      ! accepted muons of the lower ranks (EventIDs)
   integer     :: iranlux
@@ -206,7 +206,8 @@ program ucmuon_gen
   !---------------------------------------------------------------------------
   ! OMP-specific
   !---------------------------------------------------------------------------
-  integer(8) :: my_ntry
+  integer(8) :: my_ntry            ! this rank's ID of the current try
+  integer    :: my_tid, n_team     ! thread number and team size (try IDs)
   integer(8) :: progress_interval
 
   !===========================================================================
@@ -1059,7 +1060,7 @@ program ucmuon_gen
   ! No MPI communication inside this loop.
   !
   ! Shared state protected by:
-  !   !$OMP ATOMIC CAPTURE  → ntry  (unique monotonic attempt ID within rank)
+  !   REDUCTION(+:ntry)      → tries counted per thread, summed at the end
   !   !$OMP CRITICAL(c_surf) → write to surface file
   !   !$OMP CRITICAL(c_acc)  → accepted counter + selected/PHITS file writes
   !===========================================================================
@@ -1072,7 +1073,11 @@ program ucmuon_gen
   !$OMP           t_hit, t_enter, t_exit, i_det,                               &
   !$OMP           rnd, rnd2, rnd4, frac_plus, E_sampled_MeV,                   &
   !$OMP           cos_sampled, ibin, j, my_ntry, tmp_pos, tmp_dir,             &
-  !$OMP           nxs, nys, nzs, proj_s, ang_w)
+  !$OMP           nxs, nys, nzs, proj_s, ang_w, my_tid, n_team)                &
+  !$OMP   REDUCTION(+:ntry)
+
+  my_tid = omp_get_thread_num()
+  n_team = omp_get_num_threads()
 
   do   ! ← infinite loop: each thread generates until i == local_nmuons
 
@@ -1317,12 +1322,15 @@ program ucmuon_gen
     end if
 
     !==========================================================================
-    ! UPDATE ATTEMPT COUNTER — atomic capture gives unique per-rank event ID
+    ! COUNT THE TRY: ntry is this thread's own count (REDUCTION), summed over
+    ! the threads at the end of the region. Up to 1.4.1 every try updated one
+    ! shared counter (ATOMIC CAPTURE), which capped the rate at about 3e7
+    ! tries/s once the threads spanned more than one core complex (AMD EPYC:
+    ! no gain from 8 to 32 threads). The try ID interleaves the threads, so it
+    ! is unique within the rank; on one thread it is 1, 2, 3, ... as before.
     !==========================================================================
-    !$OMP ATOMIC CAPTURE
-    ntry = ntry + 1_8
-    my_ntry = ntry
-    !$OMP END ATOMIC
+    ntry    = ntry + 1_8
+    my_ntry = (ntry - 1_8) * n_team + my_tid + 1_8
 
     ! No straight ray from the source reaching any detector makes this loop
     ! run forever without a word: say so at 1e7, 1e8 and 1e9 tries.
@@ -1392,8 +1400,10 @@ program ucmuon_gen
       end if
 
       if (mod(i, progress_interval) == 0_8) then
+        ! This try's ID stands for the rank's tries so far: exact on one
+        ! thread, close on several (each thread's ntry is its own count here).
         write(*,'(A,I5,A,I10,A,I12,A,F8.4,A)') &
-          '  [Rank ', my_rank, '] Saved ', i, ' / tried ', ntry, &
+          '  [Rank ', my_rank, '] Saved ', i, ' / tried ', my_ntry, &
           '  (', 100d0*dble(i)/dble(local_nmuons), '% of local target)'
         flush(6)
       end if
