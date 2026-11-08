@@ -422,8 +422,9 @@ elevation model). No simulated result changes.
   3e7 tries per second once the threads spanned more than one core complex: on
   a Lemaitre4 node (AMD EPYC 9534, eight cores per L3 cache) the Fig. 7
   configuration took 3.6 s on 8 threads and 3.7 s on 32, and ten times more
-  muons 39 s on both; with per-thread counts, 1.1 s on 32 threads. On the M4
-  laptop 8 threads take 3.7 s (6.5 s before). The tried count and the live
+  muons 39 s on both; with per-thread counts, 0.91 s on 32 threads (31 times
+  faster than one thread, parallel efficiency 0.96). On the M4 laptop 8
+  threads take 3.7 s (6.5 s before). The tried count and the live
   time are unchanged, and one-thread output is byte-identical (test run, the
   underground rate example, the MPI generator on 2 ranks). With several
   threads the try IDs in the surface file interleave the threads: unique, but
@@ -433,7 +434,7 @@ elevation model). No simulated result changes.
   `run_scaling_hpc.sh`), and on Lemaitre4 the threads are pinned to
   consecutive cores (`OMP_PROC_BIND=close`, `OMP_PLACES=cores`); unpinned, on a
   256-CPU node, the generator gained nothing from 2 to 16 threads. MUSIC on 32
-  threads: 9.7 times faster than on one. The paper's explanation of the flat
+  threads: 9.6 times faster than on one. The paper's explanation of the flat
   generator curve (a small workload, the second socket) was wrong, and the
   configuration samples 1.1e8 trajectories, not 4e6.
 - `make_fig07_scaling.py` writes its CSV with LF line endings.
