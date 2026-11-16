@@ -6,7 +6,7 @@ Why generate rather than hand-port
 PARMA's muon path is ~800 lines of interpolation over fitted tables. Retyping it
 would be a transcription exercise with no upside and a large downside, so this
 script lifts the routines *verbatim* from JAEA's own `subroutines.cpp` and applies
-exactly six mechanical edits, each of which is easy to audit and is listed in
+exactly seven mechanical edits, each of which is easy to audit and is listed in
 the generated header:
 
   1. every `ifstream X(dname, ios::in)` becomes an `istringstream` over a table
@@ -20,10 +20,12 @@ the generated header:
      longer overwrite each other's cache;
   5. getPowCpp's static scratch array B, which every call writes and then
      reads, becomes `thread_local` for the same reason;
-  6. getHPcpp (date -> W index) counts a value as data only inside the years
-     each table covers, reports its status code, and prints nothing; the
-     public w_index_from_date() then falls back to the latest measured day,
-     as UCMuon's Fortran generator does (see the note there).
+  6. getHPcpp (date -> W index) reports its status code and prints nothing;
+     the public w_index_from_date() then falls back to the latest measured
+     day, as UCMuon's Fortran generator does (see the note there);
+  7. parmaErrorCpp, which PARMA 4.19 calls on invalid input, throws
+     std::runtime_error instead of calling exit(1): a library must not end
+     the program it is linked into (a Geant4 run, say).
 
 Edits 2 and 3 are not taken on trust: `validation/test_parma.cc` compares the
 generated header against the stock build over a dense grid and requires exact
@@ -58,6 +60,8 @@ from pathlib import Path
 # source, which is also a valid definition order for the header.
 NEEDED = [
     "getFFPfromWCpp",
+    "parmaErrorCpp",
+    "checkConditionCpp",
     "getPowCpp",
     "getAmuon",
     "getMuonSpecCpp",
@@ -120,7 +124,7 @@ def split_functions(src: str) -> dict[str, str]:
 
 
 def patch(text: str, name: str) -> tuple[str, list[str]]:
-    """Apply the six mechanical edits. Returns the text and what was done."""
+    """Apply the seven mechanical edits. Returns the text and what was done."""
     notes = []
 
     # 1. File reads become reads from the embedded tables.
@@ -185,32 +189,29 @@ def patch(text: str, name: str) -> tuple[str, list[str]]:
             sys.exit("getPowCpp: scratch array B not found; source changed?")
         notes.append("scratch array B made thread_local")
 
-    # 6. getHPcpp, date -> solar modulation W index. Its tables are function
-    #    statics, zero-initialised, so a year after the last one of
-    #    FFPtable.day read 0 as measured data, and the "no data" case returned
-    #    0 too, with only a printed message to tell the two apart. The data
-    #    branches now require the year to be inside each table (as in
-    #    UCMuon's patched Fortran getHP), the status code goes to
-    #    hp_status() for w_index_from_date(), and the three couts go: that
-    #    walk-back calls this once per day and would print each time.
+    # 6. getHPcpp, date -> solar modulation W index. The status code goes
+    #    to hp_status() for w_index_from_date(), and the "no data" warning
+    #    goes: that walk-back calls this once per day and would print each
+    #    time. (PARMA 4.19 fixed the two bugs UCMuon used to patch here: a
+    #    year after a table counted as data, and the yearly table's test.)
     if name == "getHPcpp":
-        edits = [
-            ("if(FFP[iy0][im0][id0] > -99.0) { // data exist",
-             "if((iy0 >= iystart) && (iy0 <= iyend) && FFP[iy0][im0][id0] > -99.0) { // data exist"),
-            ("if(FFPuso[iy0] != 0.0) {",
-             "if((iy0 >= iysUs) && (iy0 <= iyeUs) && FFPuso[iy0] > -99.0) {"),
-            ("int ic; // originally used in main routine, but not used in c++ version",
-             "int& ic = hp_status(); // read by w_index_from_date()"),
-            (r'cout << "Out of period" << "\n";', ""),
-            (r'cout << "No such day" << "\n";', ""),
-            (r'if(ic==4) {cout << "No FFP data is available" << "\n";}', ""),
-        ]
-        for old, new in edits:
-            if text.count(old) != 1:
-                sys.exit(f"getHPcpp: {old!r} not found once; source changed?")
-            text = text.replace(old, new)
-        notes.append("data only inside each table's years, status code to "
-                     "hp_status(), no printing")
+        old = "int ic; // originally used in main routine, but not used in c++ version"
+        if text.count(old) != 1:
+            sys.exit(f"getHPcpp: {old!r} not found once; source changed?")
+        text = text.replace(old, "int& ic = hp_status(); // read by w_index_from_date()")
+        text, n = re.subn(r'cout << "Warning in PARMA: W-index is assumed.*?is not available" << "\\n";',
+                          "", text, flags=re.S)
+        if n != 1:
+            sys.exit("getHPcpp: the no-data warning not found once; source changed?")
+        notes.append("status code to hp_status(), no printing")
+
+    # 7. parmaErrorCpp: throw rather than end the host program.
+    if name == "parmaErrorCpp":
+        text, n = re.subn(r'cout << "Error in PARMA: " << message << "\\n";\s*exit\(1\);',
+                          'throw std::runtime_error("PARMA: " + message);', text)
+        if n != 1:
+            sys.exit("parmaErrorCpp: cout/exit not found once; source changed?")
+        notes.append("throws std::runtime_error instead of exit(1)")
 
     return text, notes
 
@@ -257,7 +258,7 @@ HEADER = '''// =================================================================
 //  ---------------------------------------------------------------------------
 //  LICENCE: THIS FILE IS NOT MIT.
 //
-//  It contains code and data from PARMA/EXPACS v4.10, Copyright (c) 2006 Japan
+//  It contains code and data from PARMA/EXPACS v4.19, Copyright (c) 2006 Japan
 //  Atomic Energy Agency. The published "Conditions for Use"
 //  (https://phits.jaea.go.jp/expacs/download-eng.htm) state:
 //
@@ -313,6 +314,7 @@ HEADER = '''// =================================================================
 #include <iostream>
 #include <map>
 #include <sstream>
+#include <stdexcept>
 #include <string>
 
 namespace ucmugen {
@@ -342,16 +344,19 @@ using std::exp;
 using std::fabs;
 using std::floor;
 using std::getline;
+using std::isfinite;
 using std::istringstream;
 using std::log;
 using std::log10;
 using std::max;
 using std::min;
+using std::ostringstream;
 using std::pow;
 using std::sin;
 using std::sqrt;
 using std::string;
 using std::tan;
+using std::to_string;
 
 '''
 
@@ -404,12 +409,25 @@ inline double w_index_from_date(int year, int month, int day) {
   if (data_dir().empty())
     throw std::runtime_error("ucmugen::parma: w_index_from_date needs "
                              "set_data_dir(); FFPtable is not embedded");
-  const double w = detail::getHPcpp(year, month, day);
-  const int ic = detail::hp_status();
+  // PARMA 4.19 rejects a date that does not exist (edit 7 makes that a
+  // throw), so such a date is treated as one without data instead.
+  const auto exists = [](int y, int m, int d) {
+    static const int md[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (m < 1 || m > 12 || d < 1) return false;
+    const bool leap = (y % 4 == 0 && y % 100 != 0) || y % 400 == 0;
+    return d <= md[m - 1] + ((m == 2 && leap) ? 1 : 0);
+  };
+  double w = 0.0;
+  int ic = 4;
+  if (exists(year, month, day)) {
+    w = detail::getHPcpp(year, month, day);
+    ic = detail::hp_status();
+  }
   if (year >= 1951 && (ic == 2 || ic == 4)) {
     int wy = year, wm = month, wd = day;
     for (int k = 0; k < 40000; ++k) {        // ~110 years
       if (--wd < 1) { wd = 31; if (--wm < 1) { wm = 12; --wy; } }
+      if (!exists(wy, wm, wd)) continue;
       const double wb = detail::getHPcpp(wy, wm, wd);
       const int icb = detail::hp_status();
       if (icb == 1 || icb == 3) {
@@ -553,6 +571,8 @@ def main() -> int:
     # Forward declarations: the routines call each other in both directions.
     fwd = ["// Forward declarations: these routines are mutually recursive.",
            "inline double getFFPfromWCpp(double);",
+           "inline void parmaErrorCpp(std::string);",
+           "inline void checkConditionCpp(double,double,double,double);",
            "inline double getPowCpp(int,double,double);",
            "inline void getAmuon(int,int,double,double,double*);",
            "inline double getMuonSpecCpp(int,double,double,double,double);",

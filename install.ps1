@@ -52,6 +52,22 @@ function Find-Exe($name, $extraPaths=@()) {
     return $null
 }
 
+# -- 0. Smart App Control ------------------------------------------------------
+# Windows 11's Smart App Control blocks unsigned DLLs and programs it does not
+# know: pyarrow (needed by Streamlit, so the GUI fails with "An Application
+# Control policy has blocked this file") and the compiler's own tools.
+$sac = (Get-ItemProperty "HKLM:\SYSTEM\CurrentControlSet\Control\CI\Policy" `
+        -Name VerifiedAndReputablePolicyState -ErrorAction SilentlyContinue).VerifiedAndReputablePolicyState
+if ($sac -eq 1) {
+    Write-Host "  WARNING: Smart App Control is ON. It blocks parts of Python packages and"
+    Write-Host "  of the Fortran compiler that UCMuon needs, so the GUI and the build can"
+    Write-Host "  fail with 'An Application Control policy has blocked this file'."
+    Write-Host "  To turn it off: Windows Security -> App & browser control ->"
+    Write-Host "  Smart App Control settings -> Off, then run this installer again."
+    Write-Host "  (On some Windows versions it cannot be turned on again without a reset.)"
+    Write-Host ""
+}
+
 # -- 1. Python -----------------------------------------------------------------
 Write-Host "[1/4] Checking Python..."
 $py = Find-Exe "python" @("C:\Python311\python.exe","C:\Python312\python.exe","C:\Python310\python.exe")
@@ -203,10 +219,15 @@ if ($gf -and $mk) {
             Write-Host "  OK  MSYS2 already present at C:\msys64"
         }
         if (Test-Path $msys_bash) {
-            Write-Host "  Installing gcc-fortran and make (pacman)..."
+            Write-Host "  Updating MSYS2 and installing gcc, gfortran and make (pacman)..."
             $ErrorActionPreference = "Continue"
-            & $msys_bash -lc "pacman -Sy --noconfirm" 2>&1 | Out-Null
-            & $msys_bash -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc-fortran make" 2>&1 |
+            # A full update (-Syu), not -Sy then -S: MSYS2 does not support
+            # partial upgrades. Twice, because pacman may first update only
+            # itself and the MSYS2 core. libgomp is listed explicitly: gcc 16
+            # makes it optional, and -fopenmp cannot link without it.
+            & $msys_bash -lc "pacman -Syu --noconfirm" 2>&1 | Out-Null
+            & $msys_bash -lc "pacman -Syu --noconfirm" 2>&1 | Out-Null
+            & $msys_bash -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran mingw-w64-ucrt-x86_64-libgomp make" 2>&1 |
                 ForEach-Object { Write-Host "      $_" }
             $ErrorActionPreference = "Stop"
             $gf = Find-Exe "gfortran" $gf_extra
@@ -224,6 +245,20 @@ if ($gf -and $mk) {
     }
 }
 
+# OpenMP: MSYS2's gcc 16 packages list libgomp as an OPTIONAL dependency, so
+# a compiler installed without it cannot link -fopenmp ("cannot find -lgomp")
+# and every Fortran program fails to build. Install it if it is missing.
+$msys_bash = "C:\msys64\usr\bin\bash.exe"
+if ($fortran_ok -and (Test-Path $msys_bash) -and
+    -not (Test-Path "C:\msys64\ucrt64\lib\libgomp.dll.a") -and
+    -not (Test-Path "C:\msys64\ucrt64\lib\gcc\x86_64-w64-mingw32\*\libgomp.dll.a")) {
+    Write-Host "  --  OpenMP library (libgomp) missing; installing it (pacman)..."
+    $ErrorActionPreference = "Continue"
+    & $msys_bash -lc "pacman -S --noconfirm --needed mingw-w64-ucrt-x86_64-libgomp" 2>&1 |
+        ForEach-Object { Write-Host "      $_" }
+    $ErrorActionPreference = "Stop"
+}
+
 if (-not $fortran_ok) {
     Write-Host ""
     Write-Host "  Pure-Python engines still work: Engine 5 (Backward MC) needs"
@@ -237,7 +272,9 @@ if (-not $fortran_ok) {
     Write-Host "             and run the installer (default path: C:\msys64)"
     Write-Host ""
     Write-Host "    Step 2 -- Open 'MSYS2 UCRT64' from the Start menu and run:"
-    Write-Host "             pacman -S mingw-w64-ucrt-x86_64-gcc-fortran make"
+    Write-Host "             pacman -Syu"
+    Write-Host "             pacman -S mingw-w64-ucrt-x86_64-gcc mingw-w64-ucrt-x86_64-gcc-fortran"
+    Write-Host "                       mingw-w64-ucrt-x86_64-libgomp make"
     Write-Host ""
     Write-Host "    Step 3 -- Add C:\msys64\ucrt64\bin to your system PATH"
     Write-Host "             (Settings -> System -> Advanced -> Environment Variables)"

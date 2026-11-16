@@ -302,15 +302,21 @@ int main() {
       std::printf("  skipped: %s/input/FFPtable.day not found\n", dir);
     } else {
       parma::set_data_dir(dir);
-      check("2026-01-01 (measured)", parma::w_index_from_date(2026, 1, 1), 110.1, 1e-12);
-      const double last = parma::w_index_from_date(2026, 3, 26);
-      check("2026-03-26 (last measured day)", last, 107.4, 1e-12);
-      check("2026-10-15 takes the latest measured W",
-            parma::w_index_from_date(2026, 10, 15), last, 1e-12);
+      // Values of PARMA 4.19's FFPtable.day (JAEA, 2026-11-14).
+      check("2026-01-01 (measured)", parma::w_index_from_date(2026, 1, 1), 112.6, 1e-12);
+      const double last = parma::w_index_from_date(2026, 11, 12);
+      check("2026-11-12 (last measured day)", last, 66.4, 1e-12);
+      check("2026-12-15 takes the latest measured W",
+            parma::w_index_from_date(2026, 12, 15), last, 1e-12);
       check("2027-01-01 (after the table) too",
             parma::w_index_from_date(2027, 1, 1), last, 1e-12);
       check("2025-02-30 takes 2025-02-28",
             parma::w_index_from_date(2025, 2, 30), parma::w_index_from_date(2025, 2, 28), 1e-12);
+      // PARMA 4.19 rejects invalid input; edit 7 makes that a throw, not exit(1).
+      bool threw = false;
+      try { (void)parma::detail::getSpecAngFinalCpp(4, 50.0, 25.0, 1000.0, 1.0e4, 0.0, 1.0); }
+      catch (const std::runtime_error&) { threw = true; }
+      check("cut-off 25 GV throws (no exit)", threw ? 1.0 : 0.0, 1.0, 0.0);
       parma::set_data_dir("");
     }
   }

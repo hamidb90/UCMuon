@@ -22,7 +22,7 @@ on:
       - 'src/generator/**'
       - 'src/parma/**'
       - 'tools/install_parma.py'
-      - 'tools/parma_v4.10.sha256'
+      - 'tools/parma_v4.19.sha256'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -37,7 +37,7 @@ on:
       - 'src/generator/**'
       - 'src/parma/**'
       - 'tools/install_parma.py'
-      - 'tools/parma_v4.10.sha256'
+      - 'tools/parma_v4.19.sha256'
       - 'gui/fast_flux_estimator.py'
       - 'gui/ucmuon_backward_mc.py'
       - 'gui/ucmuon_terrain_driver.py'
@@ -90,7 +90,7 @@ jobs:
           path: |
             external/parma/parma.zip
             external/parma/parma_cpp.zip
-          key: parma-4.10-${{ hashFiles('tools/parma_v4.10.sha256') }}
+          key: parma-4.19-${{ hashFiles('tools/parma_v4.19.sha256') }}
 
       - name: Install PARMA (not shipped; JAEA, non-commercial terms)
         run: python3 tools/install_parma.py --yes
@@ -185,7 +185,7 @@ jobs:
           path: |
             external/parma/parma.zip
             external/parma/parma_cpp.zip
-          key: parma-4.10-${{ hashFiles('tools/parma_v4.10.sha256') }}
+          key: parma-4.19-${{ hashFiles('tools/parma_v4.19.sha256') }}
 
       - name: Install PARMA (not shipped; JAEA, non-commercial terms)
         run: python3 tools/install_parma.py --yes

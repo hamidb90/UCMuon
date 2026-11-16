@@ -10,17 +10,17 @@ terms.
 
 ## Downloaded by the installers
 
-### PARMA 4.10 / EXPACS (JAEA): spectrum mode 3, optional
+### PARMA 4.19 / EXPACS (JAEA): spectrum mode 3, optional
 
 `tools/install_parma.py`, which `setup.sh` and `install.ps1` run (the default
 answer is yes), downloads JAEA's `parma.zip` and `parma_cpp.zip` from
-https://phits.jaea.go.jp/expacs/, checks the two code files against the
-release UCMuon was tested with (`tools/parma_v4.10.sha256`), and writes three
-git-ignored items:
+https://phits.jaea.go.jp/expacs/, compares them with the release UCMuon was
+tested with (`tools/parma_v4.19.sha256`; a newer JAEA release is installed
+with a warning), and writes three git-ignored items:
 
 - `data/EXPACS/parma/`: JAEA's package, unpacked (the data tables);
 - `src/parma/parma_subroutines.f90`: JAEA's Fortran with UCMuon's edits
-  (configurable data directory; date lookup limited to each table's years),
+  (configurable data directory; a quiet mode for the date lookup),
   listed in its header and in the script;
 - `ucmugen/include/UCMuGen_PARMA.h`: generated from JAEA's C++ by
   `ucmugen/tools/make_parma_header.py`.

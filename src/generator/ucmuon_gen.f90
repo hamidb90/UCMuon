@@ -558,7 +558,16 @@ program ucmuon_gen
     ! main.f90 and main-generator.f90 pass it to getSpec as s). Up to v1.2.0
     ! it was only printed (labelled FFP) and the typed W was always used, so
     ! the date had no effect. A W <= -999 now means "from the date".
-    parma_ffp_MV = getHP(parma_year, parma_month, parma_day, parma_ic)
+    ! The generator reports a missing W itself, so getHP stays quiet. A date
+    ! that does not exist (30 February), on which PARMA 4.19 would stop, is
+    ! treated as one without data: it takes the latest measured W before it.
+    parma_quiet = .true.
+    if (parma_valid_date(parma_year, parma_month, parma_day)) then
+      parma_ffp_MV = getHP(parma_year, parma_month, parma_day, parma_ic)
+    else
+      parma_ffp_MV = 0.d0
+      parma_ic     = 4
+    end if
     if (parma_s_W <= -999.d0) then
       ! After the last day of the neutron-monitor table getHP falls back to
       ! the yearly Usoskin table, which ends in 2006 and is zero after it, so
@@ -566,6 +575,7 @@ program ucmuon_gen
       ! latest earlier day that has neutron-monitor data instead, and say so.
       if (parma_year >= 1951 .and. (parma_ic == 2 .or. parma_ic == 4)) then
         wy = parma_year; wm = parma_month; wd = parma_day
+        ic_back = 4
         do k_back = 1, 40000   ! ~110 years: reaches the table from any GUI date (<= 2050)
           wd = wd - 1
           if (wd < 1) then
@@ -574,6 +584,7 @@ program ucmuon_gen
               wm = 12; wy = wy - 1
             end if
           end if
+          if (.not. parma_valid_date(wy, wm, wd)) cycle
           w_back = getHP(wy, wm, wd, ic_back)
           if (ic_back == 1 .or. ic_back == 3) exit
         end do
@@ -593,6 +604,7 @@ program ucmuon_gen
         parma_s_W = parma_ffp_MV
       end if
     end if
+    parma_quiet  = .false.
     parma_s_W    = max(parma_s_W, -135.4d0)
 
     write(*,'(A,F8.2,A)') '  PARMA atm. depth:   ', parma_d_gcm2, ' g/cm2'

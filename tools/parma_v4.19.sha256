@@ -1,10 +1,10 @@
-# SHA-256 of the files of JAEA's PARMA 4.10 packages that UCMuon uses, as
-# downloaded from https://phits.jaea.go.jp/expacs/data/ on 2026-10-17 (both
-# zips last modified 2026-03-27). Read by tools/install_parma.py.
-7a429187f235b4dbeea2f63f0734d94c8c21783cb0255500c60c3998e5a1e616  parma/subroutines.f90
+# SHA-256 of the files of JAEA's PARMA 4.19 packages that UCMuon uses, as
+# downloaded from https://phits.jaea.go.jp/expacs/data/ on 2026-11-16 (code
+# dated 2026-11-05, FFPtable.day 2026-11-14). Read by tools/install_parma.py.
+f75c0ee7f453f94c17ae79b4c0567491b3585df4593c701dafefce7317fe29a2  parma/subroutines.f90
 dc94a0f82be0973808520f54e4b858880995807245ab9377c2f620ff61ee2a40  parma/input/AtomDepth.inp
 b574ee8341742ea966a9524bfdd065947aee01255737690ac4bf25fff68239f1  parma/input/CORdata.inp
-a3886c29d475fd5d84f145ee645d66b7e9bc9807cbeeec1c295ba38381052043  parma/input/FFPtable.day
+d3adfc63925d83368aacee7cea68c092ec659d1e938deec3ca77d97c098b30c4  parma/input/FFPtable.day
 0658564980619ea8e8d1575f45db2c9f61f9336c146b81539a38a91935f8533c  parma/input/FFPtable.uso
 070a7cf5b926b89679a3363fc4133c97d17932b363c766d686f9430396dabcee  parma/input/alphaa/Rigid-Dep.inp
 cc4396cc6b4ef23236c744ea190c23e4042e1193630c8fb4f918cd4044aaa136  parma/input/alphaa/fitting-lowspec.inp
@@ -71,4 +71,4 @@ d9efcc4f0d0af9b4b6310a230952ecab151ac66ebaa6edc20fc83f07b4a78d8c  parma/input/ne
 3edb803261417ad7195b1bcc6c391f585ccde140f6d39e30db5d4cfa20c8490f  parma/input/proton/Rigid-Dep.inp
 2a92444f299e2acef35a31b281de9a0ae55d22380b936df98d981501b08455c5  parma/input/proton/fitting-lowspec.inp
 3b1c5546cb39510b406e0f61cdec78f4a4e07bfb118312411d0d66092e847bfe  parma/input/proton/solar-dep.inp
-620cab2b58bac6bf996dcc0ad9a33b7bc113a4d768eb2f17b97788a500010c1b  parma_cpp/subroutines.cpp
+163883446f9f9ecb502186eb8657e6668db826ce7ad72a632e0675d1dc52f2fd  parma_cpp/subroutines.cpp

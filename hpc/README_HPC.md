@@ -43,7 +43,7 @@ UCMuon/                              <- project root; always run sbatch from her
 |-- data/                            <- static data (never modified by runs)
 |   |-- music-double-diff-rock.dat   <- required for MUSIC init_tables=0
 |   |-- music-double-diff-water.dat
-|   `-- EXPACS/parma/input/          <- PARMA 4.10 data (JAEA; not shipped, see step 2)
+|   `-- EXPACS/parma/input/          <- PARMA 4.19 data (JAEA; not shipped, see step 2)
 |
 |-- logs/                            <- SLURM .out/.err files (create once, step 4)
 |

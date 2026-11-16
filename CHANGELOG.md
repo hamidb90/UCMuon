@@ -11,15 +11,59 @@ elevation model). No simulated result changes.
   `data/EXPACS/`, `src/parma/parma_subroutines.f90` and
   `ucmugen/include/UCMuGen_PARMA.h` left the repository.
   `tools/install_parma.py` downloads JAEA's `parma.zip` and `parma_cpp.zip`,
-  checks the two code files against the tested PARMA 4.10
-  (`tools/parma_v4.10.sha256`), and writes the three again, git-ignored: the
-  same data, the same Fortran (UCMuon's edits applied by the script) and a
-  byte-identical C++ header. `setup.sh` and `install.ps1` run it, default
+  compares them with the tested release (`tools/parma_v4.19.sha256`, see
+  the next item), and writes the three again, git-ignored: the data, the
+  Fortran (UCMuon's edits applied by the script) and the C++ header. `setup.sh` and `install.ps1` run it, default
   yes (`--no-parma`/`-NoParma` skip it; `--parma-zip-dir`/`-ParmaZipDir`
   use zips downloaded elsewhere, for clusters without internet). Without
   PARMA the generator links `src/parma/parma_stub.f90`, whose mode 3 stops
   with a message saying how to install it, and the GUI says so too. Mode 1
-  and mode 3 output is byte-identical to 1.4.1's.
+  output, and mode 3 output with PARMA 4.10, is byte-identical to 1.4.1's.
+- **PARMA 4.19.** JAEA released PARMA 4.19 on 2026-11-05 and replaced 4.10
+  on its download page, so the installer, which accepted only 4.10's files,
+  refused PARMA for every new installation. 4.19 fixes, among others, the
+  date bug UCMuon used to patch (a year after the solar-modulation table
+  counted as data, W = 0), and its table now runs to 2026-11-12 (was
+  2026-03-26), with 2025-2026 values revised. Measured at Brussels, sea
+  level, 1-1000 GeV, same seed: output is byte-identical for a typed W, for
+  2020-01-01 and for 30 February 2025; the surface rate changes by -0.03 %
+  on 2025-06-15, +2.5 % on 2026-10-15 (now a measured day, W 75.8 instead of
+  107.4) and +3.1 % after the table. Longitude 360 deg now gives the cut-off
+  of 0 deg, as it should. The paper's PARMA curves use W = 0 and are
+  unchanged. What else changed for UCMuon:
+  - 4.19 stops on invalid input, including dates that do not exist. The
+    generators' walk-back to the latest measured W (`ucmuon_gen_omp`,
+    `ucmuon_gen`) and `ucmugen::parma::w_index_from_date` now skip such
+    dates, and an impossible input date still takes the W of the day before
+    it (`parma_valid_date` in `src/parma/parma_path_module.f90`).
+  - 4.19 prints a warning for each date without data; the walk-back would
+    print it once per day. `install_parma.py`'s only remaining edit to the
+    Fortran silences it while the generator searches (`parma_quiet`); the
+    generator still prints its own one-line warning.
+  - In the generated C++ header, PARMA's new error routine throws
+    `std::runtime_error` instead of calling `exit(1)`, so invalid input
+    cannot end a host program such as a Geant4 run.
+    `ucmugen/validation/run_tests.sh` passes, including exact agreement
+    with JAEA's own 4.19 build.
+  - **A newer JAEA release is installed with a warning instead of being
+    refused**, since JAEA does not keep old releases online. UCMuon's edits
+    must still apply exactly; if they do not, nothing is written, the
+    previous installation is kept, and the message asks for a report. The
+    files that differed are listed in `data/EXPACS/parma/UCMUON_INSTALL.txt`.
+    `--force` is gone, since there is nothing left for it to do.
+- **Windows installer: OpenMP library.** MSYS2's gcc 16 packages list
+  `libgomp` as an optional dependency, so a fresh MSYS2 install had no
+  OpenMP library, every Fortran program failed to link ("cannot find
+  -lgomp"), and the generator and Engines 2 and 3 were missing (found on a
+  fresh Windows 11 install). The installer now installs
+  `mingw-w64-ucrt-x86_64-libgomp` with the compiler, and adds it to an
+  existing MSYS2 that lacks it. It also runs a full `pacman -Syu` (twice)
+  instead of `-Sy` followed by an install, a partial upgrade that MSYS2
+  does not support.
+- **Windows installer: Smart App Control warning.** With Smart App Control
+  on, Windows blocked pyarrow's DLL (the GUI stopped with "An Application
+  Control policy has blocked this file") and a compiler tool. The installer
+  now detects it and says how to turn it off.
 - **The CERN Program Library routines are replaced.** `src/common/ranlux.f`,
   `ranlux_omp.f`, `ranmar_omp.f`, `rnorml.f` and `corset.f` (CERNLIB, GPL)
   are gone; `src/common/ucmuon_rng.f90` is UCMuon's own implementation of
