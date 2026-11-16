@@ -284,6 +284,16 @@ def check_test_run(root: Path) -> None:
         record(FAIL, "test run passes", (proc.stdout or proc.stderr).strip().splitlines()[-1:] or ["no output"])
 
 
+def check_windows_scripts_ascii(root: Path) -> None:
+    """Windows PowerShell 5.1 reads a .ps1 without a BOM as Windows-1252, where
+    the last byte of an em dash becomes a curly quote that PowerShell takes for
+    a real one; the installer then fails to parse. Keep these files ASCII."""
+    scripts = sorted(root.glob("*.ps1")) + sorted(root.glob("*.bat"))
+    bad = [p.name for p in scripts if not p.read_bytes().isascii()]
+    record(FAIL if bad else OK, "Windows scripts are ASCII",
+           ", ".join(bad) if bad else f"{len(scripts)} files")
+
+
 def check_ucmugen_numbers(root: Path) -> None:
     checker = root / "ucmugen" / "validation" / "check_numbers.py"
     tour = root / "ucmugen" / "examples" / "features" / "feature_tour.cc"
@@ -318,6 +328,7 @@ def main() -> int:
     check_cover_letter(root, version)
     check_public_clean(public_tree)
     check_tree_parity(root, public_tree)
+    check_windows_scripts_ascii(root)
     check_ucmugen_numbers(root)
     if not args.fast:
         check_test_run(root)

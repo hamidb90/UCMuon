@@ -42,7 +42,7 @@ Write-Host "  https://github.com/hamidb90/UCMuon"
 Write-Host "======================================================="
 Write-Host ""
 
-# ── Helper ────────────────────────────────────────────────────────────────────
+# -- Helper --------------------------------------------------------------------
 function Find-Exe($name, $extraPaths=@()) {
     $cmd = Get-Command $name -ErrorAction SilentlyContinue
     if ($cmd) { return $cmd.Source }
@@ -52,7 +52,7 @@ function Find-Exe($name, $extraPaths=@()) {
     return $null
 }
 
-# ── 1. Python ─────────────────────────────────────────────────────────────────
+# -- 1. Python -----------------------------------------------------------------
 Write-Host "[1/4] Checking Python..."
 $py = Find-Exe "python" @("C:\Python311\python.exe","C:\Python312\python.exe","C:\Python310\python.exe")
 if (-not $py) {
@@ -86,7 +86,7 @@ if ($ver_out -match "(\d+)\.(\d+)") {
 }
 Write-Host "  OK  $ver_out  ($py)"
 
-# ── 2. Python packages ────────────────────────────────────────────────────────
+# -- 2. Python packages --------------------------------------------------------
 Write-Host "[2/4] Installing Python packages..."
 & $py -m pip install -q --upgrade pip
 & $py -m pip install -q -r requirements.txt
@@ -148,7 +148,7 @@ if ($e4_test -match "^ok") {
     $e4_test | ForEach-Object { Write-Host "      $_" }
 }
 
-# ── 3. Fortran compiler (gfortran via MSYS2) ──────────────────────────────────
+# -- 3. Fortran compiler (gfortran via MSYS2) ----------------------------------
 Write-Host "[3/4] Checking Fortran compiler (gfortran)..."
 
 $gf_extra = @(
@@ -181,7 +181,7 @@ if ($gf -and $mk) {
     Write-Host "  (MUSIC) and 3 (Bethe-Bloch) are unavailable."
     Write-Host ""
 
-    # ── Offer automated MSYS2 + gfortran install via winget ──────────────────
+    # -- Offer automated MSYS2 + gfortran install via winget ------------------
     $msys_bash = "C:\msys64\usr\bin\bash.exe"
     $do_msys   = $false
     if (-not $NoPrompt) {
@@ -233,20 +233,20 @@ if (-not $fortran_ok) {
     Write-Host ""
     Write-Host "  To enable Fortran engines manually, install MSYS2:"
     Write-Host ""
-    Write-Host "    Step 1 — Download MSYS2 from https://www.msys2.org/"
+    Write-Host "    Step 1 -- Download MSYS2 from https://www.msys2.org/"
     Write-Host "             and run the installer (default path: C:\msys64)"
     Write-Host ""
-    Write-Host "    Step 2 — Open 'MSYS2 UCRT64' from the Start menu and run:"
+    Write-Host "    Step 2 -- Open 'MSYS2 UCRT64' from the Start menu and run:"
     Write-Host "             pacman -S mingw-w64-ucrt-x86_64-gcc-fortran make"
     Write-Host ""
-    Write-Host "    Step 3 — Add C:\msys64\ucrt64\bin to your system PATH"
+    Write-Host "    Step 3 -- Add C:\msys64\ucrt64\bin to your system PATH"
     Write-Host "             (Settings -> System -> Advanced -> Environment Variables)"
     Write-Host ""
-    Write-Host "    Step 4 — Close and reopen PowerShell, then re-run install.ps1"
+    Write-Host "    Step 4 -- Close and reopen PowerShell, then re-run install.ps1"
     Write-Host ""
 }
 
-# ── 3b. Optional: PUMAS source for Engine 7 (downloaded, not bundled: LGPL-3.0) ──
+# -- 3b. Optional: PUMAS source for Engine 7 (downloaded, not bundled: LGPL-3.0) --
 $pumas_src = "external\pumas-master\src\pumas.c"
 if ($fortran_ok -and (Test-Path $pumas_src)) {
     Write-Host "  OK  PUMAS source present  (Engine 7 will be built)"
@@ -289,7 +289,7 @@ if ($fortran_ok -and (Test-Path $pumas_src)) {
     }
 }
 
-# ── 3c. Optional: PARMA for spectrum mode 3 (JAEA, non-commercial terms) ─────
+# -- 3c. Optional: PARMA for spectrum mode 3 (JAEA, non-commercial terms) -----
 # Downloaded from JAEA, not bundled. tools\install_parma.py shows the terms
 # and asks (default yes); -NoPrompt installs without asking, -NoParma skips.
 $ErrorActionPreference = "Continue"
@@ -310,7 +310,7 @@ if ($LASTEXITCODE -eq 0) {
 }
 $ErrorActionPreference = "Stop"
 
-# ── 4. Build Fortran binaries ─────────────────────────────────────────────────
+# -- 4. Build Fortran binaries -------------------------------------------------
 Write-Host "[4/4] Building Fortran binaries..."
 
 if ($fortran_ok) {
@@ -335,13 +335,13 @@ if ($fortran_ok) {
     if ($LASTEXITCODE -eq 0) {
         Write-Host "  OK  Fortran binaries built in bin\"
     } else {
-        Write-Host "  WARN: make returned errors — some engines may be unavailable"
+        Write-Host "  WARN: make returned errors -- some engines may be unavailable"
     }
 } else {
     Write-Host "  SKIP (gfortran not found)"
 }
 
-# ── Summary ───────────────────────────────────────────────────────────────────
+# -- Summary -------------------------------------------------------------------
 Write-Host ""
 Write-Host "======================================================="
 Write-Host "  ENGINE AVAILABILITY"

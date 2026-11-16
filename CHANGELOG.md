@@ -39,6 +39,18 @@ elevation model). No simulated result changes.
   the CERNLIB routines (the latter undeclared) and, inside JAEA's package, an
   LGPL Mersenne Twister.
 
+### Fixed
+- **The Windows installer parses again under Windows PowerShell 5.1.**
+  `install.ps1` had no byte-order mark, so PowerShell 5.1 read it as
+  Windows-1252, where the last byte of an em dash is a curly quote that
+  PowerShell treats as a real one. One quote too many on the build step's
+  warning line left a string open, and the script stopped with "Missing
+  closing '}'" before doing anything (`install_windows.bat` runs it this
+  way). The same lines are in every release from 0.9.0 to 1.4.1; the
+  failure needs a Windows-1252 system code page, the usual one for US and
+  Western European Windows. `install.ps1` is now plain ASCII, and
+  `tools/check_consistency.py` fails if a `.ps1` or `.bat` file is not.
+
 ### Engine 5 is a backward CSDA flux integrator, validated and calibrated
 - Renamed in the GUI (display labels; the internal key is unchanged), the
   README and the paper: it is a deterministic quadrature, not a Monte Carlo.
