@@ -125,7 +125,7 @@ def convert(infile, outfile, mode, electrons=False):
     n_written = 0
     n_skipped = 0
 
-    with open(infile, 'r') as fin, open(outfile, 'w') as fout:
+    with open(infile, 'r', encoding="utf-8", errors="replace") as fin, open(outfile, 'w', encoding="utf-8") as fout:
         for raw in fin:
             line = raw.strip()
             if not line or line.startswith('#'):
@@ -236,7 +236,7 @@ def main():
         stem = os.path.splitext(args.input)[0]
         args.output = stem + '_phits.dat'
 
-    print(f"UCMuon → PHITS converter")
+    print(f"UCMuon -> PHITS converter")
     print(f"  Input  : {args.input}  (mode={args.mode})")
     print(f"  Output : {args.output}")
 

@@ -794,7 +794,7 @@ def transport_muons_multi_detector(
         for cid in detector_cell_ids:
             name = detector_names.get(cid, f"cell{cid}")
             fpath = os.path.join(dump_dir, f"{name}_hits.dat")
-            dump_handles[cid] = open(fpath, "w")
+            dump_handles[cid] = open(fpath, "w", encoding="utf-8")
             # Header: PHITS dump=-14 column order
             dump_handles[cid].write(
                 "# PHITS T-Cross equivalent dump  "
@@ -1129,7 +1129,7 @@ def transport_muons_csg_engine(
         name = detector_names.get(cid, f"cell{cid}")
         if write_phits_dump:
             os.makedirs(dump_dir, exist_ok=True)
-            with open(os.path.join(dump_dir, f"{name}_hits.dat"), "w") as fh:
+            with open(os.path.join(dump_dir, f"{name}_hits.dat"), "w", encoding="utf-8") as fh:
                 fh.write(
                     "# PHITS T-Cross equivalent dump  "
                     f"detector=cell{cid} ({name})  engine={engine}\n"
@@ -1166,7 +1166,7 @@ def write_phits_dump_file(df: "pd.DataFrame", path: str,
     geometry_name    : geometry description for header
     """
     alive = df[df["alive"] == 1] if "alive" in df.columns else df
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write(f"# UCMuon PHITS T-Cross dump  cell={detector_cell_id}  "
                 f"geo={geometry_name}  n_muons={len(alive)}\n")
         f.write("# x[cm]           y[cm]           z[cm]           "

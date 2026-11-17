@@ -728,7 +728,7 @@ def directional_flux(X_slant_gcm2, theta_rad, spectrum_mode,
 
 def _write_results(res, fpath):
     info = res["info"]
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Backward MC — UCLouvain Muography Group\n")
         fh.write(f"# Depth: {info['depth_m']:.1f} m  "
                  f"rho: {info['rho']:.3f} g/cm3  mat: {info['mat']}\n")
@@ -751,9 +751,9 @@ def _write_results(res, fpath):
 def _print_summary(res):
     info = res["info"]
     print("", flush=True)
-    print("  ══════════════════════════════════════════════", flush=True)
+    print("  ==============================================", flush=True)
     print("   UCMuon Backward MC — Flux at depth", flush=True)
-    print("  ══════════════════════════════════════════════", flush=True)
+    print("  ==============================================", flush=True)
     print(f"   Depth    : {info['depth_m']:.1f} m  ({info['mat']})", flush=True)
     print(f"   Opacity  : {res['X_vert_gcm2']:.1f} g/cm2 (vertical)", flush=True)
     print(f"   Mode     : {info['mode']}", flush=True)
@@ -767,7 +767,7 @@ def _print_summary(res):
         print(f"   Mean P_surv: {float(np.mean(alive_ps)):.4f}", flush=True)
     if info.get("range_note"):
         print(f"   WARNING: {info['range_note']}", flush=True)
-    print("  ══════════════════════════════════════════════", flush=True)
+    print("  ==============================================", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

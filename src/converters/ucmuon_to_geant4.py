@@ -96,7 +96,7 @@ def convert(infile, outfile, mode, electrons=False):
     base = 11 if electrons else 13
     mass_mev = ELECTRON_MASS_MEV if electrons else MUON_MASS_MEV
 
-    with open(infile, 'r') as fin, open(outfile, 'w') as fout:
+    with open(infile, 'r', encoding="utf-8", errors="replace") as fin, open(outfile, 'w', encoding="utf-8") as fout:
         fout.write("# UCMuon Geant4 source file — UCLouvain Muography Group\n")
         fout.write(f"# Source: {os.path.basename(infile)}\n")
         fout.write("# Format: PDG  x[mm]  y[mm]  z[mm]  px[MeV/c]  py[MeV/c]  pz[MeV/c]  Ekin[MeV]\n")
@@ -209,10 +209,10 @@ def main():
         stem = os.path.splitext(args.input)[0]
         args.output = stem + '_geant4.txt'
 
-    print(f"UCMuon → Geant4 converter")
+    print(f"UCMuon -> Geant4 converter")
     print(f"  Input  : {args.input}  (mode={args.mode})")
     print(f"  Output : {args.output}")
-    print(f"  Units  : positions cm→mm (×10), momenta GeV/c→MeV/c (×1000), Ekin MeV")
+    print(f"  Units  : positions cm->mm (×10), momenta GeV/c->MeV/c (×1000), Ekin MeV")
 
     try:
         n_written, n_skipped = convert(args.input, args.output, args.mode, args.electrons)

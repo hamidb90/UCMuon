@@ -1455,7 +1455,7 @@ program ucmuon_gen
                               100d0*dble(i_global)/dble(ntry_global), ' %'
     call report_live_time(ntry_global)
     write(*,'(A,I8,A,I4,A)') &
-      '  Parallelisation:           ', nranks, ' MPI ranks × ', &
+      '  Parallelisation:           ', nranks, ' MPI ranks x ', &
       omp_get_max_threads(), ' OMP threads'
     write(*,*)
     write(*,'(A,A,A)') '  Per-rank files: ', trim(stem_all), '_RRRRR.dat'

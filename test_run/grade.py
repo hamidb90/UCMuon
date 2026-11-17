@@ -53,7 +53,7 @@ def stats(out: Path) -> dict[str, tuple[float, float]]:
         "charge_ratio": (r, r * math.sqrt(1 / n_p + 1 / n_m)),
         "mean_cos_theta": (cost.mean(), cost.std(ddof=1) / math.sqrt(n)),
     }
-    log = (out / "generator.log").read_text() if (out / "generator.log").exists() else ""
+    log = (out / "generator.log").read_text(encoding="utf-8", errors="replace") if (out / "generator.log").exists() else ""
     m = re.search(r"Tried:\s+(\d+)", log)
     t = re.search(r"Live time:\s+([0-9.Ee+-]+)", log)
     if m and t:
@@ -79,7 +79,7 @@ def main() -> int:
     res = stats(a.out)
 
     if a.write_reference:
-        with open(a.write_reference, "w") as fh:
+        with open(a.write_reference, "w", encoding="utf-8") as fh:
             fh.write("# Reference statistics of the test run: written by test_run/grade.py "
                      "--write-reference from the run made by test_run/make_reference.sh.\n")
             w = csv.writer(fh, lineterminator="\n")
@@ -90,7 +90,7 @@ def main() -> int:
         return 0
 
     ref = {r["statistic"]: (float(r["value"]), float(r["error"]))
-           for r in csv.DictReader(line for line in open(a.reference) if not line.startswith("#"))}
+           for r in csv.DictReader(line for line in open(a.reference, encoding="utf-8", errors="replace") if not line.startswith("#"))}
     print(f"Checks against the reference ({a.reference.parent.name}/{a.reference.name}), "
           f"tolerance {TOL:g} sigma")
     ok = True

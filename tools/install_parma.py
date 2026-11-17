@@ -109,7 +109,7 @@ def sha256(data: bytes) -> str:
 
 def read_manifest() -> dict[str, str]:
     out = {}
-    for line in MANIFEST.read_text().splitlines():
+    for line in MANIFEST.read_text(encoding="utf-8", errors="replace").splitlines():
         if line.strip() and not line.startswith("#"):
             digest, name = line.split(None, 1)
             out[name.strip()] = digest
@@ -247,14 +247,14 @@ def install(zip_dir: Path | None) -> None:
         raise
 
     extract(zf, root, DATA_DIR)
-    F90_OUT.write_text(f90)
+    F90_OUT.write_text(f90, encoding="utf-8")
     header_tmp.replace(HEADER_OUT)
     STAMP.write_text(
         f"Installed by tools/install_parma.py on {date.today().isoformat()} from JAEA's\n"
         f"parma.zip (SHA-256 {sha256(zf.fp.getvalue())}) and\n"
         f"parma_cpp.zip (SHA-256 {sha256(zc.fp.getvalue())}).\n"
         f"Files changed from the tested PARMA 4.19 release: "
-        f"{', '.join(sorted(set(changed + changed_cpp))) or 'none'}\n")
+        f"{', '.join(sorted(set(changed + changed_cpp))) or 'none'}\n", encoding="utf-8")
     print(f"  OK  data tables in {DATA_DIR.relative_to(ROOT)}/")
     print(f"  OK  {F90_OUT.relative_to(ROOT)} (JAEA code with UCMuon's edits)")
     print(f"  OK  {HEADER_OUT.relative_to(ROOT)}")

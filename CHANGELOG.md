@@ -64,6 +64,40 @@ elevation model). No simulated result changes.
   on, Windows blocked pyarrow's DLL (the GUI stopped with "An Application
   Control policy has blocked this file") and a compiler tool. The installer
   now detects it and says how to turn it off.
+- **Windows: the GUI could not load transport output.** The Python drivers
+  (UCMuon-MC, Bethe-Bloch) wrote their files with the platform's default
+  encoding, Windows-1252 on Windows, so the em dash in the header became
+  byte 0x97; the GUI reads UTF-8, the read failed, and the Results tab
+  showed an underground file as empty (no rate at depth, no survival curve,
+  wrong 3D title). Found by the GUI tests on a Windows 11 machine. Every
+  text file the GUI, its drivers, the converters, the examples and the
+  tests open now names UTF-8 (reads replace undecodable bytes, so files
+  written by earlier versions load), checked with Python's
+  PYTHONWARNDEFAULTENCODING over the GUI and test suites; the muon loader
+  also passes encoding_errors="replace" to pandas.
+- **Windows: no crashes on printed symbols.** A Python script whose output
+  goes to a pipe (as when the GUI runs a driver) encodes it as
+  Windows-1252 on Windows, so a symbol outside it (sigma, rho, arrows, box
+  lines, emoji) raised UnicodeEncodeError. The 48 printed lines with such
+  symbols, and the 29 Fortran messages and 3 Makefile messages with em
+  dashes and the like, which a Windows console showed as "â€”", are now
+  ASCII.
+- **Windows: the rasterio check.** install.ps1 decided whether rasterio
+  imports by looking for "ok" in the output, which a failed import also
+  matched from Python 3.13 on (the traceback quotes the code, print('ok')),
+  so it reported Engine 6 as enabled without rasterio. It now uses the exit
+  code. Installing rasterio pinned "numpy<2.3", which cannot install on
+  Python 3.14 (numpy has 3.14 wheels from 2.3 on); both installers now pin
+  the numpy already installed instead.
+- **Tests and examples find Windows builds.** They looked for bin/<name>,
+  while MSYS2 builds bin/<name>.exe, so on Windows the generator, Bethe-Bloch
+  and converter tests skipped or failed. They now accept either name, as
+  the GUI already did. `examples/underground_rate` checks that the
+  generator and MUSIC exist before its generator stage (20 min on an Apple
+  M4 core, 2 h on an Intel i7-1165G7) instead of failing after it.
+  `test_run/run_test.sh` takes `$PYTHON`, and under MSYS2/Git Bash skips a
+  `python3` that is a WindowsApps alias, which such a shell cannot run (it
+  hung).
 - **The CERN Program Library routines are replaced.** `src/common/ranlux.f`,
   `ranlux_omp.f`, `ranmar_omp.f`, `rnorml.f` and `corset.f` (CERNLIB, GPL)
   are gone; `src/common/ucmuon_rng.f90` is UCMuon's own implementation of

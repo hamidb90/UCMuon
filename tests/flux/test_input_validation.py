@@ -19,12 +19,18 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
-GEN = Path(sys.argv[1]) if len(sys.argv) > 1 else ROOT / "bin" / "ucmuon_gen_omp"
+
+
+def _exe(p: Path) -> Path:
+    """p, or p.exe when only that exists (Windows builds carry the suffix)."""
+    w = p.with_name(p.name + ".exe")
+    return w if not p.exists() and w.exists() else p
+GEN = Path(sys.argv[1]) if len(sys.argv) > 1 else _exe(ROOT / "bin" / "ucmuon_gen_omp")
 
 
 def base_input(out: Path) -> list[str]:
     lines = []
-    for line in (ROOT / "test_run" / "input_gen.dat").read_text().splitlines():
+    for line in (ROOT / "test_run" / "input_gen.dat").read_text(encoding="utf-8", errors="replace").splitlines():
         v = line.split("#")[0].strip()
         if v:
             lines.append(v.replace("test_run/output/", f"{out}/"))
@@ -72,7 +78,7 @@ def main() -> int:
         base_small = list(base)
         base_small[14] = "200"                      # the valid input, smaller
         code, err = run(base_small, tmp)
-        n = sum(1 for line in open(tmp / "muons_selected.dat") if not line.startswith("#")) if code == 0 else 0
+        n = sum(1 for line in open(tmp / "muons_selected.dat", encoding="utf-8", errors="replace") if not line.startswith("#")) if code == 0 else 0
         ok = code == 0 and n == 200
         print(f"  [{'ok  ' if ok else 'FAIL'}] {'valid input':30s} exit {code}, {n} muons selected")
         if not ok:
@@ -80,7 +86,7 @@ def main() -> int:
         mono = list(base_small)
         mono[2] = mono[1]                           # e_max = e_min: a mono-energetic beam
         code, err = run(mono, tmp)
-        e = {line.split()[10] for line in open(tmp / "muons_selected.dat")
+        e = {line.split()[10] for line in open(tmp / "muons_selected.dat", encoding="utf-8", errors="replace")
              if not line.startswith("#")} if code == 0 else set()
         ok = code == 0 and len(e) == 1
         print(f"  [{'ok  ' if ok else 'FAIL'}] {'mono-energetic (e_max = e_min)':30s} exit {code}, energies {sorted(e)}")
@@ -88,7 +94,7 @@ def main() -> int:
             failed.append("mono-energetic")
         nodet = base_small[:15] + ["0", "0", "0", str(tmp / "all.dat"), ""]
         code, err = run(nodet, tmp)                 # no detector, save_all = 0, as the GUI sends
-        n = sum(1 for line in open(tmp / "all.dat") if not line.startswith("#")) if code == 0 else 0
+        n = sum(1 for line in open(tmp / "all.dat", encoding="utf-8", errors="replace") if not line.startswith("#")) if code == 0 else 0
         ok = code == 0 and n == 200
         print(f"  [{'ok  ' if ok else 'FAIL'}] {'no detector, save_all = 0':30s} exit {code}, {n} muons written")
         if not ok:

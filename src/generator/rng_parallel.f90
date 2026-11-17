@@ -65,7 +65,7 @@ contains
         write(*,'(A,I0,A)') '  RNG base seed: ', seed, '   (UCMUON_SEED)'
         return
       end if
-      write(*,'(A)') '  WARNING: UCMUON_SEED is not an integer — using clock seed.'
+      write(*,'(A)') '  WARNING: UCMUON_SEED is not an integer -- using clock seed.'
     end if
 
     call DATE_AND_TIME(VALUES=tim)

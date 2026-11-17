@@ -70,7 +70,7 @@ def _detect_depth_axis(infile: str) -> int:
     """Return 0/1/2 for which of X/Y/Z has the smallest std (= depth axis)."""
     xs, ys, zs, pm = [], [], [], []
     try:
-        with open(infile) as fh:
+        with open(infile, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -100,7 +100,7 @@ def _detect_depth_axis(infile: str) -> int:
     else:
         axis = int(np.argmin(stds))
     names = {0: "YZ (depth=X)", 1: "XZ (depth=Y)", 2: "XY (depth=Z)"}
-    print(f"  Source plane: {names[axis]}  σ(x,y,z)="
+    print(f"  Source plane: {names[axis]}  sigma(x,y,z)="
           f"{stds[0]:.1f} {stds[1]:.1f} {stds[2]:.1f} cm", flush=True)
     return axis
 
@@ -128,7 +128,7 @@ def compute_flux_spectrum(event_file: str, n_bins: int = 50,
     """
     evs = []
     try:
-        with open(event_file) as fh:
+        with open(event_file, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -373,7 +373,7 @@ def main():
 def _count_muons(infile: str, transport_all: int) -> int:
     n = 0
     try:
-        with open(infile) as fh:
+        with open(infile, encoding="utf-8", errors="replace") as fh:
             for line in fh:
                 line = line.strip()
                 if not line or line.startswith("#"):
@@ -396,7 +396,7 @@ def _write_flux_spectrum(outfile: str, spec: dict, depth_m: float,
                          mat_name: str, rho: float, theta_max: float,
                          n_events: int, spectrum_id: int):
     """Write the binned flux spectrum to outfile (5-col ASCII)."""
-    with open(outfile, "w") as fh:
+    with open(outfile, "w", encoding="utf-8") as fh:
         fh.write(
             f"# PUMAS backward MC flux spectrum\n"
             f"# depth={depth_m:.2f} m  mat={mat_name}  rho={rho:.3f} g/cm3\n"

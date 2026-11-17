@@ -62,7 +62,7 @@ def dump_streams() -> list[tuple[str, int, int]]:
 def test_streams_match_cernlib_reference():
     if shutil.which("gfortran") is None:
         pytest.skip("gfortran not found")
-    want = data_lines(REFERENCE.read_text())
+    want = data_lines(REFERENCE.read_text(encoding="utf-8", errors="replace"))
     got = dump_streams()
     for i, (w, g) in enumerate(zip(want, got)):
         if w != g:

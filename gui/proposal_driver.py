@@ -227,7 +227,7 @@ def _csda_crosscheck(pp, prop):
         print(f"  CSDA crosscheck: 100 GeV muon stops at {d_fin:.1f} m  "
               f"(E_final={e_fin:.1f} MeV = rest mass + kinetic)  "
               f"Groom CSDA mean: 142.6 m  {status}", flush=True)
-        print(f"  NOTE: E_final={e_fin:.1f} MeV ≈ muon rest mass (105.658 MeV) "
+        print(f"  NOTE: E_final={e_fin:.1f} MeV ~ muon rest mass (105.658 MeV) "
               f"for a STOPPED muon. alive criterion = d_traversed, NOT E_final.",
               flush=True)
     except Exception as exc:
@@ -276,7 +276,7 @@ def detect_source_plane(muons):
     else:
         axis = int(np.argmin(stds))
     names = {0: "YZ (depth=X)", 1: "XZ (depth=Y)", 2: "XY (depth=Z)"}
-    print(f"  Source plane: {names[axis]}  σ(x,y,z)={stds[0]:.1f} {stds[1]:.1f} {stds[2]:.1f} cm",
+    print(f"  Source plane: {names[axis]}  sigma(x,y,z)={stds[0]:.1f} {stds[1]:.1f} {stds[2]:.1f} cm",
           flush=True)
     return axis
 

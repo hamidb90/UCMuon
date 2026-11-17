@@ -75,7 +75,7 @@ MODES = [  # (function, label, colour, linestyle, linewidth)
 
 def load_compilation():
     data = {}
-    with open(os.path.join(DATA, "reyna2006_fig3_data.csv")) as f:
+    with open(os.path.join(DATA, "reyna2006_fig3_data.csv"), encoding="utf-8", errors="replace") as f:
         for row in csv.DictReader(f):
             data.setdefault(row["experiment"], []).append(
                 (float(row["zeta_gev"]), float(row["intensity_cm2_s_sr_gev"]),
@@ -85,7 +85,7 @@ def load_compilation():
 
 def load_cosmoaleph():
     rows = []
-    with open(os.path.join(DATA, "cosmoaleph2013_table1.csv")) as f:
+    with open(os.path.join(DATA, "cosmoaleph2013_table1.csv"), encoding="utf-8", errors="replace") as f:
         for row in csv.DictReader(filter(lambda l: not l.startswith("#"), f)):
             rows.append([float(row[k]) for k in
                          ("p_gevc", "flux", "flux_err_stat", "flux_err_sys",
@@ -95,7 +95,7 @@ def load_cosmoaleph():
 
 def load_bestfit():
     pts = []
-    with open(os.path.join(DATA, "reyna2006_fig3_bestfit.csv")) as f:
+    with open(os.path.join(DATA, "reyna2006_fig3_bestfit.csv"), encoding="utf-8", errors="replace") as f:
         for row in csv.DictReader(f):
             pts.append((float(row["zeta_gev"]),
                         float(row["intensity_cm2_s_sr_gev"])))

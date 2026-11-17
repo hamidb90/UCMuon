@@ -380,13 +380,13 @@ program ucmuon_transport_bb_omp
       depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
   else if (ys_var <= xs_var .and. ys_var <= zs_var) then
     depth_axis = 1    ! XZ source plane, depth in Y
-    write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
+    write(*,*) '  Source plane: XZ  (y=const) -- depth direction: Y'
   else if (xs_var <= ys_var .and. xs_var <= zs_var) then
     depth_axis = 0    ! YZ source plane, depth in X
-    write(*,*) '  Source plane: YZ  (x=const) — depth direction: X'
+    write(*,*) '  Source plane: YZ  (x=const) -- depth direction: X'
   else
     depth_axis = 2    ! XY source plane, depth in Z (default)
-    write(*,*) '  Source plane: XY  (z=const) — depth direction: Z'
+    write(*,*) '  Source plane: XY  (z=const) -- depth direction: Z'
   end if
   write(*,'(A,3ES11.3,A)') '  Pos. std (x,y,z): ', &
     sqrt(xs_var), sqrt(ys_var), sqrt(zs_var), ' cm'

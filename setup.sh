@@ -100,8 +100,9 @@ if [ "$NO_PY" -eq 0 ]; then
         fi
         if [ "$install_rio" -eq 1 ]; then
             echo "      Installing rasterio..."
-            # numpy<2.3 keeps pip from dragging numpy past what scipy pins allow
-            if "$PYTHON" -m pip install -q rasterio "numpy<2.3" && "$PYTHON" -c "import rasterio" 2>/dev/null; then
+            # pin numpy to the installed version so pip does not move it past what scipy allows
+            NPV=$("$PYTHON" -c "import numpy; print(numpy.__version__)" 2>/dev/null)
+            if "$PYTHON" -m pip install -q rasterio ${NPV:+"numpy==$NPV"} && "$PYTHON" -c "import rasterio" 2>/dev/null; then
                 echo "  OK  rasterio installed  (Engine 6: UCMuon Terrain enabled)"
             else
                 echo "  WARN: rasterio install failed  (Engine 6 disabled)"
@@ -162,7 +163,8 @@ if [ "$NO_PY" -eq 0 ] && [ "$NO_PROP" -eq 0 ]; then
         # here too when it was installed for $PYTHON above.
         if "$PYTHON" -c "import rasterio" 2>/dev/null \
            && ! "$VENV/bin/python3" -c "import rasterio" 2>/dev/null; then
-            "$VENV/bin/pip" install -q rasterio "numpy<2.3" \
+            VNPV=$("$VENV/bin/python3" -c "import numpy; print(numpy.__version__)" 2>/dev/null)
+            "$VENV/bin/pip" install -q rasterio ${VNPV:+"numpy==$VNPV"} \
                 && "$VENV/bin/python3" -c "import rasterio" 2>/dev/null \
                 && echo "  OK  rasterio installed in venv  (Engine 6 in the GUI)" \
                 || echo "  WARN: rasterio install in venv failed  (Engine 6 unavailable in the GUI)"

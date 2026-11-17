@@ -10,7 +10,7 @@ ROOT = Path(__file__).resolve().parents[2]
 def test_autosave_that_is_not_an_object_does_not_crash(new_app, repo_copy):
     """Valid JSON that is not an object (here a list) crashed the app on start
     with AttributeError on data.items(); it is now ignored."""
-    (repo_copy / "ucmuon_autosave.json").write_text("[1, 2, 3]")
+    (repo_copy / "ucmuon_autosave.json").write_text("[1, 2, 3]", encoding="utf-8")
     at = new_app(keep_autosave=True)
     assert not exceptions(at)
     assert widget(at, "toggle", "ui_mode_toggle") is not None
@@ -20,7 +20,7 @@ def test_python_bethe_bloch_ice_radiation_length_matches_fortran():
     """The Python Bethe-Bloch driver used X0 = 33.10 g/cm2 for ice; the Fortran
     engine, UCMuon-MC and PDG give 36.08 g/cm2 (as water)."""
     import ucmuon_bb_driver as bb
-    f90 = (ROOT / "src/transport/bethe_bloch/ucmuon_transport_bb_omp.f90").read_text()
+    f90 = (ROOT / "src/transport/bethe_bloch/ucmuon_transport_bb_omp.f90").read_text(encoding="utf-8", errors="replace")
     ice = re.search(r"case\(2\)\s*!\s*Ice.*?X0_gcm2=([0-9.]+)d0", f90, re.S)
     assert ice, "ice block not found in the Fortran Bethe-Bloch engine"
     assert bb._BB_MAT[2]["name"] == "Ice"
@@ -38,7 +38,7 @@ def test_phits_dump_with_fortran_d_exponents_loads(tmp_path):
     import numpy as np
     import pandas as pd
 
-    src = (ROOT / "gui" / "ucmuon_gui.py").read_text()
+    src = (ROOT / "gui" / "ucmuon_gui.py").read_text(encoding="utf-8", errors="replace")
     fn = next(n for n in ast.parse(src).body
               if isinstance(n, ast.FunctionDef) and n.name == "load_file")
     fn.decorator_list = []                       # drop @st.cache_data
@@ -52,7 +52,7 @@ def test_phits_dump_with_fortran_d_exponents_loads(tmp_path):
     path.write_text("".join(
         "".join(f"{v:24.15E}".replace("E", "D")
                 for v in (kf, 793.0, 162.7, 0.0, -0.30, -0.20, -0.93, ek, 1.0, 0.0)) + "\n"
-        for kf, ek in rows))
+        for kf, ek in rows), encoding="utf-8")
     df = ns["load_file"](str(path))
     assert len(df) == 3, msgs
     assert df["charge"].tolist() == [-1, -1, 1]
@@ -127,7 +127,7 @@ def test_point_source_depth_axis_from_the_momentum(tmp_path):
     assert pd_.detect_source_plane(muons) == 2
     f = tmp_path / "beam.dat"
     f.write_text("# header\n" + "".join(
-        f"{i+1} 0.0 0.0 0.0 100.0 0.0 0.0 -100.0 0.0 0.0 100.06 1 1\n" for i in range(20)))
+        f"{i+1} 0.0 0.0 0.0 100.0 0.0 0.0 -100.0 0.0 0.0 100.06 1 1\n" for i in range(20)), encoding="utf-8")
     assert pu._detect_depth_axis(str(f)) == 2
 
 
@@ -205,7 +205,7 @@ def test_dem_loaders_place_projected_and_asc_grids_correctly(tmp_path):
     # Geographic ASC: centre convention and a five-line header
     asc = tmp_path / "g.asc"
     asc.write_text("ncols 4\nnrows 3\nxllcenter 14.005\nyllcenter 40.005\ncellsize 0.01\n"
-                   "1 2 3 4\n5 6 7 8\n9 10 11 12\n")
+                   "1 2 3 4\n5 6 7 8\n9 10 11 12\n", encoding="utf-8")
     elev, tr = td.load_dem(str(asc))
     assert elev.shape == (3, 4) and elev[0, 0] == 1.0
     assert abs(tr.c - 14.0) < 1e-9 and abs(tr.f - 40.03) < 1e-9
@@ -262,7 +262,7 @@ def test_transmission_map_with_full_precision_angles_loads(tmp_path):
     az = np.linspace(0, 360, 37)[:-1] + 5.0
     el = 90.0 - (np.arange(18) + 0.5) * 85.0 / 18.0
     f = tmp_path / "t.dat"
-    with open(f, "w") as fh:
+    with open(f, "w", encoding="utf-8") as fh:
         fh.write("# Density: 2.65 g/cm3\n")
         np.savetxt(fh, [(a, e, 0.5) for a in az for e in el])
     _, _, T, _ = D.load_transmission_map(str(f))
@@ -355,7 +355,7 @@ def test_geant4_export_is_the_new_runs_muons(new_app, repo_copy):
             if at.session_state["gen_ntry"]:
                 break
         at.run()
-        rows = [ln for ln in g4.read_text().splitlines() if ln and not ln.startswith("#")]
+        rows = [ln for ln in g4.read_text(encoding="utf-8", errors="replace").splitlines() if ln and not ln.startswith("#")]
         assert len(rows) == n, (n, len(rows))
     assert not exceptions(at)
 
@@ -399,7 +399,7 @@ def test_csg_cells_with_complements_and_parentheses(tmp_path):
     import numpy as np
     import gui_csg_engine as C
     f = tmp_path / "cavity.inp"
-    f.write_text(_ROCK_WITH_CAVITY)
+    f.write_text(_ROCK_WITH_CAVITY, encoding="utf-8")
     g = C.load_phits(str(f))
     assert g.density_at(np.array([0.0, 0.0, -20.0])) == 0.0          # in the cavity
     assert g.density_at(np.array([0.0, 0.0, -32.0])) == 1.03         # in the detector
@@ -409,7 +409,7 @@ def test_csg_cells_with_complements_and_parentheses(tmp_path):
     assert tree == ("and", [("s", -1, 3), ("or", [("s", 1, 1), ("s", 1, 2)])])
     f2 = tmp_path / "box.inp"
     f2.write_text("[ Surface ]\n 1 box 0 0 0 100 0 0 0 100 0 0 0 100\n 2 so 1000\n"
-                  "[ Cell ]\n 10 1 -2.65 -1\n 11 0 -2 #10\n 12 -1 2\n")
+                  "[ Cell ]\n 10 1 -2.65 -1\n 11 0 -2 #10\n 12 -1 2\n", encoding="utf-8")
     g2 = C.load_phits(str(f2))
     assert any("Surface 1 (box) is not supported" in w for w in g2.warnings)
     # a cell bounded only by the unsupported box filled every point, the sky too
@@ -424,7 +424,7 @@ def test_csg_preview_traces_from_the_detector_cell(tmp_path):
     import numpy as np
     from streamlit.testing.v1 import AppTest
     f = tmp_path / "cavity.inp"
-    f.write_text(_ROCK_WITH_CAVITY)
+    f.write_text(_ROCK_WITH_CAVITY, encoding="utf-8")
 
     def page(deck, gui):
         import sys
@@ -565,7 +565,7 @@ def test_csg_run_transports_with_the_selected_engine(tmp_path):
     f = tmp_path / "slab.inp"
     f.write_text("[ Surface ]\n 1 pz -3000\n 2 pz 0\n 3 cz 100000\n 4 pz -3200\n 5 c/z 0 0 300\n"
                  " 6 pz -3100\n 7 so 1000000\n[ Cell ]\n 100 1 -2.65 -3 1 -2\n"
-                 " 101 2 -1.03 -5 4 -6\n 104 0 -7 #100 #101\n 105 -1 7\n")
+                 " 101 2 -1.03 -5 4 -6\n 104 0 -7 #100 #101\n 105 -1 7\n", encoding="utf-8")
     g = C.load_phits(str(f))
     n = 3000
     rng = np.random.default_rng(5)
@@ -600,7 +600,7 @@ def test_csg_engine_run_with_repeated_event_ids(tmp_path):
     f = tmp_path / "slab.inp"
     f.write_text("[ Surface ]\n 1 pz -3000\n 2 pz 0\n 3 cz 100000\n 4 pz -3200\n 5 c/z 0 0 300\n"
                  " 6 pz -3100\n 7 so 1000000\n[ Cell ]\n 100 1 -2.65 -3 1 -2\n"
-                 " 101 2 -1.03 -5 4 -6\n 104 0 -7 #100 #101\n 105 -1 7\n")
+                 " 101 2 -1.03 -5 4 -6\n 104 0 -7 #100 #101\n 105 -1 7\n", encoding="utf-8")
     g = C.load_phits(str(f))
     n = 400
     rng = np.random.default_rng(3)

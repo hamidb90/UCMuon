@@ -129,7 +129,7 @@ def horizontal_flux(I, p_min=math.sqrt(1.0 - M_MU**2 + 1e-12), p_max=1500.0, nc=
 
 
 def load_r3():
-    rows = list(csv.DictReader(open(DATA / "reyna2006_fig3_data.csv")))
+    rows = list(csv.DictReader(open(DATA / "reyna2006_fig3_data.csv", encoding="utf-8", errors="replace")))
     out: dict[str, tuple[np.ndarray, np.ndarray]] = {}
     for r in rows:
         out.setdefault(r["experiment"], ([], []))

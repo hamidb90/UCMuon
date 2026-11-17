@@ -146,7 +146,7 @@ pumas:                     $(BIN)/ucmuon_transport_pumas
 music-status:
 ifeq ($(MUSIC_AVAIL),no)
 	@echo ""
-	@echo "  NOTE: Engine 2 (MUSIC) was not built — music.f not found."
+	@echo "  NOTE: Engine 2 (MUSIC) was not built -- music.f not found."
 	@echo "        Engines 1 and 3-7 are fully functional."
 	@echo "        See docs/MUSIC_FILES.md to enable Engine 2."
 	@echo ""
@@ -158,7 +158,7 @@ ifeq ($(PARMA_AVAIL),no)
 	@echo ""
 endif
 ifeq ($(PUMAS_AVAIL),no)
-	@echo "  NOTE: PUMAS engine not built — external/pumas-master/src/pumas.c not found."
+	@echo "  NOTE: PUMAS engine not built -- external/pumas-master/src/pumas.c not found."
 	@echo "        Run ./setup.sh to fetch it, or see INSTALL.md."
 	@echo ""
 endif
@@ -305,7 +305,7 @@ endif
 # ---------------------------------------------------------------------------
 help:
 	@echo ""
-	@echo "  UCMuon v2 — build targets"
+	@echo "  UCMuon v2 -- build targets"
 	@echo "    make / make all    build everything available"
 	@echo "    make local         OMP only  (macOS / GUI)"
 	@echo "    make hpc           MPI+OMP   (Lemaitre4 / CECI)"

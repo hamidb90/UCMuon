@@ -166,7 +166,7 @@ program ucmuon_transport_music
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '   UCMuon Transport  —  MUSIC engine'
+    write(*,*) '   UCMuon Transport  --  MUSIC engine'
     write(*,*) '   UCLouvain Muography Group'
     write(*,*) '   ** MPI + OpenMP hybrid version **'
     write(*,*) ' ============================================================'
@@ -199,7 +199,7 @@ program ucmuon_transport_music
     read(*,*) mat_type
     if (mat_type < 1 .or. mat_type > 3) mat_type = 1
 
-    write(*,*) ' Rock/material density [g/cm³]  (e.g. 2.65 std rock, 1.7 volcanic):'
+    write(*,*) ' Rock/material density [g/cm3]  (e.g. 2.65 std rock, 1.7 volcanic):'
     read(*,*) rho
     if (rho <= 0.d0) rho = 2.65d0
 
@@ -224,7 +224,7 @@ program ucmuon_transport_music
     read(*,*) idim1
 
     write(*,*) ' Energy-loss cut exponent (minv)  [expert, default -30]:'
-    write(*,*) '   -30 is the standard MUSIC value — do not change unless'
+    write(*,*) '   -30 is the standard MUSIC value -- do not change unless'
     write(*,*) '   you know what you are doing.'
     read(*,*) minv
 
@@ -283,15 +283,15 @@ program ucmuon_transport_music
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '        UCMuon Transport — CONFIGURATION'
+    write(*,*) '        UCMuon Transport -- CONFIGURATION'
     write(*,*) ' ============================================================'
     write(*,'(A,A)')       '  Input file:        ', trim(infile)
     write(*,'(A,A)')       '  Output prefix:     ', trim(outfile)
     write(*,'(A,A)')       '  Material:          ', trim(mat_suffix)
-    write(*,'(A,F7.3,A)')  '  Density:           ', rho, ' g/cm³'
+    write(*,'(A,F7.3,A)')  '  Density:           ', rho, ' g/cm3'
     write(*,'(A,F7.2,A)')  '  Radiation length:  ', rad, ' g/cm2'
     write(*,'(A,F8.2,A)')  '  Vertical depth:    ', depth_m, ' m'
-    write(*,'(A,F10.1,A)') '  Depth (w.e.):      ', depth_cm*rho, ' g/cm²'
+    write(*,'(A,F10.1,A)') '  Depth (w.e.):      ', depth_cm*rho, ' g/cm2'
     write(*,'(A,I2,A,I2)') '  idim=', idim, '  idim1=', idim1
     write(*,'(A,I4)')      '  minv:              ', minv
     write(*,'(A,A)')       '  Eloss file:        ', trim(eloss_file)
@@ -558,13 +558,13 @@ program ucmuon_transport_music
         depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
     else if (ys_var <= xs_var .and. ys_var <= zs_var) then
       depth_axis = 1
-      write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
+      write(*,*) '  Source plane: XZ  (y=const) -- depth direction: Y'
     else if (xs_var <= ys_var .and. xs_var <= zs_var) then
       depth_axis = 0
-      write(*,*) '  Source plane: YZ  (x=const) — depth direction: X'
+      write(*,*) '  Source plane: YZ  (x=const) -- depth direction: X'
     else
       depth_axis = 2
-      write(*,*) '  Source plane: XY  (z=const) — depth direction: Z'
+      write(*,*) '  Source plane: XY  (z=const) -- depth direction: Z'
     end if
 
   end if  ! my_rank == 0
@@ -699,7 +699,7 @@ program ucmuon_transport_music
   !===========================================================================
   if (my_rank == 0) then
     write(*,*)
-    write(*,*) ' Transporting muons (MPI × OMP)...'
+    write(*,*) ' Transporting muons (MPI x OMP)...'
     write(*,*)
   end if
   call MPI_Barrier(MPI_COMM_WORLD, ierr)
@@ -838,7 +838,7 @@ program ucmuon_transport_music
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '   UCMuon Transport — MUSIC — COMPLETE'
+    write(*,*) '   UCMuon Transport -- MUSIC -- COMPLETE'
     write(*,*) ' ============================================================'
     write(*,'(A,I12)')    '  Total transported:  ', nmuon_total
     write(*,'(A,I12)')    '  Survived:           ', nsurvive_all
@@ -847,10 +847,10 @@ program ucmuon_transport_music
       write(*,'(A,F8.4,A)') '  Survival rate:      ', &
         100.d0*dble(nsurvive_all)/dble(nmuon_total), ' %'
     write(*,'(A,F8.2,A,F8.2,A)') '  Depth (vertical):   ', depth_m, ' m  (', &
-        depth_cm*rho, ' g/cm²)'
+        depth_cm*rho, ' g/cm2)'
     write(*,'(A,A)')      '  Material:           ', trim(mat_suffix)
     write(*,'(A,I6,A,I4)')  '  Parallelisation:    ', nranks, &
-        ' MPI ranks × ', omp_get_max_threads(), ' OMP threads'
+        ' MPI ranks x ', omp_get_max_threads(), ' OMP threads'
     write(*,'(A,F10.2,A)') '  Wall time:          ', t_end - t_start, ' s'
     write(*,*)
     write(*,*) '  Per-rank output files: ', trim(outfile), '_RRRRR.dat'

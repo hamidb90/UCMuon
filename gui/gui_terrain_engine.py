@@ -565,7 +565,7 @@ def _run_engine_bin(bin_df, depth_m, engine, engine_cfg, script_dir, project_dir
 def _write_surface_bin(df, path, ncols):
     """Write a subset of surface muons to a temp file in 13-col or 14-col format."""
     import numpy as np
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         for _, row in df.iterrows():
             E   = float(row["E"])
             p   = float(np.sqrt(max(E**2 - 0.105658**2, 0.0)))

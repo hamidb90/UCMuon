@@ -50,7 +50,7 @@ def flux(X, theta_deg, mode, mat_id=1):
 def main() -> int:
     print("table")
     res = ROOT / "benchmark" / "results" / "backward_calibration_20261020.csv"
-    with open(res) as fh:
+    with open(res, encoding="utf-8", errors="replace") as fh:
         rows = list(csv.DictReader(l for l in fh if not l.startswith("#")))
     bad = [r for r in rows
            if abs(bmc._CAL[int(r["spectrum_mode"])][
@@ -94,7 +94,7 @@ def main() -> int:
     check(set(dflt.values()) == {2}, f"mode defaults: {dflt}")
     for path, line in (("gui/ucmuon_backward_mc.py", "_rd(10, 2,"),
                        ("gui/ucmuon_terrain_driver.py", "_rd(10,  2,")):
-        check(line in (ROOT / path).read_text(), f"{path}: stdin mode defaults to 2")
+        check(line in (ROOT / path).read_text(encoding="utf-8", errors="replace"), f"{path}: stdin mode defaults to 2")
     with warnings.catch_warnings():
         warnings.simplefilter("ignore")
         info = bmc.backward_mc_flux(depth_m=500.0, rho=2.65, mat_id=1, spectrum_mode=3,

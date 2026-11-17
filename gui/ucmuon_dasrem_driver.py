@@ -186,7 +186,7 @@ def generate_dasrem(N, spectrum_mode, e_min, e_max, angular_mode, theta_max,
     n_done = 0
     t0     = time.time()
 
-    with open(output_file, "w") as fh:
+    with open(output_file, "w", encoding="utf-8") as fh:
         fh.write("# DAS-REM generator — UCLouvain Muography Group\n")
         fh.write("# Yao et al., J. Appl. Phys. 138, 144901 (2025)\n")
         fh.write(f"# Source surface z = {source_z_cm:.1f} cm  "

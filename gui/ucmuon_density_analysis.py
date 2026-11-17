@@ -88,7 +88,7 @@ def load_transmission_map(filepath, require_density=True):
     }
 
     rows = []
-    with open(filepath) as fh:
+    with open(filepath, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             line = line.strip()
             if not line:
@@ -512,7 +512,7 @@ def write_density_map(az_c, el_c, rho_map, sigma_rho, status_map, fpath,
     fpath.parent.mkdir(parents=True, exist_ok=True)
 
     metadata = metadata or {}
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Density Analysis — Inverted Density Map\n")
 
         if metadata.get("det_lat") is not None:
@@ -833,7 +833,7 @@ def load_generic_map(filepath, angle_is_zenith=False, value_col=2):
             "det_alt": None, "filepath": str(filepath)}
 
     rows = []
-    with open(filepath) as fh:
+    with open(filepath, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             s = line.strip()
             if not s:
@@ -931,7 +931,7 @@ def write_opacity_map(az_c, el_c, opacity_map, sigma_opacity, status_map,
     metadata = metadata or {}
     has_rho  = rho_map is not None
 
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Density Analysis — Direct Opacity Inversion\n")
         if metadata.get("model"):
             fh.write(f"# Flux model: {metadata['model']}\n")

@@ -77,7 +77,7 @@ def main() -> int:
     with tempfile.TemporaryDirectory() as tmp:
         f = Path(tmp) / "b.dat"
         p = np.sqrt(100.0 ** 2 - M_MU ** 2)
-        f.write_text("".join(f"{i + 1} 0 0 0 {p:.6f} 0 0 {-p:.6f} 0 0 100.0 1 1 0\n" for i in range(n)))
+        f.write_text("".join(f"{i + 1} 0 0 0 {p:.6f} 0 0 {-p:.6f} 0 0 100.0 1 1 0\n" for i in range(n)), encoding="utf-8")
         mu = U._read_input(str(f), True)
         r = U.transport(mu, 50.0, RHO, dict(U._MAT_DB[1]), rng=np.random.default_rng(3))
     a = r["alive"] == 1
@@ -101,6 +101,8 @@ def main() -> int:
 
     print("Bethe-Bloch (Fortran, OpenMP)")
     bb = ROOT / "bin" / "ucmuon_transport_bb_omp"
+    if not bb.exists() and bb.with_name(bb.name + ".exe").exists():
+        bb = bb.with_name(bb.name + ".exe")   # Windows build
     if not bb.exists():
         print("  skipped: build it with make ucmuon_transport_bb_omp")
     else:
@@ -109,7 +111,7 @@ def main() -> int:
             p = np.sqrt(100.0 ** 2 - M_MU ** 2)
             # spread in x and y: the engine takes the source plane from it
             src.write_text("".join(f"{i + 1} {i % 100 * 10.0:.1f} {i // 100 % 100 * 10.0:.1f} 0 {p:.6f} "
-                                   f"0 0 {-p:.6f} 0 0 100.0 1 1 0\n" for i in range(n)))
+                                   f"0 0 {-p:.6f} 0 0 100.0 1 1 0\n" for i in range(n)), encoding="utf-8")
             out = Path(tmp) / "o.dat"
             subprocess.run([str(bb)], input=f"{src}\n{out}\n1\n14\n50\n1\n1\n", text=True,
                            capture_output=True, check=True, cwd=tmp,

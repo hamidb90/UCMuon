@@ -250,7 +250,7 @@ def flux_slice_at_azimuth(ob_slice: np.ndarray, ze_c: np.ndarray,
                 result[iz] = _rock_flux(X, ze, spec_mode, E_min, E_max, n_E)
     note = _bmc.range_summary(beyond_table, len(ze_c))
     if note:
-        print(f"    WARNING (ρ = {rho} g/cm³): {note}", flush=True)
+        print(f"    WARNING (rho = {rho} g/cm³): {note}", flush=True)
     return result
 
 
@@ -520,9 +520,9 @@ def main():
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
 
-    print("═" * 65, flush=True)
+    print("=" * 65, flush=True)
     print("  UCMuon / MURAVES — Mt. Vesuvius simulation", flush=True)
-    print("═" * 65, flush=True)
+    print("=" * 65, flush=True)
     print(f"  Detector:  lat={DET_LAT}°N  lon={DET_LON}°E  alt={DET_ALT} m", flush=True)
     print(f"  Summit:    lat={SUM_LAT}°N  lon={SUM_LON}°E  alt={SUM_ALT} m", flush=True)
     print(f"  Summit direction (geographic): az={AZ_TO_SUMMIT:.1f}°  el={EL_TO_SUMMIT:.1f}°", flush=True)
@@ -556,7 +556,7 @@ def main():
     sky_flux = _opensky_flux(ze_c, SPEC_MODE, E_MIN, E_MAX, N_E)
 
     # ── 3. Through-rock flux + transmission (reference density, full 2D) ─────
-    print(f"\n  Computing flux maps (ρ = {args.rho} g/cm³) …", flush=True)
+    print(f"\n  Computing flux maps (rho = {args.rho} g/cm³) …", flush=True)
     flux_ref, T_sim_ref = flux_maps(az_c, ze_c, ob_ref, args.rho, sky_flux)
 
     # ── 4. 1D flux slices at summit azimuth for multi-density Fig 2 ──────────
@@ -569,7 +569,7 @@ def main():
         # Scale path length by density ratio (same geometry, different density)
         ob_slice = ob_ref[ia_sum, :] * (rho_i / args.rho)
         rock_slices[rho_i] = flux_slice_at_azimuth(ob_slice, ze_c, rho_i, sky_flux)
-        print(f"    ρ = {rho_i} g/cm³  done", flush=True)
+        print(f"    rho = {rho_i} g/cm³  done", flush=True)
 
     el_c = 90.0 - ze_c
 
@@ -589,10 +589,10 @@ def main():
                           str(out_dir / "fig_vesuvius_transmission.png"))
 
     elapsed = time.time() - t0
-    print(f"\n  ═════════════════════════════════════════", flush=True)
+    print(f"\n  =========================================", flush=True)
     print(f"  Done in {elapsed:.0f} s", flush=True)
     print(f"  Figures written to: {out_dir.resolve()}", flush=True)
-    print(f"  ─────────────────────────────────────────", flush=True)
+    print(f"  -----------------------------------------", flush=True)
     print(f"  Azimuth note: geographic convention (0=North, 90=East).", flush=True)
     print(f"  The MURAVES convention centres the summit at az=180°.", flush=True)
     print(f"  Summit is at az={AZ_TO_SUMMIT:.0f}° in this output.", flush=True)

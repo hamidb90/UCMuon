@@ -27,10 +27,11 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "tests" / "flux"))
-from _harness import Config  # noqa: E402
+from _harness import Config, _exe  # noqa: E402
 
 CONV = ROOT / "src" / "converters"
-F90 = ROOT / "bin" / "ucmuon_to_phits"
+F90 = _exe(ROOT / "bin" / "ucmuon_to_phits")
+GEN = _exe(ROOT / "bin" / "ucmuon_gen_omp")
 M_E, M_MU = 0.51099895e-3, 0.105658370
 FAILS: list[str] = []
 
@@ -46,7 +47,7 @@ def generate(tmp: Path, spectrum: int, emin: float, emax: float, name: str) -> P
                  n=1000, seed=11)
     out = tmp / name
     env = {**os.environ, "UCMUON_SEED": "11", "OMP_NUM_THREADS": "1"}
-    proc = subprocess.run([str(ROOT / "bin" / "ucmuon_gen_omp")], input=cfg.stdin(str(out), str(out) + ".sel"),
+    proc = subprocess.run([str(GEN)], input=cfg.stdin(str(out), str(out) + ".sel"),
                           capture_output=True, text=True, env=env, cwd=tmp)
     if proc.returncode != 0:
         raise RuntimeError(proc.stdout[-2000:])
@@ -55,12 +56,12 @@ def generate(tmp: Path, spectrum: int, emin: float, emax: float, name: str) -> P
 
 def load(path: Path) -> np.ndarray:
     return np.array([[float(x.replace("D", "E")) for x in line.split()]
-                     for line in open(path) if line.strip() and not line.startswith("#")])
+                     for line in open(path, encoding="utf-8", errors="replace") if line.strip() and not line.startswith("#")])
 
 
 def run(kind: str, src: Path, dst: Path, electrons: bool) -> subprocess.CompletedProcess:
     if kind == "f90":
-        with open(src) as fin, open(dst, "w") as fout:
+        with open(src, encoding="utf-8", errors="replace") as fin, open(dst, "w", encoding="utf-8") as fout:
             return subprocess.run([str(F90), "gen"] + (["electrons"] if electrons else []),
                                   stdin=fin, stdout=fout, stderr=subprocess.PIPE, text=True)
     return subprocess.run([sys.executable, str(CONV / kind), str(src), str(dst)]
@@ -68,7 +69,7 @@ def run(kind: str, src: Path, dst: Path, electrons: bool) -> subprocess.Complete
 
 
 def main() -> int:
-    if not (ROOT / "bin" / "ucmuon_gen_omp").exists():
+    if not GEN.exists():
         print("build the generator first: make ucmuon_gen_omp")
         return 1
     kinds = ["ucmuon_to_geant4.py", "ucmuon_to_phits.py"] + (["f90"] if F90.exists() else [])

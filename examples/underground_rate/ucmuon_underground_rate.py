@@ -17,7 +17,8 @@ and prints R = hits / T, with T = N_tried / R_S the live time the generator
 prints.
 
 With one OpenMP thread (the default) and the default seed the run reproduces
-the paper's numbers exactly (about 20 min on an Apple M4 core); with more
+the paper's numbers exactly (about 20 min on an Apple M4 core, 2 h on an
+Intel i7-1165G7 laptop core under Windows); with more
 threads (--threads) it gives a statistically equivalent sample.
 """
 from __future__ import annotations
@@ -35,6 +36,13 @@ import numpy as np
 import pandas as pd
 
 REPO = Path(__file__).resolve().parents[2]
+
+
+def _exe(p: Path) -> Path:
+    """p, or p.exe when only that exists (Windows builds carry the suffix)."""
+    w = p.with_name(p.name + ".exe")
+    return w if not p.exists() and w.exists() else p
+
 sys.path.insert(0, str(REPO / "gui"))
 import mcs_margin  # noqa: E402
 
@@ -47,7 +55,7 @@ E_MIN, E_MAX, THETA_MAX, N_KEEP = 45.0, 2500.0, 70.0, 400_000
 def gui_detector_filter():
     """apply_ug_detector_filter and its ray tests, taken from the GUI source so
     that Streamlit is not imported."""
-    tree = ast.parse((REPO / "gui" / "ucmuon_gui.py").read_text())
+    tree = ast.parse((REPO / "gui" / "ucmuon_gui.py").read_text(encoding="utf-8", errors="replace"))
     ns = {"np": np}
     for node in tree.body:
         if isinstance(node, ast.FunctionDef) and node.name in (
@@ -106,16 +114,23 @@ def main() -> None:
 
     env = dict(os.environ, UCMUON_SEED=str(args.seed), OMP_NUM_THREADS=str(args.threads))
     if not args.count_only:
-        (out / "input_gen.txt").write_text(generator_input(out, margin_cm, r_min_m))
-        with open(out / "input_gen.txt") as fi, open(out / "gen.log", "w") as fo:
-            subprocess.run([str(REPO / "bin" / "ucmuon_gen_omp")], stdin=fi, stdout=fo,
+        # Both programs are checked first: the generator stage alone takes
+        # 20 min to 2 h, and MUSIC is optional (docs/MUSIC_FILES.md).
+        gen, music = (_exe(REPO / "bin" / n) for n in ("ucmuon_gen_omp", "ucmuon_transport_music_omp"))
+        missing = [str(b.relative_to(REPO)) for b in (gen, music) if not b.exists()]
+        if missing:
+            sys.exit(f"needs {' and '.join(missing)}; build with make local "
+                     f"(MUSIC also needs its source files, see docs/MUSIC_FILES.md)")
+        (out / "input_gen.txt").write_text(generator_input(out, margin_cm, r_min_m), encoding="utf-8")
+        with open(out / "input_gen.txt", encoding="utf-8", errors="replace") as fi, open(out / "gen.log", "w", encoding="utf-8") as fo:
+            subprocess.run([str(gen)], stdin=fi, stdout=fo,
                            env=env, check=True)
-        with open(out / "music.log", "w") as fo:   # MUSIC reads its tables from bin/
-            subprocess.run([str(REPO / "bin" / "ucmuon_transport_music_omp")],
+        with open(out / "music.log", "w", encoding="utf-8") as fo:   # MUSIC reads its tables from bin/
+            subprocess.run([str(music)],
                            input=music_input(out), text=True, stdout=fo, cwd=REPO / "bin",
                            env=env, check=True)
 
-    log = (out / "gen.log").read_text()
+    log = (out / "gen.log").read_text(encoding="utf-8", errors="replace")
     n_tried = int(re.search(r"Tried:\s+(\d+)", log).group(1))
     rate_s = float(re.search(r"Surface rate R:\s+(\S+)", log).group(1))
     live = float(re.search(r"Live time:\s+(\S+)", log).group(1))

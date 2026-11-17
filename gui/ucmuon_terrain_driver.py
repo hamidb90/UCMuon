@@ -221,7 +221,7 @@ def load_dem_asc(asc_path):
     """
     import rasterio.transform as _rt
 
-    with open(asc_path) as fh:
+    with open(asc_path, encoding="utf-8", errors="replace") as fh:
         header = {}
         first_data = []
         while len(header) < 6:
@@ -697,7 +697,7 @@ def compute_transmission_map(flux_map, opensky_flux, overburden=None,
 
 def write_overburden_map(az_c, ze_c, overburden, open_sky_map, fpath,
                           det_lat, det_lon, det_alt_m, rho):
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Terrain Engine — Overburden Map\n")
         fh.write(f"# Detector: lat={det_lat:.6f}  lon={det_lon:.6f}"
                  f"  alt={det_alt_m:.1f} m\n")
@@ -711,7 +711,7 @@ def write_overburden_map(az_c, ze_c, overburden, open_sky_map, fpath,
 
 
 def write_flux_map(az_c, ze_c, flux_map, fpath, det_lat, det_lon, det_alt_m):
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Terrain Engine — Directional Flux Map\n")
         fh.write(f"# Detector: lat={det_lat:.6f}  lon={det_lon:.6f}"
                  f"  alt={det_alt_m:.1f} m\n")
@@ -734,7 +734,7 @@ def write_transmission_map(az_c, ze_c, T_sim, fpath,
     Columns: azimuth[deg]  elevation[deg]  transmission[0-1]
     """
     el_c = 90.0 - ze_c
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Terrain Engine — Transmission Map\n")
         fh.write("# T_sim(az, el) = Phi_rock / Phi_sky\n")
         fh.write(f"# Detector: lat={det_lat:.6f}  lon={det_lon:.6f}"
@@ -778,7 +778,7 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
     az_max_flux = az_c[imax_f[0]]
     ze_max_flux = ze_c[imax_f[1]]
 
-    with open(fpath, "w") as fh:
+    with open(fpath, "w", encoding="utf-8") as fh:
         fh.write("# UCMuon Terrain Engine — Summary\n")
         fh.write(f"# Detector lat={det_lat:.6f} lon={det_lon:.6f}"
                  f" alt={det_alt_m:.1f} m  rho={rho:.3f} g/cm3\n")
@@ -798,7 +798,7 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
                  f"  ze={ze_max_flux:.1f} deg\n")
 
     # Also print to stdout for GUI live panel
-    print(f"  ═════════════════════════════════════", flush=True)
+    print(f"  =====================================", flush=True)
     print(f"  UCMuon Terrain — Summary", flush=True)
     print(f"  Open-sky directions : {n_open}/{open_sky_map.size}", flush=True)
     print(f"  Median overburden   : {ob_med:.0f} g/cm2", flush=True)
@@ -806,7 +806,7 @@ def write_summary(az_c, ze_c, overburden, flux_map, open_sky_map,
           f"  @ az={az_max_ob:.0f}° ze={ze_max_ob:.0f}°", flush=True)
     print(f"  Rate (horizontal m², ze < {ze_c[-1] + np.degrees(half):.0f}°) :"
           f" {total_rate:.4e} m-2 s-1", flush=True)
-    print(f"  ═════════════════════════════════════", flush=True)
+    print(f"  =====================================", flush=True)
 
 
 # ─────────────────────────────────────────────────────────────────────────────

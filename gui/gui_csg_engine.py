@@ -1203,7 +1203,7 @@ def load_phits(path: str) -> CSGGeometry:
     Without this step the geometry is misplaced by the variable's value, causing
     zero hits even when muons are correctly targeted.
     """
-    text = Path(path).read_text(errors="replace")
+    text = Path(path).read_text(errors="replace", encoding="utf-8")
     geom = CSGGeometry()
     geom.source_format = "PHITS"
     geom.source_path   = str(path)
@@ -1349,7 +1349,7 @@ def load_mcnp(path: str) -> CSGGeometry:
       • Continuation lines start with 5+ spaces
     All dimensions converted from cm to metres.
     """
-    text = Path(path).read_text(errors="replace")
+    text = Path(path).read_text(errors="replace", encoding="utf-8")
     geom = CSGGeometry()
     geom.source_format = "MCNP"
     geom.source_path   = str(path)

@@ -48,7 +48,7 @@ def check(ok: bool, what: str) -> None:
 
 def beam_file(path: Path, e_tot_gev: float, n: int) -> None:
     p = np.sqrt(e_tot_gev ** 2 - (M_MU / 1000.0) ** 2)
-    with open(path, "w") as fh:
+    with open(path, "w", encoding="utf-8") as fh:
         fh.write("# EventID x_cm y_cm z_cm p_GeV px_GeV py_GeV pz_GeV theta_rad phi_rad "
                  "E_GeV charge hit_flag det_mask\n")
         for i in range(n):

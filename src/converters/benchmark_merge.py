@@ -55,11 +55,11 @@ def find_files(directory, pattern):
 # ── surface merge (UCMuon 14-col, renumber EventIDs) ─────────────────────────
 
 def merge_surface(files, outpath):
-    print(f"\n  Merging {len(files)} surface files → {outpath}")
+    print(f"\n  Merging {len(files)} surface files -> {outpath}")
     event_id = 0
     batch_log = []
 
-    with open(outpath, 'w') as fout:
+    with open(outpath, 'w', encoding="utf-8") as fout:
         fout.write(
             "# UCMuon benchmark — merged surface source\n"
             "# Format: EventID  x_cm  y_cm  z_cm  p_GeV  px_GeV  py_GeV  pz_GeV"
@@ -79,7 +79,7 @@ def merge_surface(files, outpath):
             e_gev  = energy_from_name(fpath)
             first  = event_id + 1
             n_rows = 0
-            with open(fpath) as fin:
+            with open(fpath, encoding="utf-8", errors="replace") as fin:
                 for raw in fin:
                     line = raw.strip()
                     if not line or line.startswith('#'):
@@ -96,7 +96,7 @@ def merge_surface(files, outpath):
                   f"EventID {first}–{event_id}")
 
     # Rewrite the placeholder block in-place via full file rewrite (simplest)
-    with open(outpath, 'r') as f:
+    with open(outpath, 'r', encoding="utf-8", errors="replace") as f:
         content = f.read()
 
     table_lines = []
@@ -112,7 +112,7 @@ def merge_surface(files, outpath):
     new_block  = "\n".join(table_lines)
     content = content.replace(old_block, new_block, 1)
 
-    with open(outpath, 'w') as f:
+    with open(outpath, 'w', encoding="utf-8") as f:
         f.write(content)
 
     total = sum(n for *_, n in batch_log)
@@ -123,13 +123,13 @@ def merge_surface(files, outpath):
 # ── PHITS merge (no header — pure data concatenation) ────────────────────────
 
 def merge_phits(files, outpath):
-    print(f"\n  Merging {len(files)} PHITS files → {outpath}")
+    print(f"\n  Merging {len(files)} PHITS files -> {outpath}")
     total = 0
-    with open(outpath, 'w') as fout:
+    with open(outpath, 'w', encoding="utf-8") as fout:
         for fpath in files:
             e_gev = energy_from_name(fpath)
             n_rows = 0
-            with open(fpath) as fin:
+            with open(fpath, encoding="utf-8", errors="replace") as fin:
                 for raw in fin:
                     line = raw.strip()
                     if not line or line.startswith('#'):
@@ -145,9 +145,9 @@ def merge_phits(files, outpath):
 # ── Geant4 merge (one header block, then data from all files) ─────────────────
 
 def merge_geant4(files, outpath):
-    print(f"\n  Merging {len(files)} Geant4 files → {outpath}")
+    print(f"\n  Merging {len(files)} Geant4 files -> {outpath}")
     total = 0
-    with open(outpath, 'w') as fout:
+    with open(outpath, 'w', encoding="utf-8") as fout:
         fout.write(
             "# UCMuon benchmark — merged Geant4 source\n"
             "# Format: PDG  x[mm]  y[mm]  z[mm]  px[MeV/c]  py[MeV/c]  pz[MeV/c]  Ekin[MeV]\n"
@@ -156,7 +156,7 @@ def merge_geant4(files, outpath):
         for fpath in files:
             e_gev = energy_from_name(fpath)
             n_rows = 0
-            with open(fpath) as fin:
+            with open(fpath, encoding="utf-8", errors="replace") as fin:
                 for raw in fin:
                     line = raw.strip()
                     if not line or line.startswith('#'):

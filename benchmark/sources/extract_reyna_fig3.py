@@ -184,7 +184,7 @@ def main():
 
     out = os.path.join(HERE, "data", "reyna2006_fig3_data.csv")
     n_total = 0
-    with open(out, "w", newline="") as f:
+    with open(out, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["experiment", "zenith_deg", "zeta_gev",
                     "intensity_cm2_s_sr_gev", "err_lo", "err_hi"])
@@ -203,7 +203,7 @@ def main():
     print(f"total {n_total} data points -> {out}")
 
     out_fit = os.path.join(HERE, "data", "reyna2006_fig3_bestfit.csv")
-    with open(out_fit, "w", newline="") as f:
+    with open(out_fit, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
         w.writerow(["zeta_gev", "intensity_cm2_s_sr_gev"])
         for (x, y) in bestfit:

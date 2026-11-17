@@ -117,7 +117,7 @@ def save_settings():
     # Atomic write: write to .tmp then rename — prevents corrupt file on crash
     _tmp = Path(AUTOSAVE_FILE + ".tmp")
     try:
-        with open(_tmp, "w") as f:
+        with open(_tmp, "w", encoding="utf-8") as f:
             json.dump(data, f, indent=2, default=str)
         os.replace(str(_tmp), AUTOSAVE_FILE)   # atomic on POSIX and Win32
     except Exception as _e:
@@ -269,7 +269,7 @@ def load_settings():
         return
 
     try:
-        with open(p) as f:
+        with open(p, encoding="utf-8", errors="replace") as f:
             raw = f.read()
         data = json.loads(raw)
     except (json.JSONDecodeError, ValueError) as _je:
@@ -1244,7 +1244,7 @@ def probe_music_file(filepath, transport_all, mtime=None):
 
     try:
         ncols = 0
-        with open(filepath) as fh:
+        with open(filepath, encoding="utf-8", errors="replace") as fh:
             for raw in fh:
                 if raw.strip() == "" or raw.startswith("#"):
                     continue
@@ -1254,10 +1254,10 @@ def probe_music_file(filepath, transport_all, mtime=None):
             return 0, 0
         if ncols == 14 and not transport_all:
             df = pd.read_csv(filepath, sep=r"\s+", comment="#",
-                             header=None, usecols=[12])
+                             header=None, usecols=[12], encoding_errors="replace")
             n = int((df[12] == 1).sum())
         else:
-            n = sum(1 for ln in open(filepath)
+            n = sum(1 for ln in open(filepath, encoding="utf-8", errors="replace")
                     if ln.strip() and not ln.startswith("#"))
         return ncols, n
     except Exception:
@@ -1282,8 +1282,12 @@ def load_file(path, mtime=None):
         # pandas regex sep=r'\s+' treats a leading space as a delimiter, creating
         # a spurious NaN first column.  We fix this by dropping that column when
         # it is all-NaN, which is O(1) work after the read.
+        # encoding_errors: a header written on Windows before 1.5.0 is
+        # Windows-1252 (an em dash is byte 0x97), which strict UTF-8 refused,
+        # and the file then loaded as empty.
         df = pd.read_csv(path, sep=r'\s+', comment='#', header=None,
-                         engine='python', skip_blank_lines=True)
+                         engine='python', skip_blank_lines=True,
+                         encoding_errors="replace")
 
         # Drop the spurious empty first column produced by leading-space EventIDs.
         if df.shape[1] > 1 and df.iloc[:, 0].isna().all():
@@ -1396,7 +1400,7 @@ def write_geant4_ascii(df, outpath, electrons=False):
             f"{pdg:4d}  {x_mm:12.4f}  {y_mm:12.4f}  {z_mm:12.4f}"
             f"  {px:14.6f}  {py:14.6f}  {pz:14.6f}  {Ekin:14.6f}"
         )
-    with open(outpath, "w") as f:
+    with open(outpath, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return len(df)
 
@@ -1425,7 +1429,7 @@ def write_geant4_hepevt(df, outpath, electrons=False):
             f"  {px:.6e}  {py:.6e}  {pz:.6e}"
             f"  {_mass:.9f}"
         )
-    with open(outpath, "w") as f:
+    with open(outpath, "w", encoding="utf-8") as f:
         f.write("\n".join(lines) + "\n")
     return len(df)
 
@@ -1442,7 +1446,7 @@ def write_phits_surface(df, outpath, electrons=False):
     zcol = "zs" if "zs" in df.columns else "z"
     ecol = "E"  if "E"  in df.columns else "Es"
     _m   = ELECTRON_MASS_MEV if electrons else MUON_MASS_MEV
-    with open(outpath, "w") as f:
+    with open(outpath, "w", encoding="utf-8") as f:
         for _, r in df.iterrows():
             kf   = _pdg(r["charge"], electrons)
             th, ph = r["theta"], r["phi"]
@@ -1471,7 +1475,7 @@ def write_phits_underground(src_path_or_df, outpath, survived_only=True,
         df_out = src_path_or_df[src_path_or_df["alive"] == 1].copy() \
                  if (survived_only and "alive" in src_path_or_df.columns) \
                  else src_path_or_df.copy()
-        with open(outpath, "w") as f:
+        with open(outpath, "w", encoding="utf-8") as f:
             for _, r in df_out.iterrows():
                 kf   = 13 if r["charge"] < 0 else -13
                 Ekin = max(r["E"] * 1000.0 - MUON_MASS_MEV, 0.0)
@@ -1487,7 +1491,7 @@ def write_phits_underground(src_path_or_df, outpath, survived_only=True,
     # 0:EventID 1:xs 2:ys 3:zs 4:Es 5:theta_s 6:phi_s 7:charge
     # 8:alive   9:x 10:y 11:z 12:E 13:cx 14:cy 15:cz 16:theta 17:phi
     n_read = n_written = 0
-    with open(src_path_or_df, "r") as fin, open(outpath, "w") as fout:
+    with open(src_path_or_df, "r", encoding="utf-8", errors="replace") as fin, open(outpath, "w", encoding="utf-8") as fout:
         for raw in fin:
             raw = raw.strip()
             if not raw or raw.startswith("#"):
@@ -1536,7 +1540,7 @@ def convert_ug_to_music_input(src_path, outpath, survived_only=True,
       8:alive    9:x  10:y  11:z  12:E  13:cx  14:cy  15:cz  16:theta  17:phi
     """
     n_read = n_written = 0
-    with open(src_path, "r") as fin, open(outpath, "w") as fout:
+    with open(src_path, "r", encoding="utf-8", errors="replace") as fin, open(outpath, "w", encoding="utf-8") as fout:
         fout.write(
             "# EventID  x_cm  y_cm  z_cm  p_GeV  px_GeV  py_GeV  pz_GeV"
             "  theta_rad  phi_rad  E_GeV  charge  det_mask\n"
@@ -7097,7 +7101,7 @@ if _ADV:            # Basic shows Generator, Transport and Results only
                 try:
                     _saved = {}
                     try:                       # a corrupt file is still deleted
-                        with open(AUTOSAVE_FILE) as _fh:
+                        with open(AUTOSAVE_FILE, encoding="utf-8", errors="replace") as _fh:
                             _saved = json.load(_fh)
                     except (OSError, ValueError):
                         pass

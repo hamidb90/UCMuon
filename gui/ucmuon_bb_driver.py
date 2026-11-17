@@ -379,7 +379,7 @@ def main():
 
     print(f"  Read {N:,} muons from {infile}", flush=True)
     if ms_enable:
-        print(f"  Steps: {n_steps if n_steps > 0 else 'auto (≥50, ~100 g/cm² each)'}",
+        print(f"  Steps: {n_steps if n_steps > 0 else 'auto (>=50, ~100 g/cm² each)'}",
               flush=True)
     print(f"  Transported:     0  Survived:     0  Total: {N}", flush=True)
 
@@ -404,7 +404,7 @@ def main():
 
     out_path    = Path(outfile)
     timing_file = str(out_path.with_suffix("")) + "_timing.txt"
-    with open(timing_file, "w") as ft:
+    with open(timing_file, "w", encoding="utf-8") as ft:
         ft.write(f"Elapsed : {elapsed:.3f}\n")
     print(f"  Timing: {timing_file}", flush=True)
 
@@ -412,7 +412,7 @@ def main():
     alive_arr = result["alive"]
     z_stop    = result["z_stop"]
     n_stopped = 0
-    with open(stopped_file, "w") as fs:
+    with open(stopped_file, "w", encoding="utf-8") as fs:
         fs.write(f"# UCMuon BB CSDA stopped muons  depth={depth_m:.2f} m\n")
         fs.write("# EventID  InitKE_GeV  StopDepth_cm\n")
         for i in range(N):

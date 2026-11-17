@@ -35,8 +35,9 @@ import tempfile
 import numpy as np
 
 from _harness import PARMA_DIR, ROOT, Config, Detector, run_fortran
+from _harness import _exe as H_exe
 
-MPI_BIN = ROOT / "bin" / "ucmuon_gen"
+MPI_BIN = H_exe(ROOT / "bin" / "ucmuon_gen")
 FAILS: list[str] = []
 
 
@@ -88,7 +89,7 @@ def deviates_on_24_bit_grid() -> tuple[int, int, int]:
     with tempfile.TemporaryDirectory() as tmp:
         f90 = os.path.join(tmp, "draw.f90")
         for kind in (8, 4):                    # the argument was real(4) up to 1.3.2
-            with open(f90, "w") as f:
+            with open(f90, "w", encoding="utf-8") as f:
                 f.write("program draw\n  use rng_parallel\n  implicit none\n"
                         f"  real({kind}) :: r\n  integer :: i, k\n  call par_init_rng(4321)\n"
                         f"  k = 0\n  do i = 1, {n}\n    call par_ranlux(r)\n"
@@ -103,7 +104,7 @@ def deviates_on_24_bit_grid() -> tuple[int, int, int]:
                                  text=True, env={**os.environ, "OMP_NUM_THREADS": "1"}
                                  ).stdout.split()[-1])
         cc = os.path.join(tmp, "draw.cc")
-        with open(cc, "w") as f:
+        with open(cc, "w", encoding="utf-8") as f:
             f.write('#include "UCMuGen.h"\n#include <cmath>\n#include <cstdio>\nint main() {\n'
                     "  ucmugen::UCMuonLcg g(4321);\n  int k = 0;\n"
                     f"  for (int i = 0; i < {n}; ++i) {{\n    const double r = g.flat();\n"

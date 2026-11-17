@@ -31,9 +31,9 @@ H_HORIZ     = (SUMMIT_LAT - DET_LAT) * 111320   # ~1291 m
 H_DIFF      = SUMMIT_ALT - DET_ALT_M             # 368 m
 ZE_CRIT_DEG = np.degrees(np.arctan2(H_HORIZ, H_DIFF))
 
-print("═" * 65)
+print("=" * 65)
 print("  UCMuon Terrain — Puy de Dôme example")
-print("═" * 65)
+print("=" * 65)
 print()
 print(f"Detector position:")
 print(f"  lat = {DET_LAT}°N   lon = {DET_LON}°E   alt = {DET_ALT_M} m a.s.l.")
@@ -43,8 +43,8 @@ print(f"  horizontal distance to summit  = {H_HORIZ:.0f} m")
 print(f"  height difference              = {H_DIFF:.0f} m")
 print(f"  critical blocking angle        = {ZE_CRIT_DEG:.1f}°")
 print()
-print(f"  → You MUST set Max zenith > {ZE_CRIT_DEG:.0f}° in Tab 5")
-print(f"  → Recommended: ze_max = 85°  (last bin centre at 82.6°)")
+print(f"  -> You MUST set Max zenith > {ZE_CRIT_DEG:.0f}° in Tab 5")
+print(f"  -> Recommended: ze_max = 85°  (last bin centre at 82.6°)")
 print()
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -52,7 +52,7 @@ print()
 # ─────────────────────────────────────────────────────────────────────────────
 surf_file = Path("muons_surface.dat")
 if surf_file.exists():
-    with open(surf_file) as f:
+    with open(surf_file, encoding="utf-8", errors="replace") as f:
         lines = [l for l in f if l.strip() and not l.startswith("#")]
     ncols = len(lines[0].split()) if lines else 0
     n_muons = len(lines)
@@ -70,12 +70,12 @@ if surf_file.exists():
         frac = n_near_horiz / len(thetas) * 100
         print(f"  Muons with ze > {ZE_CRIT_DEG:.0f}° (sampled): {n_near_horiz} / {len(thetas)} = {frac:.2f}%")
         if n_muons >= 100_000 and thetas.max() > ZE_CRIT_DEG:
-            print(f"  ✅ File is suitable for Tab 5 (has {n_muons:,} muons and covers ze>{ZE_CRIT_DEG:.0f}°)")
+            print(f"  OK File is suitable for Tab 5 (has {n_muons:,} muons and covers ze>{ZE_CRIT_DEG:.0f}°)")
         elif thetas.max() <= ZE_CRIT_DEG:
-            print(f"  ⚠️  Max zenith in file = {thetas.max():.1f}° — does not reach blocking angle!")
+            print(f"  WARNING  Max zenith in file = {thetas.max():.1f}° — does not reach blocking angle!")
             print(f"     Regenerate with theta_max = 85° in Tab 1.")
         else:
-            print(f"  ⚠️  Only {n_muons:,} muons — consider generating 500,000+ for better statistics.")
+            print(f"  WARNING  Only {n_muons:,} muons — consider generating 500,000+ for better statistics.")
 else:
     print(f"No {surf_file} found.")
     print()
@@ -84,9 +84,9 @@ else:
 # Exact Tab 1 settings needed
 # ─────────────────────────────────────────────────────────────────────────────
 print()
-print("═" * 65)
+print("=" * 65)
 print("  EXACT TAB 1 SETTINGS for this example")
-print("═" * 65)
+print("=" * 65)
 print()
 settings = [
     ("E min [GeV]",          "100",       "CSDA threshold for ~200 m basalt"),
@@ -106,9 +106,9 @@ for name, val, note in settings:
     print(f"  {name:<30} {val:<20}{comment}")
 
 print()
-print("═" * 65)
+print("=" * 65)
 print("  EXACT TAB 5 SETTINGS")
-print("═" * 65)
+print("=" * 65)
 print()
 tab5 = [
     ("Surface muon file",    "muons_surface.dat", "generated above"),
@@ -129,17 +129,17 @@ for name, val, note in tab5:
     print(f"  {name:<30} {val:<25}{comment}")
 
 print()
-print("═" * 65)
+print("=" * 65)
 print("  EXPECTED RESULTS")
-print("═" * 65)
+print("=" * 65)
 print()
 print("  Overburden map (log scale):")
-print("    North sector ze≈77–83°: 50,000–342,695 g/cm²  (red on Jet scale)")
+print("    North sector ze~77–83°: 50,000–342,695 g/cm²  (red on Jet scale)")
 print("    All other directions:    open sky (gray/masked)")
 print("    38 of 648 bins blocked  (5.9% of directions)")
 print()
 print("  Overall survival rate:    ~99.9%  (physically correct)")
-print("  Why: cos²θ puts <1.5% of muons in blocked directions ze>74°")
+print("  Why: cos²theta puts <1.5% of muons in blocked directions ze>74°")
 print()
 print("  Survival rate map:")
 print("    North blocked bins: 0.001–1%  survival  (almost all stopped)")
@@ -148,9 +148,9 @@ print()
 print("  This directional contrast IS the muographic signal.")
 print("  Low survival in north = lava dome blocking muons.")
 print()
-print("═" * 65)
+print("=" * 65)
 print("  GET THE DEM FILE")
-print("═" * 65)
+print("=" * 65)
 print()
 print("  Method A — eio command (requires: pip install elevation):")
 print("    eio clip -o puydedome_dem.tif --bounds 2.75 45.65 3.15 45.90")
@@ -158,10 +158,10 @@ print()
 print("  Method B — OpenTopography website (no install):")
 print("    https://portal.opentopography.org/raster?opentopoID=OTSRTM.082015.4326.1")
 print("    Bounds: West=2.75  South=45.65  East=3.15  North=45.90")
-print("    Format: GeoTIFF  →  Save as puydedome_dem.tif")
+print("    Format: GeoTIFF  ->  Save as puydedome_dem.tif")
 print()
 print("  Method C — Tab 5 auto-download (in the GUI):")
-print("    Section 2 → Auto-download tab")
+print("    Section 2 -> Auto-download tab")
 print("    S=45.65  N=45.90  W=2.75  E=3.15")
 print("    Product: SRTM GL1 (30m)")
 print()
@@ -169,9 +169,9 @@ print()
 # ─────────────────────────────────────────────────────────────────────────────
 # Quick validation: reproduce what the DEM ray-tracer would find
 # ─────────────────────────────────────────────────────────────────────────────
-print("═" * 65)
+print("=" * 65)
 print("  QUICK GEOMETRY VALIDATION  (no DEM file needed)")
-print("═" * 65)
+print("=" * 65)
 print()
 print("  Simulating the critical north-sector ray analytically:")
 print()
@@ -197,6 +197,6 @@ for ze_deg in [72.9, 74.3, 77.9, 82.6]:
               f"> terrain {terrain_alt:.0f} m  → open sky")
 
 print()
-print("  Last bin centre with ze_max=75° (OLD default): 72.9° → open sky ✗")
-print("  Last bin centre with ze_max=85° (FIXED):       82.6° → BLOCKED ✓")
+print("  Last bin centre with ze_max=75° (OLD default): 72.9° -> open sky x")
+print("  Last bin centre with ze_max=85° (FIXED):       82.6° -> BLOCKED ok")
 print()

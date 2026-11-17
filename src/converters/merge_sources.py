@@ -64,7 +64,7 @@ def merge(input_files, output_path):
     event_id   = 0
     batch_info = []   # (label, first_id, last_id)
 
-    with open(output_path, "w") as fout, open(index_path, "w") as fidx:
+    with open(output_path, "w", encoding="utf-8") as fout, open(index_path, "w", encoding="utf-8") as fidx:
         fidx.write("# EventID  initial_E_GeV\n")
 
         # Write header placeholder — will prepend batch table after we know ranges
@@ -80,7 +80,7 @@ def merge(input_files, output_path):
                 print(f"  WARNING: file not found, skipping: {fpath}", file=sys.stderr)
                 continue
 
-            with open(fpath) as fin:
+            with open(fpath, encoding="utf-8", errors="replace") as fin:
                 for raw in fin:
                     line = raw.strip()
                     if not line or line.startswith("#"):
@@ -101,7 +101,7 @@ def merge(input_files, output_path):
             print(f"  {label:>10s}  {n_written:>8,} muons  EventID {first}–{last}")
 
     # Prepend batch table into a fresh copy of the file
-    with open(output_path, "r") as f:
+    with open(output_path, "r", encoding="utf-8", errors="replace") as f:
         original = f.read()
 
     table_lines = ["#\n", "# Batch summary:\n",
@@ -112,14 +112,14 @@ def merge(input_files, output_path):
 
     # Insert table after the first 3 header lines
     lines = original.split("\n", 3)
-    with open(output_path, "w") as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         f.write("\n".join(lines[:3]) + "\n")
         f.writelines(table_lines)
         f.write(lines[3])
 
     total = sum(n for _, _, _, n in batch_info)
-    print(f"\n  Total: {total:,} muons → {output_path}")
-    print(f"  Index: {index_path}  (maps EventID → initial energy for analysis)")
+    print(f"\n  Total: {total:,} muons -> {output_path}")
+    print(f"  Index: {index_path}  (maps EventID -> initial energy for analysis)")
 
 
 def main():
@@ -149,7 +149,7 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    print(f"Merging {len(files)} source files → {args.output}\n")
+    print(f"Merging {len(files)} source files -> {args.output}\n")
     merge(files, args.output)
 
 

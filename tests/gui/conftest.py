@@ -22,7 +22,7 @@ _SKIP = {".git", "output", "benchmark", "manuscript", "references", "external",
          "__pycache__"}
 
 HAVE_RASTERIO = importlib.util.find_spec("rasterio") is not None
-HAVE_GENERATOR = (ROOT / "bin" / "ucmuon_gen_omp").exists()
+HAVE_GENERATOR = any((ROOT / "bin" / n).exists() for n in ("ucmuon_gen_omp", "ucmuon_gen_omp.exe"))
 
 
 def _ignore(path, names):

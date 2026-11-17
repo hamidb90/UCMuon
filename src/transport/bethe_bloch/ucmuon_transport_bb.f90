@@ -76,7 +76,7 @@ program ucmuon_transport_bb
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '   UCMuon Transport  —  Bethe-Bloch + MS engine'
+    write(*,*) '   UCMuon Transport  --  Bethe-Bloch + MS engine'
     write(*,*) '   UCLouvain Muography Group'
     write(*,*) '   ** MPI + OpenMP hybrid version **'
     write(*,*) ' ============================================================'
@@ -136,7 +136,7 @@ program ucmuon_transport_bb
         X0_gcm2 = 716.408d0*A_eff / (Z_eff*(Z_eff+1.d0)*log(287.d0/sqrt(Z_eff)))
         b_rad   = max(3.02d-6*(Z_eff**2/A_eff)/(121.d0/22.d0), 1.d-7)
       case default
-        write(*,*) ' Unknown mat_type — defaulting to Standard Rock.'
+        write(*,*) ' Unknown mat_type -- defaulting to Standard Rock.'
         Z_eff=11.0d0; A_eff=22.0d0; rho_mat=2.65d0; I_eV=136.4d0
         X0_gcm2=26.54d0; b_rad=3.02d-6; mat_type=1
     end select
@@ -183,7 +183,7 @@ program ucmuon_transport_bb
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '        UCMuon Transport BB — CONFIGURATION'
+    write(*,*) '        UCMuon Transport BB -- CONFIGURATION'
     write(*,*) ' ============================================================'
     write(*,'(A,A)')       '  Input:             ', trim(infile)
     write(*,'(A,A)')       '  Output prefix:     ', trim(outfile)
@@ -326,13 +326,13 @@ program ucmuon_transport_bb
         depth_axis, ' (0=X 1=Y 2=Z) from the momentum'
     else if (ys_var <= xs_var .and. ys_var <= zs_var) then
       depth_axis = 1
-      write(*,*) '  Source plane: XZ  (y=const) — depth direction: Y'
+      write(*,*) '  Source plane: XZ  (y=const) -- depth direction: Y'
     else if (xs_var <= ys_var .and. xs_var <= zs_var) then
       depth_axis = 0
-      write(*,*) '  Source plane: YZ  (x=const) — depth direction: X'
+      write(*,*) '  Source plane: YZ  (x=const) -- depth direction: X'
     else
       depth_axis = 2
-      write(*,*) '  Source plane: XY  (z=const) — depth direction: Z'
+      write(*,*) '  Source plane: XY  (z=const) -- depth direction: Z'
     end if
     write(*,*)
   end if  ! my_rank == 0
@@ -428,7 +428,7 @@ program ucmuon_transport_bb
   !===========================================================================
   if (my_rank == 0) then
     write(*,*)
-    write(*,*) ' Transporting muons (BB — MPI x OMP)...'
+    write(*,*) ' Transporting muons (BB -- MPI x OMP)...'
     write(*,*)
   end if
   call MPI_Barrier(MPI_COMM_WORLD, ierr)
@@ -538,7 +538,7 @@ program ucmuon_transport_bb
   if (my_rank == 0) then
     write(*,*)
     write(*,*) ' ============================================================'
-    write(*,*) '   UCMuon Transport — Bethe-Bloch — COMPLETE'
+    write(*,*) '   UCMuon Transport -- Bethe-Bloch -- COMPLETE'
     write(*,*) ' ============================================================'
     write(*,'(A,I12)')    '  Total transported:  ', nmuon_total
     write(*,'(A,I12)')    '  Survived:           ', nsurvive_all

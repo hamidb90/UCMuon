@@ -20,7 +20,13 @@ import numpy as np
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "gui"))
-FORTRAN = ROOT / "bin" / "ucmuon_gen_omp"
+
+
+def _exe(p: Path) -> Path:
+    """p, or p.exe when only that exists (Windows builds carry the suffix)."""
+    w = p.with_name(p.name + ".exe")
+    return w if not p.exists() and w.exists() else p
+FORTRAN = _exe(ROOT / "bin" / "ucmuon_gen_omp")
 PARMA_DIR = ROOT / "data" / "EXPACS" / "parma"
 M_MU = 0.10566
 

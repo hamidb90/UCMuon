@@ -25,7 +25,7 @@ def test_b9a_driver_density_override(repo_copy, surface_run, tmp_path):
         stdin = "\n".join([str(f), str(out), "1", "14", "5", line, "0"]) + "\n"
         subprocess.run([sys.executable, str(repo_copy / "gui" / "ucmuon_bb_driver.py")],
                        input=stdin, text=True, capture_output=True, check=True)
-        outs[line] = out.read_text()
+        outs[line] = out.read_text(encoding="utf-8", errors="replace")
     assert outs["1"] == outs["1 2.65"]
     assert outs["1"] != outs["1 2.71"]
 
@@ -105,7 +105,7 @@ def test_b13b_measured_data_without_density_header(repo_copy, tmp_path):
     sys.path.insert(0, str(repo_copy / "gui"))
     import ucmuon_density_analysis as da
     f = tmp_path / "t.dat"
-    f.write_text("# az el T\n0 10 0.5\n0 20 0.6\n90 10 0.4\n90 20 0.7\n")
+    f.write_text("# az el T\n0 10 0.5\n0 20 0.6\n90 10 0.4\n90 20 0.7\n", encoding="utf-8")
     *_, meta = da.load_transmission_map(f, require_density=False)
     assert meta["density"] is None
 

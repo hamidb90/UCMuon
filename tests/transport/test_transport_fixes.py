@@ -35,6 +35,12 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / "gui"))
 BIN = ROOT / "bin"
+
+
+def _exe(p: Path) -> Path:
+    """p, or p.exe when only that exists (Windows builds carry the suffix)."""
+    w = p.with_name(p.name + ".exe")
+    return w if not p.exists() and w.exists() else p
 FAILS: list[str] = []
 M_MU = 0.10566
 
@@ -50,7 +56,7 @@ def beam(path: Path, n: int, e_gev: float, spread_cm: float) -> None:
     +-spread_cm in x and y (0 = a pencil beam at the origin)."""
     p = np.sqrt(e_gev ** 2 - M_MU ** 2)
     xs = np.linspace(-spread_cm, spread_cm, n)
-    with open(path, "w") as f:
+    with open(path, "w", encoding="utf-8") as f:
         f.write("# EventID x y z p px py pz theta phi E charge det_mask\n")
         for i in range(n):
             f.write(f"{i + 1:10d} {xs[i]:.3f} {xs[::-1][i]:.3f} 0.0 {p:.6f} 0.0 0.0 {-p:.6f} "
@@ -99,7 +105,7 @@ def main() -> int:
         beam(tmp / "ms.dat", 20000, 10.0, 100.0)
         x0_m = 26.54 / 2.65 / 100.0                     # one X0 of Standard Rock
 
-        bb = BIN / "ucmuon_transport_bb_omp"
+        bb = _exe(BIN / "ucmuon_transport_bb_omp")
         print("Bethe-Bloch (OpenMP)")
         if not bb.exists():
             print("  skipped: build it with make ucmuon_transport_bb_omp")
@@ -116,7 +122,7 @@ def main() -> int:
             run([str(bb)], f"{tmp}/ms.dat\n{tmp}/s.dat\n0\n13\n{x0_m}\n1 2.65\n1\n\n", tmp)
             highland_check(survivors([tmp / "s.dat"]), "multiple scattering")
 
-        mu = BIN / "ucmuon_transport_music_omp"
+        mu = _exe(BIN / "ucmuon_transport_music_omp")
         tables = sorted(glob.glob(str(BIN / "music-*rock*.dat")))
         print("MUSIC (OpenMP)")
         if not mu.exists() or len(tables) < 3:
@@ -128,7 +134,7 @@ def main() -> int:
             s = survivors([tmp / "m.dat"])
             check(len(s) > 180, f"pencil beam, 100 GeV through 100 m rock: {len(s)}/200 survive")
 
-        mpi = BIN / "ucmuon_transport_bb"
+        mpi = _exe(BIN / "ucmuon_transport_bb")
         print("Bethe-Bloch (MPI)")
         if not mpi.exists() or shutil.which("mpirun") is None:
             print("  skipped: needs bin/ucmuon_transport_bb (make ucmuon_transport_bb) and mpirun")

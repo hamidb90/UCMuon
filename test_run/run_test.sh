@@ -1,6 +1,6 @@
 #!/bin/bash
 # =============================================================================
-#  UCMuon — comprehensive test run
+#  UCMuon -- comprehensive test run
 #
 #  Runs the full two-stage pipeline (Fortran surface generator with a detector
 #  acceptance cut -> UCMuon-MC transport) on a small, seeded configuration and
@@ -38,6 +38,24 @@ rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"
 
 strip() { sed 's/#.*//' "$1" | sed 's/[[:space:]]*$//' | grep -v '^$'; }
 
+# Python: $PYTHON if set, else python3, else python. Under MSYS2/Git Bash on
+# Windows, a command that resolves to the WindowsApps folder is a Microsoft
+# Store alias (or the Python install manager's), which an MSYS shell cannot
+# run: it hangs. Such a command is skipped and the user is told to set PYTHON.
+PY="${PYTHON:-}"
+if [[ -z "$PY" ]]; then
+    for c in python3 python; do
+        p=$(command -v "$c" 2>/dev/null) || continue
+        case "$(uname -s)" in MINGW*|MSYS*|CYGWIN*) [[ "$p" == *WindowsApps* ]] && continue ;; esac
+        PY="$c"; break
+    done
+fi
+if [[ -z "$PY" ]]; then
+    echo "No usable Python found. Set PYTHON to the interpreter, for example"
+    echo "  PYTHON=/c/Users/<you>/AppData/Local/Python/pythoncore-3.14-64/python.exe bash test_run/run_test.sh"
+    exit 1
+fi
+
 echo "============================================================"
 echo "  UCMuon comprehensive test run"
 echo "  seed = ${UCMUON_SEED}, single thread"
@@ -66,7 +84,7 @@ fi
 echo
 echo "[2/2] UCMuon-MC transport (gui/ucmuon_stochastic_driver.py), 25 m of rock"
 strip "${TEST_DIR}/input_transport.dat" \
-    | python3 gui/ucmuon_stochastic_driver.py > "${OUT_DIR}/transport.log" 2>&1
+    | "$PY" gui/ucmuon_stochastic_driver.py > "${OUT_DIR}/transport.log" 2>&1
 if [[ ! -s "${OUT_DIR}/muons_underground.dat" ]]; then
     echo "      FAIL - transport produced no output; see ${OUT_DIR}/transport.log"
     exit 1
@@ -94,7 +112,7 @@ done < "${REF_DIR}/sha256.txt"
 
 # ---------------------------------------------------------------- grade
 echo
-python3 "${TEST_DIR}/grade.py" "$OUT_DIR"
+"$PY" "${TEST_DIR}/grade.py" "$OUT_DIR"
 STATUS=$?
 
 echo

@@ -63,7 +63,7 @@ def test_guaranteed_hit_default_matches_the_standard_one(new_app):
 
 
 def test_old_autosave_without_mode_opens_in_advanced(new_app, repo_copy):
-    (repo_copy / "ucmuon_autosave.json").write_text(json.dumps({"emin": 3.0}))
+    (repo_copy / "ucmuon_autosave.json").write_text(json.dumps({"emin": 3.0}), encoding="utf-8")
     at = new_app(keep_autosave=True)
     assert at.session_state["ui_mode"] == "Advanced"
     assert widget(at, "toggle", "ui_mode_toggle").value is True
@@ -115,7 +115,7 @@ def test_basic_without_a_detector(new_app, repo_copy):
     assert widget(at, "number_input", "nmuonsgen").label == "Muons to generate"
     assert "Safety margin" not in {m.label for m in top_tab(at, "Generator").metric}
     widget(at, "number_input", "bd_src_size").set_value(50.0).run()
-    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text())
+    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text(encoding="utf-8", errors="replace"))
     assert (saved["bd_use_detector"], saved["bd_src_size"]) == (False, 50.0)
     assert widget(at, "checkbox", "usedetector") is None     # Advanced's own filter untouched
 
@@ -156,7 +156,7 @@ def test_hidden_advanced_values_survive_basic_and_a_restart(new_app, repo_copy):
     widget(at, "number_input", "mg0").set_value(17.0).run()
     widget(at, "toggle", "ui_mode_toggle").set_value(False).run()
     at.run(); at.run(); at.run()                   # Streamlit drops hidden state here
-    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text())
+    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text(encoding="utf-8", errors="replace"))
     assert (saved["emin"], saved["thetamax"], saved["disk_r"], saved["mg0"]) == (5.0, 70.0, 321.0, 17.0)
     widget(at, "toggle", "ui_mode_toggle").set_value(True).run()
     assert widget(at, "number_input", "emin").value == 5.0
@@ -284,7 +284,7 @@ def test_basic_has_no_backward_mc_and_keeps_it_for_advanced(new_app, repo_copy):
     assert widget(at, "selectbox", "transport_engine") is None
     basic_sel = widget(at, "selectbox", "transport_engine_basic")
     assert basic_sel.value == "UCMuon Stochastic (Python)" and label not in basic_sel.options
-    assert json.loads((repo_copy / "ucmuon_autosave.json").read_text())["transport_engine"] == bmc
+    assert json.loads((repo_copy / "ucmuon_autosave.json").read_text(encoding="utf-8", errors="replace"))["transport_engine"] == bmc
     widget(at, "toggle", "ui_mode_toggle").set_value(True).run()
     assert widget(at, "selectbox", "transport_engine").value == bmc
 
@@ -389,7 +389,7 @@ def test_terrain_values_survive_basic(new_app, repo_copy):
     widget(at, "number_input", "terrain_rho").set_value(2.4).run()
     widget(at, "toggle", "ui_mode_toggle").set_value(False).run()
     at.run(); at.run(); at.run()                   # Streamlit drops hidden state here
-    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text())
+    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text(encoding="utf-8", errors="replace"))
     assert (saved["terrain_naz"], saved["terrain_rho"]) == (72, 2.4)
     widget(at, "toggle", "ui_mode_toggle").set_value(True).run()
     assert widget(at, "number_input", "terrain_naz").value == 72
@@ -399,7 +399,7 @@ def test_terrain_values_survive_basic(new_app, repo_copy):
 def test_density_with_the_shipped_library(new_app):
     at = new_app(mode="Advanced")
     assert widget(at, "radio", "da_method").value == "library"
-    assert "examples/vesuvius/tsim_library" in widget(at, "text_area", "da_lib_paths_text").value
+    assert "examples/vesuvius/tsim_library" in widget(at, "text_area", "da_lib_paths_text").value.replace("\\", "/")
     [b for b in at.button if b.key == "da_load_lib_btn"][0].click().run()
     assert len(at.session_state["da_tsim_lib"]) == 5
     widget(at, "radio", "da_tdata_mode").set_value("🔬 Generate synthetic (test)").run()
@@ -427,5 +427,5 @@ def test_density_and_terrain_inputs_survive_basic(new_app, repo_copy):
     widget(at, "radio", "da_method").set_value("direct").run()
     basic_cycle(at)
     assert widget(at, "radio", "da_method").value == "direct"
-    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text())
+    saved = json.loads((repo_copy / "ucmuon_autosave.json").read_text(encoding="utf-8", errors="replace"))
     assert (saved["da_method"], saved["da_tdata_mode"]) == ("direct", synth)

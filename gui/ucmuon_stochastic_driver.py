@@ -963,7 +963,7 @@ def _read_input(fpath, transport_all):
     The constant coordinate is detected from position variance (< 1 cm std).
     """
     rows = []
-    with open(fpath) as fh:
+    with open(fpath, encoding="utf-8", errors="replace") as fh:
         for line in fh:
             s = line.strip()
             if not s or s.startswith("#"):
@@ -1541,8 +1541,8 @@ def transport_parallel(muons, depth_m, rho, mat, n_workers, seed=42,
 # ─────────────────────────────────────────────────────────────────────────────
 
 def _write_output(muons, result, fpath):
-    with open(fpath, "w") as fh:
-        fh.write("# UCMuon-MC engine — UCLouvain Muography Group\n")
+    with open(fpath, "w", encoding="utf-8") as fh:
+        fh.write("# UCMuon-MC engine -- UCLouvain Muography Group\n")
         fh.write("# E_convention: total_energy_GeV   (E = KE + 0.10566)\n")
         fh.write("# Cols: EventID xs ys zs Es[GeV] thetas phis charge alive"
                  " x y z E[GeV] cx cy cz theta phi\n")
@@ -1690,7 +1690,7 @@ def main():
     # Timing file
     out_path    = Path(outfile)
     timing_file = str(out_path.with_suffix("")) + "_timing.txt"
-    with open(timing_file, "w") as ft:
+    with open(timing_file, "w", encoding="utf-8") as ft:
         ft.write(f"Elapsed : {elapsed:.1f}\n")
     print(f"  Timing: {timing_file}", flush=True)
 
@@ -1700,7 +1700,7 @@ def main():
     z_stop       = result["z_stop"]
     mask_stopped = (alive_arr == 0)
     n_stopped    = int(mask_stopped.sum())
-    with open(stopped_file, "w") as fs:
+    with open(stopped_file, "w", encoding="utf-8") as fs:
         fs.write(f"# UCMuon-MC stopped muons  depth={depth_m:.2f} m\n")
         fs.write("# EventID  InitKE_GeV  StopDepth_cm\n")
         evids   = muons["EventID"][mask_stopped].astype(int)

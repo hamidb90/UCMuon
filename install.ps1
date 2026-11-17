@@ -113,10 +113,13 @@ if ($LASTEXITCODE -ne 0) {
 Write-Host "  OK  Core packages installed (streamlit, numpy, pandas, scipy, plotly, matplotlib)"
 
 # Optional: rasterio for Engine 6
+# Decided by the exit code: matching "ok" in the output also matched a failed
+# import, whose traceback quotes the code (print('ok')) from Python 3.13 on.
 $ErrorActionPreference = "Continue"
-$rasterio_ok = & $py -c "import rasterio; print('ok')" 2>&1
+& $py -c "import rasterio" *> $null
+$rasterio_ok = ($LASTEXITCODE -eq 0)
 $ErrorActionPreference = "Stop"
-if ($rasterio_ok -match "ok") {
+if ($rasterio_ok) {
     Write-Host "  OK  rasterio  (Engine 6: UCMuon Terrain enabled)"
 } else {
     $do_install = $false
@@ -128,12 +131,16 @@ if ($rasterio_ok -match "ok") {
     }
     if ($do_install) {
         Write-Host "      Installing rasterio..."
-        # numpy<2.3 keeps pip from dragging numpy past what scipy pins allow
-        & $py -m pip install -q rasterio "numpy<2.3"
+        # Keep the numpy already installed, so pip does not drag it past what
+        # scipy allows. (A fixed "numpy<2.3" could not install on Python 3.14,
+        # for which numpy has wheels only from 2.3 on.)
         $ErrorActionPreference = "Continue"
-        $rasterio_ok = & $py -c "import rasterio; print('ok')" 2>&1
+        $np_ver = (& $py -c "import numpy; print(numpy.__version__)" 2>$null | Select-Object -First 1)
+        if ($np_ver) { & $py -m pip install -q rasterio "numpy==$np_ver" } else { & $py -m pip install -q rasterio }
+        & $py -c "import rasterio" *> $null
+        $rasterio_ok = ($LASTEXITCODE -eq 0)
         $ErrorActionPreference = "Stop"
-        if ($rasterio_ok -match "ok") {
+        if ($rasterio_ok) {
             Write-Host "  OK  rasterio installed  (Engine 6: UCMuon Terrain enabled)"
         } else {
             Write-Host "  WARN: rasterio install failed  (Engine 6 disabled)"
@@ -414,7 +421,7 @@ if (Test-Binary "ucmuon_transport_bb_omp") {
 }
 Write-Host "  [ ] Engine 4  PROPOSAL                   (not supported on Windows)"
 Write-Host "  [x] Engine 5  Backward MC                (Python -- always available)"
-if ($rasterio_ok -match "ok") {
+if ($rasterio_ok) {
     Write-Host "  [x] Engine 6  UCMuon Terrain             (Python + rasterio)"
 } else {
     Write-Host "  [ ] Engine 6  UCMuon Terrain             (pip install rasterio)"
