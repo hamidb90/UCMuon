@@ -116,7 +116,7 @@ Write-Host "  OK  Core packages installed (streamlit, numpy, pandas, scipy, plot
 # Decided by the exit code: matching "ok" in the output also matched a failed
 # import, whose traceback quotes the code (print('ok')) from Python 3.13 on.
 $ErrorActionPreference = "Continue"
-& $py -c "import rasterio" *> $null
+& $py -c "import os, sys; sys.stderr = open(os.devnull, 'w'); import rasterio" *> $null
 $rasterio_ok = ($LASTEXITCODE -eq 0)
 $ErrorActionPreference = "Stop"
 if ($rasterio_ok) {
@@ -137,7 +137,7 @@ if ($rasterio_ok) {
         $ErrorActionPreference = "Continue"
         $np_ver = (& $py -c "import numpy; print(numpy.__version__)" 2>$null | Select-Object -First 1)
         if ($np_ver) { & $py -m pip install -q rasterio "numpy==$np_ver" } else { & $py -m pip install -q rasterio }
-        & $py -c "import rasterio" *> $null
+        & $py -c "import os, sys; sys.stderr = open(os.devnull, 'w'); import rasterio" *> $null
         $rasterio_ok = ($LASTEXITCODE -eq 0)
         $ErrorActionPreference = "Stop"
         if ($rasterio_ok) {

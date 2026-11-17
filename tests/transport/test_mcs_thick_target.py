@@ -23,6 +23,7 @@ let it grow over the whole path (17.5 MeV at 200 m) with a 2 sigma_r margin.
 """
 from __future__ import annotations
 
+import os
 import subprocess
 import sys
 import tempfile
@@ -115,7 +116,8 @@ def main() -> int:
             out = Path(tmp) / "o.dat"
             subprocess.run([str(bb)], input=f"{src}\n{out}\n1\n14\n50\n1\n1\n", text=True,
                            capture_output=True, check=True, cwd=tmp,
-                           env={"OMP_NUM_THREADS": "1", "PATH": "/usr/bin:/bin"})
+                           env={**os.environ, "OMP_NUM_THREADS": "1"})   # keep PATH: on Windows the
+                           # MSYS2 runtime DLLs are found through it
             rows = np.loadtxt(out, comments="#")
         rows = rows[rows[:, 8] == 1]
         th = np.arctan2(np.hypot(rows[:, 13], rows[:, 14]), -rows[:, 15])

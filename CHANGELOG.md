@@ -92,7 +92,9 @@ elevation model). No simulated result changes.
 - **Tests and examples find Windows builds.** They looked for bin/<name>,
   while MSYS2 builds bin/<name>.exe, so on Windows the generator, Bethe-Bloch
   and converter tests skipped or failed. They now accept either name, as
-  the GUI already did. `examples/underground_rate` checks that the
+  the GUI already did; `test_mcs_thick_target.py` no longer replaces PATH
+  for the Bethe-Bloch run (on Windows the MSYS2 DLLs are found through it).
+  `examples/underground_rate` checks that the
   generator and MUSIC exist before its generator stage (20 min on an Apple
   M4 core, 2 h on an Intel i7-1165G7) instead of failing after it.
   `test_run/run_test.sh` takes `$PYTHON`, and under MSYS2/Git Bash skips a

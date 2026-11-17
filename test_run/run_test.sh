@@ -34,10 +34,6 @@ export OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1
 # 1 when stage 1 actually ran; 0 when its output was taken from expected/.
 GEN_RAN=1
 
-rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"
-
-strip() { sed 's/#.*//' "$1" | sed 's/[[:space:]]*$//' | grep -v '^$'; }
-
 # Python: $PYTHON if set, else python3, else python. Under MSYS2/Git Bash on
 # Windows, a command that resolves to the WindowsApps folder is a Microsoft
 # Store alias (or the Python install manager's), which an MSYS shell cannot
@@ -55,6 +51,11 @@ if [[ -z "$PY" ]]; then
     echo "  PYTHON=/c/Users/<you>/AppData/Local/Python/pythoncore-3.14-64/python.exe bash test_run/run_test.sh"
     exit 1
 fi
+
+rm -rf "$OUT_DIR"; mkdir -p "$OUT_DIR"
+
+strip() { sed 's/#.*//' "$1" | sed 's/[[:space:]]*$//' | grep -v '^$'; }
+
 
 echo "============================================================"
 echo "  UCMuon comprehensive test run"
