@@ -50,6 +50,9 @@ identifiers:
   - type: doi
     value: "10.5281/zenodo.23426252"
     description: "Version DOI for v1.4.1"
+  - type: doi
+    value: "10.5281/zenodo.24376935"
+    description: "Version DOI for v1.5.0"
 
 abstract: >
   UCMuon (You See Muon!) is an open-source simulation suite for cosmic-ray
