@@ -89,6 +89,15 @@ elevation model). No simulated result changes.
   code. Installing rasterio pinned "numpy<2.3", which cannot install on
   Python 3.14 (numpy has 3.14 wheels from 2.3 on); both installers now pin
   the numpy already installed instead.
+- **MUSIC computes its tables on the first run.** Its energy-loss and
+  cross-section tables are computed, not shipped, so on a new installation
+  the wrappers (`ucmuon_transport_music_omp`, and `ucmuon_transport_music`
+  for MPI) stopped when asked to read them from disk ("init=1 but no eloss
+  file found"); `examples/underground_rate` asks for exactly that, and
+  failed after its generator stage. When neither table exists the wrapper
+  now computes them (init 0) and says so; later runs read them. Checked on
+  a fresh directory: both runs give byte-identical output and a survival of
+  20.4200 %, as on macOS and Windows 11, where the Windows test found it.
 - **Tests and examples find Windows builds.** They looked for bin/<name>,
   while MSYS2 builds bin/<name>.exe, so on Windows the generator, Bethe-Bloch
   and converter tests skipped or failed. They now accept either name, as

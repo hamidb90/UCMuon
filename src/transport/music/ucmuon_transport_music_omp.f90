@@ -183,6 +183,23 @@ program ucmuon_transport_music_omp
   eloss_file = 'music-eloss-' // trim(mat_suffix) // '.dat'
   xsec_file  = 'music-cross-sections-' // trim(mat_suffix) // '.dat'
 
+  ! --- First run on a fresh install ---
+  ! Neither table exists yet (they are computed, not shipped), so compute
+  ! them now (init=0) instead of stopping; later runs read them (init=1).
+  ! Up to 1.4.1 this stopped with "init=1 but no eloss file found", which
+  ! broke the first run of examples/underground_rate on a new installation.
+  if (init == 1) then
+    inquire(file=trim(eloss_file), exist=eloss_exists)
+    if (.not. eloss_exists) inquire(file='music-eloss.dat', exist=eloss_exists)
+    inquire(file=trim(xsec_file), exist=xsec_exists)
+    if (.not. xsec_exists) inquire(file='music-cross-sections.dat', exist=xsec_exists)
+    if (.not. eloss_exists .and. .not. xsec_exists) then
+      write(*,'(A,A,A)') '  NOTE: ', trim(eloss_file), ' and the cross-section table do not'
+      write(*,*) '       exist yet: computing them now (init=0); later runs read them.'
+      init = 0
+    end if
+  end if
+
   ! --- Energy-loss file ---
   ! When init=0: mulos() will GENERATE music-eloss.dat -- no pre-check needed.
   ! When init=1: file must already exist.

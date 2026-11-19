@@ -76,6 +76,7 @@ program ucmuon_transport_music
   character(200) :: infile, outfile
   real(8)        :: rho, rad, depth_m, depth_cm
   integer        :: idim, idim1, minv, init_tables
+  logical        :: tables_found
   integer        :: mat_type, transport_all
   character(60)  :: mat_suffix, eloss_file, xsec_file
   integer        :: ncols                          ! 13 or 14 (auto-detected)
@@ -279,6 +280,27 @@ program ucmuon_transport_music
 
   eloss_file = 'music-eloss-'          // trim(mat_suffix) // '.dat'
   xsec_file  = 'music-cross-sections-' // trim(mat_suffix) // '.dat'
+
+  ! First run on a fresh install: neither table exists (in ./ or data/), so
+  ! compute them (init 0) instead of aborting; later runs read them.
+  if (init_tables == 1) then
+    if (my_rank == 0) then
+      inquire(file=trim(eloss_file), exist=file_exists)
+      tables_found = file_exists
+      inquire(file='data/' // trim(eloss_file), exist=file_exists)
+      tables_found = tables_found .or. file_exists
+      inquire(file=trim(xsec_file), exist=file_exists)
+      tables_found = tables_found .or. file_exists
+      inquire(file='data/' // trim(xsec_file), exist=file_exists)
+      tables_found = tables_found .or. file_exists
+      if (.not. tables_found) then
+        write(*,'(A,A,A)') '  NOTE: ', trim(eloss_file), ' and the cross-section table do not'
+        write(*,*) '       exist yet: computing them now (init 0); later runs read them.'
+        init_tables = 0
+      end if
+    end if
+    call MPI_Bcast(init_tables, 1, MPI_INTEGER, 0, MPI_COMM_WORLD, ierr)
+  end if
 
   if (my_rank == 0) then
     write(*,*)
