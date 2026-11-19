@@ -1,9 +1,16 @@
 # Changelog
 
-## [Unreleased]
+## [1.5.0] — 2026-11-19
 
-Licensing: the archive is now MIT throughout (apart from a public-domain
-elevation model). No simulated result changes.
+Licensing, physics and Windows. The archive is now MIT throughout (apart
+from a public-domain elevation model): PARMA is downloaded from JAEA, now
+version 4.19, and the CERN routines are replaced by UCMuon's own, which
+give the same numbers bit for bit. Simulated results change where the
+physics changed: Engine 5 is a backward CSDA flux integrator, multiple
+scattering uses the thick-target limit, and UCMuon-MC samples tabulated
+radiative spectra and spin-1/2 knock-ons with v_cut = 0.01 (its 1.4.1 model
+stays selectable). The generator scales beyond 8 threads, and the Windows
+installer, GUI and tests were fixed and tested on Windows 11 with Python 3.14.
 
 ### Changed
 - **PARMA is no longer shipped.** JAEA's terms (non-commercial use only,
@@ -540,7 +547,7 @@ elevation model). No simulated result changes.
   configuration samples 1.1e8 trajectories, not 4e6.
 - `make_fig07_scaling.py` writes its CSV with LF line endings.
 
-### Fixed
+### Fixed: benchmark timings and records
 - Engine timings re-measured with one process per engine
   (`benchmark/results/engine_timing_20261018.csv`, since superseded by
   `engine_timing_20261027.csv`, and the realistic suite's
